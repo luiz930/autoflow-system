@@ -2812,6 +2812,7 @@ maintenance_lock = Lock()
 maintenance_worker_iniciado = False
 init_db_lock = Lock()
 INIT_DB_EXECUTADO = False
+bootstrap_init_thread_started = False
 HUD_CACHE = {
     "testado_em": 0.0,
     "usuario": "",
@@ -3122,6 +3123,24 @@ def garantir_init_db(force=False):
         if modo_banco_preferido() == "postgres" and banco_online_ativo():
             SCHEMA_BANCO_ONLINE_GARANTIDO = True
         return True
+
+
+def _bootstrap_init_db_assincrono():
+    try:
+        garantir_init_db()
+    except Exception as e:
+        print("AVISO BOOTSTRAP INIT_DB:", e)
+
+
+def iniciar_bootstrap_init_db():
+    global bootstrap_init_thread_started
+
+    if bootstrap_init_thread_started:
+        return False
+
+    bootstrap_init_thread_started = True
+    Thread(target=_bootstrap_init_db_assincrono, daemon=True).start()
+    return True
 
 
 def desmontar_url_postgres(url):
@@ -9650,9 +9669,24 @@ def carregar_contexto_clientes(busca="", limpar=False):
 
     return clientes, sincronizacoes
 
+@app.route("/healthz")
+def healthz():
+    return {
+        "ok": True,
+        "init_db_executado": bool(INIT_DB_EXECUTADO),
+        "modo_banco": modo_banco_preferido(),
+    }
+
 @app.before_request
 def preparar_sincronizacoes():
     if request.endpoint == "static":
+        return
+
+    endpoint = request.endpoint or ""
+    sessao_ativa = bool(session.get("usuario"))
+
+    if not sessao_ativa and request.method == "GET":
+        iniciar_bootstrap_init_db()
         return
 
     garantir_init_db()
@@ -9665,9 +9699,8 @@ def preparar_sincronizacoes():
 
     global ULTIMO_SYNC_FONTES_SOB_DEMANDA_TS
 
-    endpoint = request.endpoint or ""
     pode_tentar_sync_sob_demanda = (
-        bool(session.get("usuario"))
+        sessao_ativa
         and request.method == "GET"
         and not endpoint.startswith("api_")
         and endpoint not in {"login", "logout"}
