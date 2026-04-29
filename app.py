@@ -2012,7 +2012,9 @@ def normalizar_registro_usuario_foto(caminho):
 
     return caminho_relativo_usuario_foto(texto)
 
-def url_foto_usuario(caminho):
+def url_foto_usuario(caminho, usuario_id=None):
+    if usuario_id and str(caminho or "").strip():
+        return f"/usuarios/{int(usuario_id)}/foto"
     return caminho_foto_para_url(caminho) if str(caminho or "").strip() else ""
 
 def remover_foto_perfil_antiga(caminho):
@@ -2098,6 +2100,53 @@ def reparar_registros_foto_perfil():
 
     conn.close()
     return len(atualizacoes)
+
+
+def sincronizar_blobs_foto_perfil():
+    conn = conectar()
+    c = conn.cursor()
+    try:
+        c.execute(
+            """
+            SELECT id, foto_perfil, foto_perfil_blob, foto_perfil_mime_type, foto_perfil_arquivo_nome
+            FROM usuarios
+            WHERE foto_perfil IS NOT NULL AND TRIM(foto_perfil) <> ''
+            """
+        )
+        usuarios = c.fetchall()
+        for usuario in usuarios:
+            if (
+                usuario["foto_perfil_blob"]
+                and str(usuario["foto_perfil_mime_type"] or "").strip()
+                and str(usuario["foto_perfil_arquivo_nome"] or "").strip()
+            ):
+                continue
+
+            caminho_abs = caminho_absoluto_usuario_foto(usuario["foto_perfil"])
+            if not caminho_abs or not os.path.isfile(caminho_abs):
+                continue
+
+            try:
+                c.execute(
+                    """
+                    UPDATE usuarios
+                    SET foto_perfil_blob=?,
+                        foto_perfil_mime_type=?,
+                        foto_perfil_arquivo_nome=?
+                    WHERE id=?
+                    """,
+                    (
+                        ler_bytes_arquivo(caminho_abs),
+                        detectar_mime_type_arquivo(caminho_abs),
+                        os.path.basename(caminho_abs),
+                        usuario["id"],
+                    ),
+                )
+            except Exception:
+                continue
+        conn.commit()
+    finally:
+        conn.close()
 
 def coletar_metricas_diretorio(pasta, ignorar_subpastas=None):
     base = os.path.abspath(pasta)
@@ -4615,6 +4664,9 @@ def atualizar_banco():
     adicionar_coluna_se_preciso(c, "usuarios", "senha_alteracao_obrigatoria INTEGER")
     adicionar_coluna_se_preciso(c, "usuarios", "senha_atualizada_em TEXT")
     adicionar_coluna_se_preciso(c, "usuarios", "foto_perfil TEXT")
+    adicionar_coluna_se_preciso(c, "usuarios", "foto_perfil_blob BLOB")
+    adicionar_coluna_se_preciso(c, "usuarios", "foto_perfil_mime_type TEXT")
+    adicionar_coluna_se_preciso(c, "usuarios", "foto_perfil_arquivo_nome TEXT")
     adicionar_coluna_se_preciso(c, "clientes", "placa_principal TEXT")
     adicionar_coluna_se_preciso(c, "veiculos", "status_atendimento TEXT DEFAULT 'SEM_ATENDIMENTO'")
     adicionar_coluna_se_preciso(c, "veiculos", "atendimento_ativo INTEGER DEFAULT 0")
@@ -4976,6 +5028,10 @@ def atualizar_banco():
         reparar_registros_foto_perfil()
     except Exception:
         pass
+    try:
+        sincronizar_blobs_foto_perfil()
+    except Exception:
+        pass
     conn.close()
 
 def init_db():
@@ -5057,7 +5113,10 @@ def criar_todas_tabelas():
         ultimo_login_em TEXT,
         senha_alteracao_obrigatoria INTEGER DEFAULT 0,
         senha_atualizada_em TEXT,
-        foto_perfil TEXT
+        foto_perfil TEXT,
+        foto_perfil_blob BLOB,
+        foto_perfil_mime_type TEXT,
+        foto_perfil_arquivo_nome TEXT
     )
     """)
 
@@ -5719,7 +5778,10 @@ def preencher_sessao_usuario(usuario_row, limpar=True):
         usuario_row["usuario"],
     )
     session["usuario_foto"] = str(usuario_row["foto_perfil"] or "").strip()
-    session["usuario_foto_url"] = url_foto_usuario(usuario_row["foto_perfil"])
+    session["usuario_foto_url"] = url_foto_usuario(
+        usuario_row["foto_perfil"],
+        usuario_row["id"],
+    )
     session["usuario_perfil"] = perfil_usuario
     session["senha_alteracao_obrigatoria"] = usuario_precisa_trocar_senha(usuario_row)
     session["usuario_sync_em"] = time.time()
@@ -5737,6 +5799,7 @@ def sincronizar_sessao_usuario(force=False):
         "usuario_iniciais" in session and
         "usuario_foto_url" in session and
         "senha_alteracao_obrigatoria" in session and
+        not str(session.get("usuario_foto_url") or "").startswith("/static/uploads/perfis/") and
         float(session.get("usuario_sync_em") or 0.0) > 0 and
         (time.time() - float(session.get("usuario_sync_em") or 0.0) < USUARIO_SESSAO_SYNC_TTL)
     ):
@@ -7398,7 +7461,12 @@ def salvar_foto_perfil_usuario(foto, identificador="usuario"):
                 optimize=True,
                 progressive=True,
             )
-            return caminho_relativo_usuario_foto(destino)
+            return {
+                "caminho": caminho_relativo_usuario_foto(destino),
+                "arquivo_blob": ler_bytes_arquivo(destino),
+                "mime_type": "image/jpeg",
+                "arquivo_nome": os.path.basename(destino),
+            }
         except (UnidentifiedImageError, OSError, ValueError):
             raise ValueError("Nao consegui processar a foto enviada. Tente outra imagem.")
         except Exception:
@@ -7411,7 +7479,12 @@ def salvar_foto_perfil_usuario(foto, identificador="usuario"):
     )
     foto.stream.seek(0)
     foto.save(destino)
-    return caminho_relativo_usuario_foto(destino)
+    return {
+        "caminho": caminho_relativo_usuario_foto(destino),
+        "arquivo_blob": ler_bytes_arquivo(destino),
+        "mime_type": detectar_mime_type_arquivo(destino),
+        "arquivo_nome": os.path.basename(destino),
+    }
 
 
 def detectar_mime_type_arquivo(caminho):
@@ -7748,6 +7821,54 @@ def servir_foto_banco(foto_id):
         download_name=nome_arquivo,
         max_age=86400,
     )
+
+
+@app.route("/usuarios/<int:usuario_id>/foto")
+def servir_foto_perfil_usuario_banco(usuario_id):
+    if not session.get("usuario"):
+        return redirect("/login")
+
+    conn = conectar()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT id, foto_perfil, foto_perfil_blob, foto_perfil_mime_type, foto_perfil_arquivo_nome
+        FROM usuarios
+        WHERE id=?
+        """,
+        (usuario_id,),
+    )
+    usuario = c.fetchone()
+    conn.close()
+
+    if not usuario:
+        return ("Foto de perfil nao encontrada.", 404)
+
+    blob = usuario["foto_perfil_blob"]
+    if blob:
+        nome_arquivo = (
+            str(usuario["foto_perfil_arquivo_nome"] or "").strip()
+            or os.path.basename(str(usuario["foto_perfil"] or "").replace("\\", "/"))
+            or f"perfil_{usuario_id}.jpg"
+        )
+        mime_type = (
+            str(usuario["foto_perfil_mime_type"] or "").strip()
+            or detectar_mime_type_arquivo(nome_arquivo)
+        )
+        return send_file(
+            BytesIO(bytes(blob)),
+            mimetype=mime_type,
+            download_name=nome_arquivo,
+            max_age=86400,
+        )
+
+    caminho = str(usuario["foto_perfil"] or "").strip()
+    if caminho:
+        caminho_abs = caminho_absoluto_usuario_foto(caminho)
+        if caminho_abs and os.path.isfile(caminho_abs):
+            return redirect(caminho_foto_para_url(caminho))
+
+    return ("Foto de perfil nao encontrada.", 404)
 
 
 def listar_fotos_servicos(ids_servicos):
@@ -11899,7 +12020,7 @@ def carregar_usuarios_configuracao():
         item["tentativas_login"] = int(item.get("tentativas_login") or 0)
         item["troca_senha_obrigatoria"] = bool(int(item.get("senha_alteracao_obrigatoria") or 0))
         item["iniciais"] = obter_iniciais_usuario(item.get("nome"), item.get("usuario"))
-        item["foto_url"] = url_foto_usuario(item.get("foto_perfil"))
+        item["foto_url"] = url_foto_usuario(item.get("foto_perfil"), item.get("id"))
         bloqueado_ate = usuario_bloqueado_ate(item)
         item["bloqueado"] = bool(bloqueado_ate)
         item["bloqueado_ate_fmt"] = formatar_datahora(item.get("bloqueado_ate"))
@@ -12473,11 +12594,28 @@ def atualizar_minha_foto():
     nova_foto = ""
 
     try:
-        nova_foto = salvar_foto_perfil_usuario(
+        foto_info = salvar_foto_perfil_usuario(
             foto,
             identificador=f"{usuario['usuario']}_{usuario['id']}",
         )
-        c.execute("UPDATE usuarios SET foto_perfil=? WHERE id=?", (nova_foto, usuario["id"]))
+        nova_foto = foto_info["caminho"]
+        c.execute(
+            """
+            UPDATE usuarios
+            SET foto_perfil=?,
+                foto_perfil_blob=?,
+                foto_perfil_mime_type=?,
+                foto_perfil_arquivo_nome=?
+            WHERE id=?
+            """,
+            (
+                nova_foto,
+                foto_info.get("arquivo_blob"),
+                foto_info.get("mime_type"),
+                foto_info.get("arquivo_nome"),
+                usuario["id"],
+            ),
+        )
         conn.commit()
         c.execute("SELECT * FROM usuarios WHERE id=?", (usuario["id"],))
         usuario_atualizado = c.fetchone()
@@ -12642,11 +12780,28 @@ def criar_usuario_funcionario():
         usuario_id = c.lastrowid
 
         if foto_perfil and str(foto_perfil.filename or "").strip():
-            nova_foto = salvar_foto_perfil_usuario(
+            foto_info = salvar_foto_perfil_usuario(
                 foto_perfil,
                 identificador=f"{usuario}_{usuario_id}",
             )
-            c.execute("UPDATE usuarios SET foto_perfil=? WHERE id=?", (nova_foto, usuario_id))
+            nova_foto = foto_info["caminho"]
+            c.execute(
+                """
+                UPDATE usuarios
+                SET foto_perfil=?,
+                    foto_perfil_blob=?,
+                    foto_perfil_mime_type=?,
+                    foto_perfil_arquivo_nome=?
+                WHERE id=?
+                """,
+                (
+                    nova_foto,
+                    foto_info.get("arquivo_blob"),
+                    foto_info.get("mime_type"),
+                    foto_info.get("arquivo_nome"),
+                    usuario_id,
+                ),
+            )
 
         conn.commit()
     except ValueError as erro:
@@ -12781,11 +12936,28 @@ def atualizar_foto_usuario(usuario_id):
     nova_foto = ""
 
     try:
-        nova_foto = salvar_foto_perfil_usuario(
+        foto_info = salvar_foto_perfil_usuario(
             foto,
             identificador=f"{alvo['usuario']}_{alvo['id']}",
         )
-        c.execute("UPDATE usuarios SET foto_perfil=? WHERE id=?", (nova_foto, usuario_id))
+        nova_foto = foto_info["caminho"]
+        c.execute(
+            """
+            UPDATE usuarios
+            SET foto_perfil=?,
+                foto_perfil_blob=?,
+                foto_perfil_mime_type=?,
+                foto_perfil_arquivo_nome=?
+            WHERE id=?
+            """,
+            (
+                nova_foto,
+                foto_info.get("arquivo_blob"),
+                foto_info.get("mime_type"),
+                foto_info.get("arquivo_nome"),
+                usuario_id,
+            ),
+        )
         conn.commit()
         c.execute("SELECT * FROM usuarios WHERE id=?", (usuario_id,))
         alvo_atualizado = c.fetchone()
