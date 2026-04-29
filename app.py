@@ -10971,13 +10971,20 @@ def api_clima():
                 continue
 
             try:
-                dados = resposta.json()
+                payload = resposta.json()
             except Exception:
                 continue
 
-            if isinstance(dados, dict) and not dados.get("error"):
+            if not isinstance(payload, dict) or payload.get("error"):
+                continue
+
+            tem_current = bool(payload.get("current") or payload.get("current_weather"))
+            hourly = payload.get("hourly") if isinstance(payload.get("hourly"), dict) else {}
+            tem_hourly = bool(hourly.get("temperature_2m"))
+
+            if tem_current or tem_hourly:
+                dados = payload
                 break
-            dados = None
 
         if not dados:
             if cache:
