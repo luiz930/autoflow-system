@@ -32,10 +32,12 @@
             <p><b>{{s[1]}}</b> - R$ {{s[2]}}</p>
 
             <div class="actions-row">
-                <button onclick="editar({{s[0]}})">Editar</button>
-                <a href="/excluir_servico/{{s[0]}}">
-                    <button class="button-danger">Excluir</button>
+                <a href="/editar_servico/{{s[0]}}" class="button-link">
+                    <button type="button">Editar</button>
                 </a>
+                <form method="POST" action="/excluir_servico/{{s[0]}}" onsubmit="return confirm('Excluir este servico?');">
+                    <button type="submit" class="button-danger">Excluir</button>
+                </form>
             </div>
 
         </div>

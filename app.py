@@ -721,15 +721,21 @@ def configuracao_backup_padrao():
     }
 
 def obter_configuracao_backup():
-    conn = conectar_somente_leitura()
-    c = conn.cursor()
-    c.execute("SELECT * FROM configuracao_backup WHERE id=1")
-    row = c.fetchone()
-    conn.close()
+    def carregar(conn):
+        c = conn.cursor()
+        c.execute("SELECT * FROM configuracao_backup WHERE id=1")
+        row = c.fetchone()
+        return dict(row) if row else None
+
+    row = executar_leitura_resiliente(
+        carregar,
+        descricao="CONFIG BACKUP",
+        padrao=None,
+    )
 
     dados = configuracao_backup_padrao()
     if row:
-        dados.update(dict(row))
+        dados.update(row)
 
     frequencia = str(dados.get("frequencia") or "diario").strip().lower()
     dados["frequencia"] = frequencia if frequencia in {"diario", "semanal", "mensal"} else "diario"
@@ -2173,17 +2179,24 @@ def remover_diretorios_vazios(base, preservar=None):
     return removidos
 
 def obter_status_manutencao_arquivos_db():
-    conn = conectar()
-    c = conn.cursor()
-    c.execute("SELECT * FROM manutencao_arquivos WHERE id=1")
-    row = c.fetchone()
-    conn.close()
-    return dict(row) if row else {
+    padrao = {
         "id": 1,
         "ultimo_executado_em": "",
         "ultima_mensagem": "",
         "ultimo_resultado_json": "",
     }
+
+    def carregar(conn):
+        c = conn.cursor()
+        c.execute("SELECT * FROM manutencao_arquivos WHERE id=1")
+        row = c.fetchone()
+        return dict(row) if row else dict(padrao)
+
+    return executar_leitura_resiliente(
+        carregar,
+        descricao="STATUS MANUTENCAO ARQUIVOS",
+        padrao=padrao,
+    )
 
 def salvar_status_manutencao_arquivos(resultado, mensagem):
     conn = conectar()
@@ -3606,6 +3619,32 @@ def registrar_log_banco_online(mensagem, intervalo_segundos=60):
     print("ERRO:", texto)
 
 
+def erro_transitorio_leitura_banco(erro):
+    if erro_limite_conexoes_banco_online(erro):
+        return True
+
+    texto = normalizar_texto_comparacao(str(erro or ""))
+    sinais = (
+        "deadlock detected",
+        "lock timeout",
+        "could not obtain lock",
+        "statement timeout",
+        "database is locked",
+        "canceling statement due to lock timeout",
+    )
+    return any(sinal in texto for sinal in sinais)
+
+
+def copiar_valor_padrao(padrao):
+    if isinstance(padrao, dict):
+        return dict(padrao)
+    if isinstance(padrao, list):
+        return list(padrao)
+    if isinstance(padrao, set):
+        return set(padrao)
+    return padrao
+
+
 def conectar_somente_leitura():
     conn = conectar()
     if getattr(conn, "backend", "") != "postgres":
@@ -3631,6 +3670,48 @@ def conectar_somente_leitura():
     except Exception:
         pass
     return conn
+
+
+def executar_leitura_resiliente(operacao, descricao="", padrao=None, permitir_fallback_local=None):
+    if permitir_fallback_local is None:
+        permitir_fallback_local = not banco_online_estritamente_obrigatorio()
+
+    conn = None
+    try:
+        conn = conectar_somente_leitura()
+        return operacao(conn)
+    except Exception as erro:
+        mensagem = f"{descricao}: {erro}" if descricao else str(erro)
+        if erro_limite_conexoes_banco_online(erro):
+            registrar_log_banco_online(mensagem, intervalo_segundos=30)
+        else:
+            print("AVISO LEITURA:", mensagem)
+
+        if permitir_fallback_local:
+            conn_local = None
+            try:
+                garantir_schema_sqlite_local_minima(force=True)
+                conn_local = conectar_banco_local_forcado()
+                return operacao(conn_local)
+            except Exception as erro_local:
+                mensagem_local = f"{descricao}: {erro_local}" if descricao else str(erro_local)
+                print("AVISO LEITURA LOCAL:", mensagem_local)
+            finally:
+                try:
+                    if conn_local:
+                        conn_local.close()
+                except Exception:
+                    pass
+
+        if padrao is not None or erro_transitorio_leitura_banco(erro):
+            return copiar_valor_padrao(padrao)
+        raise
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
 
 
 def garantir_schema_sqlite_local_minima(force=False):
@@ -6006,16 +6087,22 @@ def empresa_snapshot_padrao():
     }
 
 def obter_configuracao_empresa():
-    conn = conectar()
-    c = conn.cursor()
-    c.execute("SELECT * FROM configuracao_empresa WHERE id=1")
-    item = c.fetchone()
-    conn.close()
+    def carregar(conn):
+        c = conn.cursor()
+        c.execute("SELECT * FROM configuracao_empresa WHERE id=1")
+        item = c.fetchone()
+        return dict(item) if item else None
+
+    item = executar_leitura_resiliente(
+        carregar,
+        descricao="CONFIG EMPRESA",
+        padrao=None,
+    )
 
     dados = empresa_snapshot_padrao()
 
     if item:
-        dados.update(dict(item))
+        dados.update(item)
 
     dados["versao_sistema"] = normalizar_versao_sistema(dados.get("versao_sistema"))
     dados["versao_sistema_label"] = formatar_versao_sistema(dados.get("versao_sistema"))
@@ -6059,9 +6146,59 @@ def limpar_cache_clima():
     CLIMA_CACHE["testado_em"] = 0.0
     CLIMA_CACHE["resultado"] = None
 
+
+def normalizar_url_clima_api(url):
+    url = normalizar_texto_campo(url) or "https://api.open-meteo.com/v1/forecast"
+    try:
+        partes = urlparse(url)
+    except Exception:
+        return url
+
+    if "open-meteo.com" not in normalizar_texto_comparacao(partes.netloc):
+        return url
+
+    caminho = partes.path or "/v1/forecast"
+    params = parse_qs(partes.query or "", keep_blank_values=True)
+
+    params["latitude"] = ["{latitude}"]
+    params["longitude"] = ["{longitude}"]
+    params["timezone"] = ["{timezone}"]
+
+    current_vals = [valor for valor in params.get("current", []) if valor]
+    if current_vals:
+        current_itens = []
+        for valor in current_vals:
+            current_itens.extend([item.strip() for item in str(valor).split(",") if item.strip()])
+    else:
+        current_itens = []
+
+    for item in ("temperature_2m", "weather_code"):
+        if item not in current_itens:
+            current_itens.append(item)
+
+    params["current"] = [",".join(current_itens)]
+    params.pop("current_weather", None)
+
+    query = urlencode(params, doseq=True)
+    query = (
+        query
+        .replace("%7Blatitude%7D", "{latitude}")
+        .replace("%7Blongitude%7D", "{longitude}")
+        .replace("%7Btimezone%7D", "{timezone}")
+    )
+    return urlunparse((
+        partes.scheme or "https",
+        partes.netloc or "api.open-meteo.com",
+        caminho,
+        "",
+        query,
+        "",
+    ))
+
+
 def salvar_configuracao_clima_form(form):
     clima_ativo = 1 if form.get("clima_ativo") else 0
-    clima_api_url = normalizar_texto_campo(form.get("clima_api_url")) or "https://api.open-meteo.com/v1/forecast"
+    clima_api_url = normalizar_url_clima_api(form.get("clima_api_url"))
     clima_local_label = normalizar_texto_campo(form.get("clima_local_label")) or "Cachoeirinha / RS"
     clima_timezone = normalizar_texto_campo(form.get("clima_timezone")) or "America/Sao_Paulo"
     clima_timeout_segundos = max(3, min(20, converter_inteiro(form.get("clima_timeout_segundos"), 8)))
@@ -10649,7 +10786,7 @@ def api_clima():
             "User-Agent": "WagenEstetica/1.0",
             "Accept": "application/json",
         }
-        clima_api_url = normalizar_texto_campo(configuracao.get("clima_api_url")) or "https://api.open-meteo.com/v1/forecast"
+        clima_api_url = normalizar_url_clima_api(configuracao.get("clima_api_url"))
         clima_latitude = configuracao.get("clima_latitude")
         clima_longitude = configuracao.get("clima_longitude")
         clima_timezone = quote(
@@ -10902,6 +11039,265 @@ def montar_resultado_hud_basico(sync_token="init-pendente"):
     }
 
 
+def montar_resultado_hud_dinamico(usuario_cache, agora_cache_ts):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
+    hoje = agora.strftime("%d/%m/%Y")
+
+    def carregar_hud(conn):
+        c = conn.cursor()
+
+        c.execute("""
+            SELECT SUM(valor) FROM servicos
+            WHERE status='FINALIZADO' AND entrega LIKE ?
+        """, (hoje + "%",))
+        total = c.fetchone()[0] or 0
+
+        c.execute(
+            "SELECT COUNT(*) FROM servicos WHERE COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'"
+        )
+        andamento = c.fetchone()[0]
+
+        c.execute("""
+            SELECT COUNT(*) FROM servicos
+            WHERE status='FINALIZADO' AND entrega LIKE ?
+        """, (hoje + "%",))
+        quantidade = c.fetchone()[0]
+        ticket = total / quantidade if quantidade > 0 else 0
+
+        c.execute(
+            "SELECT entrada FROM servicos WHERE COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'"
+        )
+        servicos = c.fetchall()
+        atrasados = 0
+        for s in servicos:
+            try:
+                entrada = interpretar_datahora_sistema(s["entrada"])
+                diff = (agora - entrada).total_seconds() if entrada else 0
+                if diff > 7200:
+                    atrasados += 1
+            except Exception:
+                pass
+
+        c.execute("""
+            SELECT
+                servicos.entrada,
+                servicos.entrega_prevista,
+                tipos_servico.nome AS tipo_nome,
+                veiculos.placa,
+                veiculos.modelo,
+                clientes.nome AS cliente_nome
+            FROM servicos
+            LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
+            LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
+            LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
+            WHERE COALESCE(TRIM(UPPER(servicos.status)), '')='EM ANDAMENTO'
+        """)
+        entregas_raw = [dict(row) for row in c.fetchall()]
+
+        totais = {}
+        for tabela in ("servicos", "veiculos", "clientes", "notificacoes", "auditoria", "usuarios"):
+            c.execute(f"""
+                SELECT
+                    COALESCE(COUNT(*), 0) AS total,
+                    COALESCE(MAX(id), 0) AS ultimo_id
+                FROM {tabela}
+            """)
+            totais[tabela] = c.fetchone() or (0, 0)
+
+        return {
+            "total": total,
+            "andamento": andamento,
+            "quantidade": quantidade,
+            "ticket": ticket,
+            "atrasados": atrasados,
+            "resumo_entregas": resumir_entregas_em_andamento(entregas_raw, referencia=agora),
+            "servicos_total": totais["servicos"][0],
+            "servicos_ultimo_id": totais["servicos"][1],
+            "veiculos_total": totais["veiculos"][0],
+            "veiculos_ultimo_id": totais["veiculos"][1],
+            "clientes_total": totais["clientes"][0],
+            "clientes_ultimo_id": totais["clientes"][1],
+            "notificacoes_total": totais["notificacoes"][0],
+            "notificacoes_ultimo_id": totais["notificacoes"][1],
+            "auditoria_total": totais["auditoria"][0],
+            "auditoria_ultimo_id": totais["auditoria"][1],
+            "usuarios_total": totais["usuarios"][0],
+            "usuarios_ultimo_id": totais["usuarios"][1],
+        }
+
+    leitura_hud = executar_leitura_resiliente(
+        carregar_hud,
+        descricao="HUD",
+        padrao=None,
+    )
+    if not leitura_hud:
+        resultado = dict(
+            HUD_CACHE.get("resultado")
+            or montar_resultado_hud_basico(sync_token=gerar_sync_token_leve())
+        )
+        HUD_CACHE["testado_em"] = agora_cache_ts
+        HUD_CACHE["usuario"] = usuario_cache
+        HUD_CACHE["resultado"] = dict(resultado)
+        return resultado
+
+    total = leitura_hud["total"]
+    andamento = leitura_hud["andamento"]
+    ticket = leitura_hud["ticket"]
+    atrasados = leitura_hud["atrasados"]
+    resumo_entregas = leitura_hud["resumo_entregas"]
+    servicos_total = leitura_hud["servicos_total"]
+    servicos_ultimo_id = leitura_hud["servicos_ultimo_id"]
+    veiculos_total = leitura_hud["veiculos_total"]
+    veiculos_ultimo_id = leitura_hud["veiculos_ultimo_id"]
+    clientes_total = leitura_hud["clientes_total"]
+    clientes_ultimo_id = leitura_hud["clientes_ultimo_id"]
+    notificacoes_total = leitura_hud["notificacoes_total"]
+    notificacoes_ultimo_id = leitura_hud["notificacoes_ultimo_id"]
+    auditoria_total = leitura_hud["auditoria_total"]
+    auditoria_ultimo_id = leitura_hud["auditoria_ultimo_id"]
+    usuarios_total = leitura_hud["usuarios_total"]
+    usuarios_ultimo_id = leitura_hud["usuarios_ultimo_id"]
+
+    itens_retornos = []
+    retornos_acao_agora = 0
+    retornos_reagendados_vencidos = 0
+    retornos_contatados_hoje = 0
+
+    try:
+        itens_retornos = montar_itens_retornos_comerciais()
+        hoje_data = agora.date()
+        retornos_acao_agora = sum(
+            1 for item in itens_retornos if item.get("mostrar_na_agenda")
+        )
+        retornos_reagendados_vencidos = sum(
+            1 for item in itens_retornos if item.get("reagendamento_vencido")
+        )
+        retornos_contatados_hoje = sum(
+            1
+            for item in itens_retornos
+            if (
+                item.get("status_retorno") == "contatado"
+                and interpretar_datahora_sistema(item.get("ultimo_contato_em"))
+                and interpretar_datahora_sistema(item.get("ultimo_contato_em")).date() == hoje_data
+            )
+        )
+    except Exception as erro:
+        print("ERRO HUD RETORNOS:", erro)
+
+    if retornos_acao_agora > 0:
+        mensagem_retornos_hud = (
+            f"Painel retornos requer atencao: {retornos_acao_agora} cliente(s)"
+        )
+        if retornos_reagendados_vencidos > 0:
+            mensagem_retornos_hud += (
+                f" | {retornos_reagendados_vencidos} reagendado(s) vencido(s)"
+            )
+    elif retornos_contatados_hoje > 0:
+        mensagem_retornos_hud = (
+            f"Painel retornos em dia | {retornos_contatados_hoje} contato(s) hoje"
+        )
+    else:
+        mensagem_retornos_hud = "Painel retornos em dia"
+
+    token_bruto = "|".join(
+        str(v)
+        for v in (
+            servicos_total,
+            servicos_ultimo_id,
+            veiculos_total,
+            veiculos_ultimo_id,
+            clientes_total,
+            clientes_ultimo_id,
+            notificacoes_total,
+            notificacoes_ultimo_id,
+            auditoria_total,
+            auditoria_ultimo_id,
+            usuarios_total,
+            usuarios_ultimo_id,
+        )
+    )
+    sync_token = hashlib.sha1(token_bruto.encode("utf-8")).hexdigest()
+
+    entrega_mensagem = "Entrega combinada em dia"
+    if resumo_entregas["total"] > 0:
+        if resumo_entregas["vencidas"] > 0:
+            entrega_mensagem = (
+                f"Entrega combinada: {resumo_entregas['vencidas']} vencida(s)"
+            )
+            if resumo_entregas["proxima"]:
+                entrega_mensagem += (
+                    f" | proxima em {formatar_duracao_segundos(resumo_entregas['proxima']['segundos'])}"
+                )
+        elif resumo_entregas["proxima"]:
+            entrega_mensagem = (
+                "Entrega combinada: proxima em "
+                f"{formatar_duracao_segundos(resumo_entregas['proxima']['segundos'])}"
+            )
+            if resumo_entregas["proxima"]["placa"]:
+                entrega_mensagem += f" ({resumo_entregas['proxima']['placa']})"
+        elif resumo_entregas["sem_horario"] > 0:
+            entrega_mensagem = (
+                f"Entrega combinada: {resumo_entregas['sem_horario']} sem horario"
+            )
+        else:
+            entrega_mensagem = (
+                f"Entrega combinada: {resumo_entregas['com_horario']} agendada(s)"
+            )
+
+    status_banco = obter_status_banco_online()
+    banco_online_ativo = bool(status_banco.get("conectado"))
+    banco_online_backend = status_banco.get("backend_label") or "Supabase / PostgreSQL"
+    banco_online_resumo = (
+        "Banco online ativo"
+        if banco_online_ativo
+        else "Banco online indisponivel"
+    )
+    banco_online_mensagem = (
+        f"Banco online ativo e gravando em tempo real ({banco_online_backend})"
+        if banco_online_ativo
+        else (status_banco.get("mensagem") or "Banco online indisponivel")
+    )
+
+    resultado = {
+        "total": round(total, 2),
+        "andamento": andamento,
+        "atrasados": atrasados,
+        "ticket": round(ticket, 2),
+        "entregas_ativas": resumo_entregas["total"],
+        "entregas_com_horario": resumo_entregas["com_horario"],
+        "entregas_sem_horario": resumo_entregas["sem_horario"],
+        "entregas_vencidas": resumo_entregas["vencidas"],
+        "entrega_proxima_em_minutos": resumo_entregas["proxima"]["minutos"] if resumo_entregas["proxima"] else None,
+        "entrega_proxima_placa": resumo_entregas["proxima"]["placa"] if resumo_entregas["proxima"] else "",
+        "entrega_proxima_hora": resumo_entregas["proxima"]["entrega_prevista"].strftime("%H:%M") if resumo_entregas["proxima"] else "",
+        "entrega_mensagem": entrega_mensagem,
+        "retornos_acao_agora": retornos_acao_agora,
+        "retornos_reagendados_vencidos": retornos_reagendados_vencidos,
+        "retornos_contatados_hoje": retornos_contatados_hoje,
+        "retornos_mensagem": mensagem_retornos_hud,
+        "banco_online_ativo": banco_online_ativo,
+        "banco_online_resumo": banco_online_resumo,
+        "banco_online_mensagem": banco_online_mensagem,
+        "banco_online_backend_label": banco_online_backend,
+        "versao": obter_versao_sistema(),
+        "usuario": session.get("usuario") or "",
+        "usuario_nome": session.get("usuario_nome") or session.get("usuario") or "",
+        "usuario_iniciais": session.get("usuario_iniciais") or obter_iniciais_usuario(
+            session.get("usuario_nome"),
+            session.get("usuario"),
+        ),
+        "usuario_foto_url": session.get("usuario_foto_url") or "",
+        "sync_token": sync_token,
+    }
+    HUD_CACHE["testado_em"] = agora_cache_ts
+    HUD_CACHE["usuario"] = usuario_cache
+    HUD_CACHE["resultado"] = dict(resultado)
+    return resultado
+
+
 def gerar_sync_token_leve():
     usuario_cache = str(session.get("usuario") or "")
     cache = HUD_CACHE.get("resultado") or {}
@@ -10971,6 +11367,8 @@ def api_hud():
         HUD_CACHE["usuario"] = usuario_cache
         HUD_CACHE["resultado"] = dict(resultado)
         return resultado
+
+    return montar_resultado_hud_dinamico(usuario_cache, agora_cache_ts)
 
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -11227,6 +11625,41 @@ def status_sync():
     if not session.get("usuario"):
         return jsonify({"status": "erro"})
 
+    def carregar(conn):
+        c = conn.cursor()
+        c.execute("""
+            SELECT id, ultima_mensagem, ultimo_status
+            FROM sincronizacoes_clientes
+            ORDER BY id DESC
+            LIMIT 1
+        """)
+        row = c.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "ultima_mensagem": row["ultima_mensagem"],
+            "ultimo_status": row["ultimo_status"],
+        }
+
+    row = executar_leitura_resiliente(
+        carregar,
+        descricao="STATUS SYNC",
+        padrao={
+            "id": 0,
+            "ultima_mensagem": "Sincronizacao em processamento.",
+            "ultimo_status": "indisponivel",
+        },
+    )
+    if not row:
+        return jsonify({"status": "vazio"})
+
+    return jsonify({
+        "status": row.get("ultimo_status") or "vazio",
+        "mensagem": row.get("ultima_mensagem") or "",
+        "id": row["id"],
+    })
+
     conn = conectar_somente_leitura()
     c = conn.cursor()
 
@@ -11270,6 +11703,9 @@ def editar_servico_inline(id):
 
 @app.route("/excluir_servico/<int:id>", methods=["POST"])
 def excluir_servico(id):
+    if not session.get("usuario"):
+        return redirect("/login")
+
     conn = conectar()
     c = conn.cursor()
 
@@ -11277,11 +11713,16 @@ def excluir_servico(id):
     conn.commit()
     conn.close()
 
-    return jsonify({"status": "ok"})
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify({"status": "ok"})
+    return redirect("/cadastrar_servico")
 
 
 @app.route("/editar_servico/<int:id>", methods=["GET", "POST"])
 def editar_servico(id):
+    if not session.get("usuario"):
+        return redirect("/login")
+
     conn = conectar()
     c = conn.cursor()
 
@@ -11293,7 +11734,7 @@ def editar_servico(id):
         conn.commit()
         conn.close()
 
-        return redirect("/cadastro_servico")
+        return redirect("/cadastrar_servico")
 
     c.execute("SELECT * FROM tipos_servico WHERE id=?", (id,))
     servico = c.fetchone()
@@ -11393,24 +11834,29 @@ def criar_admin():
         print("ATENCAO: senha antiga/padrao do administrador detectada. Troca obrigatoria ativada.")
 
 def carregar_usuarios_configuracao():
-    conn = conectar()
-    c = conn.cursor()
-    c.execute("""
-        SELECT id, usuario, nome, perfil, ativo, criado_em,
-               tentativas_login, bloqueado_ate, ultimo_login_em,
-               senha_alteracao_obrigatoria, foto_perfil
-        FROM usuarios
-        ORDER BY
-            CASE
-                WHEN LOWER(COALESCE(perfil, ''))='desenvolvedor' THEN 0
-                WHEN LOWER(COALESCE(perfil, ''))='admin' THEN 1
-                ELSE 2
-            END,
-            LOWER(COALESCE(nome, usuario, '')),
-            LOWER(COALESCE(usuario, nome, ''))
-    """)
-    usuarios = [dict(row) for row in c.fetchall()]
-    conn.close()
+    def carregar(conn):
+        c = conn.cursor()
+        c.execute("""
+            SELECT id, usuario, nome, perfil, ativo, criado_em,
+                   tentativas_login, bloqueado_ate, ultimo_login_em,
+                   senha_alteracao_obrigatoria, foto_perfil
+            FROM usuarios
+            ORDER BY
+                CASE
+                    WHEN LOWER(COALESCE(perfil, ''))='desenvolvedor' THEN 0
+                    WHEN LOWER(COALESCE(perfil, ''))='admin' THEN 1
+                    ELSE 2
+                END,
+                LOWER(COALESCE(nome, usuario, '')),
+                LOWER(COALESCE(usuario, nome, ''))
+        """)
+        return [dict(row) for row in c.fetchall()]
+
+    usuarios = executar_leitura_resiliente(
+        carregar,
+        descricao="USUARIOS CONFIG",
+        padrao=[],
+    )
 
     for item in usuarios:
         item["nome"] = item.get("nome") or item.get("usuario")
@@ -11534,15 +11980,71 @@ def configuracoes():
     )
     pode_gerenciar_usuarios = usuario_gerencia_acessos() and not senha_pendente
     pode_gerenciar_base = usuario_desenvolvedor() and not senha_pendente
-    usuarios = carregar_usuarios_configuracao() if pode_gerenciar_usuarios else []
-    configuracao_empresa = obter_configuracao_empresa() if pode_gerenciar_base else {}
-    banco_status = obter_status_banco_online() if pode_gerenciar_base else {}
-    banco_config = obter_configuracao_banco_form() if pode_gerenciar_base else {}
-    backup_status = obter_status_backup_banco() if pode_gerenciar_base else {}
-    backup_config = obter_configuracao_backup() if pode_gerenciar_base else {}
-    arquivos_status = obter_status_arquivos() if pode_gerenciar_base else {}
-    backups_disponiveis = listar_arquivos_backup_banco() if pode_gerenciar_base else []
-    pastas_sync_sugeridas = listar_pastas_sincronizadas_sugeridas() if pode_gerenciar_base else []
+    usuarios = []
+    configuracao_empresa = {}
+    banco_status = {}
+    banco_config = {}
+    backup_status = {}
+    backup_config = {}
+    arquivos_status = {}
+    backups_disponiveis = []
+    pastas_sync_sugeridas = []
+
+    if pode_gerenciar_usuarios:
+        try:
+            usuarios = carregar_usuarios_configuracao()
+        except Exception as erro:
+            print("ERRO CONFIG USUARIOS:", erro)
+            usuarios = []
+
+    if pode_gerenciar_base:
+        try:
+            configuracao_empresa = obter_configuracao_empresa()
+        except Exception as erro:
+            print("ERRO CONFIG EMPRESA:", erro)
+            configuracao_empresa = empresa_snapshot_padrao()
+
+        try:
+            banco_status = obter_status_banco_online()
+        except Exception as erro:
+            print("ERRO CONFIG BANCO STATUS:", erro)
+            banco_status = {}
+
+        try:
+            banco_config = obter_configuracao_banco_form()
+        except Exception as erro:
+            print("ERRO CONFIG BANCO FORM:", erro)
+            banco_config = {}
+
+        try:
+            backup_config = obter_configuracao_backup()
+        except Exception as erro:
+            print("ERRO CONFIG BACKUP:", erro)
+            backup_config = configuracao_backup_padrao()
+
+        try:
+            backup_status = obter_status_backup_banco()
+        except Exception as erro:
+            print("ERRO CONFIG BACKUP STATUS:", erro)
+            backup_status = {}
+
+        try:
+            arquivos_status = obter_status_arquivos()
+        except Exception as erro:
+            print("ERRO CONFIG ARQUIVOS:", erro)
+            arquivos_status = {}
+
+        try:
+            backups_disponiveis = listar_arquivos_backup_banco()
+        except Exception as erro:
+            print("ERRO CONFIG LISTA BACKUPS:", erro)
+            backups_disponiveis = []
+
+        try:
+            pastas_sync_sugeridas = listar_pastas_sincronizadas_sugeridas()
+        except Exception as erro:
+            print("ERRO CONFIG PASTAS SYNC:", erro)
+            pastas_sync_sugeridas = []
 
     return render_template(
         "configuracoes.html",
