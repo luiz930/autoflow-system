@@ -2810,6 +2810,8 @@ backup_lock = Lock()
 backup_worker_iniciado = False
 maintenance_lock = Lock()
 maintenance_worker_iniciado = False
+init_db_lock = Lock()
+INIT_DB_EXECUTADO = False
 HUD_CACHE = {
     "testado_em": 0.0,
     "usuario": "",
@@ -3102,6 +3104,24 @@ def garantir_schema_banco_online(force=False):
         SCHEMA_BANCO_ONLINE_GARANTIDO = False
         print("AVISO: nao foi possivel garantir o schema online:", e)
         return False
+
+
+def garantir_init_db(force=False):
+    global INIT_DB_EXECUTADO
+    global SCHEMA_BANCO_ONLINE_GARANTIDO
+
+    if INIT_DB_EXECUTADO and not force:
+        return True
+
+    with init_db_lock:
+        if INIT_DB_EXECUTADO and not force:
+            return True
+
+        init_db()
+        INIT_DB_EXECUTADO = True
+        if modo_banco_preferido() == "postgres" and banco_online_ativo():
+            SCHEMA_BANCO_ONLINE_GARANTIDO = True
+        return True
 
 
 def desmontar_url_postgres(url):
@@ -4184,44 +4204,48 @@ def atualizar_banco():
         SET senha_atualizada_em=COALESCE(senha_atualizada_em, criado_em, ?)
     """, (agora().isoformat(timespec="seconds"),))
 
-    try:
-        c.execute("""
-            SELECT id, caminho, arquivo_blob, mime_type, arquivo_nome
-            FROM fotos
-            WHERE caminho IS NOT NULL AND TRIM(caminho) <> ''
-        """)
-        for foto in c.fetchall():
-            caminho_abs = caminho_absoluto_foto_servico(foto["caminho"])
-            if not caminho_abs or not os.path.isfile(caminho_abs):
-                continue
-
-            blob_atual = foto["arquivo_blob"]
-            mime_atual = str(foto["mime_type"] or "").strip()
-            nome_atual = str(foto["arquivo_nome"] or "").strip()
-            if blob_atual and mime_atual and nome_atual:
-                continue
-
-            try:
-                blob = blob_atual or ler_bytes_arquivo(caminho_abs)
-                mime_type = mime_atual or detectar_mime_type_arquivo(caminho_abs)
-                arquivo_nome = nome_atual or os.path.basename(caminho_abs)
-                c.execute(
-                    """
-                    UPDATE fotos
-                    SET arquivo_blob=?,
-                        mime_type=?,
-                        arquivo_nome=?
-                    WHERE id=?
-                    """,
-                    (blob, mime_type, arquivo_nome, foto["id"]),
-                )
-            except Exception:
-                continue
-    except Exception:
+    # O backfill de blobs antigos pode consumir muita memoria/tempo em hospedagem.
+    # Novos uploads ja salvam os bytes no banco; os antigos so entram nesse fluxo
+    # quando o ambiente explicitamente permitir.
+    if bool_config_ativo(os.environ.get("BACKFILL_FOTOS_NO_BOOT", "")):
         try:
-            conn.rollback()
+            c.execute("""
+                SELECT id, caminho, arquivo_blob, mime_type, arquivo_nome
+                FROM fotos
+                WHERE caminho IS NOT NULL AND TRIM(caminho) <> ''
+            """)
+            for foto in c.fetchall():
+                caminho_abs = caminho_absoluto_foto_servico(foto["caminho"])
+                if not caminho_abs or not os.path.isfile(caminho_abs):
+                    continue
+
+                blob_atual = foto["arquivo_blob"]
+                mime_atual = str(foto["mime_type"] or "").strip()
+                nome_atual = str(foto["arquivo_nome"] or "").strip()
+                if blob_atual and mime_atual and nome_atual:
+                    continue
+
+                try:
+                    blob = blob_atual or ler_bytes_arquivo(caminho_abs)
+                    mime_type = mime_atual or detectar_mime_type_arquivo(caminho_abs)
+                    arquivo_nome = nome_atual or os.path.basename(caminho_abs)
+                    c.execute(
+                        """
+                        UPDATE fotos
+                        SET arquivo_blob=?,
+                            mime_type=?,
+                            arquivo_nome=?
+                        WHERE id=?
+                        """,
+                        (blob, mime_type, arquivo_nome, foto["id"]),
+                    )
+                except Exception:
+                    continue
         except Exception:
-            pass
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
     c.execute("""
         UPDATE clientes
@@ -4495,6 +4519,8 @@ def init_db():
             )
     criar_todas_tabelas()
     atualizar_banco()
+    criar_itens_checklist_padrao()
+    criar_admin()
 
 def criar_todas_tabelas():
     conn = conectar()
@@ -4961,6 +4987,17 @@ def criar_todas_tabelas():
     # nao reverta toda a inicializacao do schema.
     conn.commit()
 
+    criar_indices_no_boot = (
+        getattr(conn, "backend", "") != "postgres"
+        or bool_config_ativo(os.environ.get("CRIAR_INDICES_NO_BOOT", ""))
+    )
+
+    if not criar_indices_no_boot:
+        garantir_atualizado_em_sync(c)
+        conn.commit()
+        conn.close()
+        return
+
     def criar_indice_seguro(sql_indice):
         try:
             if getattr(conn, "backend", "") == "postgres":
@@ -5011,9 +5048,6 @@ def criar_todas_tabelas():
 
     conn.commit()
     conn.close()
-
-
-init_db()
 
 def agora_iso():
     return agora().isoformat(timespec="seconds")
@@ -6730,8 +6764,6 @@ def listar_itens_checklist(apenas_ativos=False):
     itens = [dict(item) for item in c.fetchall()]
     conn.close()
     return itens
-
-criar_itens_checklist_padrao()
 
 def normalizar_texto_campo(valor):
     return str(valor or "").strip()
@@ -9623,11 +9655,12 @@ def preparar_sincronizacoes():
     if request.endpoint == "static":
         return
 
+    garantir_init_db()
     iniciar_worker_backup_banco()
     iniciar_worker_manutencao_arquivos()
     iniciar_worker_sincronizacao()
     iniciar_worker_sincronizacao_bancos()
-    if not SCHEMA_BANCO_ONLINE_GARANTIDO:
+    if modo_banco_preferido() == "postgres" and not SCHEMA_BANCO_ONLINE_GARANTIDO:
         garantir_schema_banco_online()
 
     global ULTIMO_SYNC_FONTES_SOB_DEMANDA_TS
@@ -10785,8 +10818,6 @@ def carregar_usuarios_configuracao():
         item["bloqueado_restante"] = formatar_tempo_restante(item.get("bloqueado_ate")) if bloqueado_ate else ""
 
     return usuarios
-
-criar_admin()
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -13766,4 +13797,5 @@ def clientes():
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    garantir_init_db()
+    app.run(host="0.0.0.0", port=port, debug=False)
