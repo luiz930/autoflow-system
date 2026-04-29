@@ -6261,7 +6261,7 @@ def normalizar_url_clima_api(url):
 
 def salvar_configuracao_clima_form(form):
     clima_ativo = 1 if form.get("clima_ativo") else 0
-    clima_api_url = normalizar_url_clima_api(form.get("clima_api_url"))
+    clima_api_url = normalizar_texto_campo(form.get("clima_api_url")) or "https://api.open-meteo.com/v1/forecast"
     clima_local_label = normalizar_texto_campo(form.get("clima_local_label")) or "Cachoeirinha / RS"
     clima_timezone = normalizar_texto_campo(form.get("clima_timezone")) or "America/Sao_Paulo"
     clima_timeout_segundos = max(3, min(20, converter_inteiro(form.get("clima_timeout_segundos"), 8)))

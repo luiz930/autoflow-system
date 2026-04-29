@@ -150,15 +150,20 @@
             >
         </div>
 
-        <input
-            name="clima_api_url"
-            type="text"
-            value="{{ configuracao_empresa.clima_api_url }}"
-            placeholder="URL da API do clima"
-            autocomplete="off"
-        >
+        <div class="password-toggle-row connection-toggle-row">
+            <input
+                name="clima_api_url"
+                type="text"
+                value="{{ configuracao_empresa.clima_api_url }}"
+                placeholder="URL da API do clima"
+                autocomplete="off"
+                readonly
+                data-clima-api-url-input
+            >
+            <button type="button" class="password-toggle-button" data-toggle-clima-api-url>Editar link</button>
+        </div>
 
-        <p class="muted-text">Se mantiver a URL padrao, o sistema usa o Open-Meteo. Se colar uma URL completa, ela sera consultada diretamente. Voce pode usar os placeholders <code>{latitude}</code>, <code>{longitude}</code> e <code>{timezone}</code>.</p>
+        <p class="muted-text">O link fica travado por seguranca. Clique em <strong>Editar link</strong> para alterar. O sistema salva exatamente a URL informada e so adapta a consulta internamente na hora de chamar o Open-Meteo. Voce pode usar os placeholders <code>{latitude}</code>, <code>{longitude}</code> e <code>{timezone}</code>.</p>
 
         <div class="actions-row actions-row--left">
             <button type="submit">Salvar clima</button>
@@ -638,6 +643,8 @@ if (backupDestinoSelector) {
 
 const databaseUrlInput = document.querySelector("[data-database-url-input]");
 const databaseUrlToggle = document.querySelector("[data-toggle-database-url]");
+const climaApiUrlInput = document.querySelector("[data-clima-api-url-input]");
+const climaApiUrlToggle = document.querySelector("[data-toggle-clima-api-url]");
 const backupDriveFolderInput = document.querySelector("[data-backup-drive-folder-id-input]");
 const backupDriveFolderToggle = document.querySelector("[data-toggle-backup-drive-folder-id]");
 
@@ -652,6 +659,21 @@ if (databaseUrlInput && databaseUrlToggle) {
         } else {
             databaseUrlInput.setAttribute("readonly", "readonly");
             databaseUrlToggle.textContent = "Editar conexão";
+        }
+    });
+}
+
+if (climaApiUrlInput && climaApiUrlToggle) {
+    climaApiUrlToggle.addEventListener("click", () => {
+        const bloqueado = climaApiUrlInput.hasAttribute("readonly");
+        if (bloqueado) {
+            climaApiUrlInput.removeAttribute("readonly");
+            climaApiUrlToggle.textContent = "Travar link";
+            climaApiUrlInput.focus();
+            climaApiUrlInput.select();
+        } else {
+            climaApiUrlInput.setAttribute("readonly", "readonly");
+            climaApiUrlToggle.textContent = "Editar link";
         }
     });
 }
