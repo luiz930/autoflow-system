@@ -2916,7 +2916,7 @@ HUD_CACHE = {
     "usuario": "",
     "resultado": None,
 }
-HUD_CACHE_TTL = 10
+HUD_CACHE_TTL = 20
 NOTIFICACOES_CACHE = {
     "testado_em": 0.0,
     "usuario": "",
@@ -2934,7 +2934,7 @@ VOZ_CACHE = {
     "usuario": "",
     "resultado": None,
 }
-VOZ_CACHE_TTL = 20
+VOZ_CACHE_TTL = 30
 CLIMA_CACHE = {
     "testado_em": 0.0,
     "resultado": None,
@@ -6470,6 +6470,285 @@ def normalizar_url_clima_api(url):
         query,
         "",
     ))
+
+
+def obter_valor_json_caminho(payload, caminho):
+    atual = payload
+
+    for parte in caminho:
+        if isinstance(parte, int):
+            if not isinstance(atual, list) or parte >= len(atual):
+                return None
+            atual = atual[parte]
+            continue
+
+        if not isinstance(atual, dict):
+            return None
+        atual = atual.get(parte)
+
+    return atual
+
+
+def converter_temperatura_clima(valor):
+    if valor is None or valor == "":
+        return None
+
+    try:
+        return round(float(str(valor).replace(",", ".")), 1)
+    except Exception:
+        return None
+
+
+def extrair_temperatura_clima(payload):
+    caminhos = [
+        ("current", "temperature_2m"),
+        ("current", "temperature"),
+        ("current", "temp_c"),
+        ("current", "temp"),
+        ("current_weather", "temperature"),
+        ("main", "temp"),
+        ("temperature",),
+        ("temp",),
+        ("data", "temperature"),
+        ("data", "temp"),
+        ("currently", "temperature"),
+        ("current_observation", "temp_c"),
+    ]
+
+    for caminho in caminhos:
+        temperatura = converter_temperatura_clima(obter_valor_json_caminho(payload, caminho))
+        if temperatura is not None:
+            return temperatura
+
+    hourly = payload.get("hourly") if isinstance(payload, dict) else {}
+    if isinstance(hourly, dict):
+        for chave in ("temperature_2m", "temperature", "temp"):
+            valores = hourly.get(chave)
+            if isinstance(valores, list) and valores:
+                temperatura = converter_temperatura_clima(valores[0])
+                if temperatura is not None:
+                    return temperatura
+
+    return None
+
+
+def extrair_codigo_clima(payload):
+    caminhos = [
+        ("current", "weather_code"),
+        ("current_weather", "weathercode"),
+        ("current", "weathercode"),
+        ("weather_code",),
+        ("weathercode",),
+        ("data", "weather_code"),
+        ("weather", 0, "id"),
+        ("current", "condition", "code"),
+    ]
+
+    for caminho in caminhos:
+        valor = obter_valor_json_caminho(payload, caminho)
+        try:
+            if valor is not None and valor != "":
+                return int(float(valor))
+        except Exception:
+            continue
+
+    hourly = payload.get("hourly") if isinstance(payload, dict) else {}
+    if isinstance(hourly, dict):
+        for chave in ("weather_code", "weathercode"):
+            valores = hourly.get(chave)
+            if isinstance(valores, list) and valores:
+                try:
+                    return int(float(valores[0]))
+                except Exception:
+                    pass
+
+    return None
+
+
+def extrair_texto_clima(payload):
+    caminhos = [
+        ("current", "condition", "text"),
+        ("current", "weather", "description"),
+        ("weather", 0, "main"),
+        ("weather", 0, "description"),
+        ("current", "summary"),
+        ("current_weather", "summary"),
+        ("description",),
+        ("summary",),
+        ("condition",),
+        ("data", "condition"),
+        ("data", "summary"),
+    ]
+
+    for caminho in caminhos:
+        valor = normalizar_texto_campo(obter_valor_json_caminho(payload, caminho))
+        if valor:
+            return valor
+
+    return ""
+
+
+def montar_resultado_clima_normalizado(payload):
+    if not isinstance(payload, dict):
+        return None
+
+    temperatura = extrair_temperatura_clima(payload)
+    codigo = extrair_codigo_clima(payload)
+    texto = extrair_texto_clima(payload)
+    texto_cmp = normalizar_texto_comparacao(texto)
+
+    if temperatura is None and codigo is None and not texto:
+        return None
+
+    if any(termo in texto_cmp for termo in ("chuva", "rain", "storm", "drizzle", "shower", "trovo")) or (codigo is not None and codigo >= 61):
+        icone = "🌧️"
+        clima = texto or "Chuva"
+        sugestao = "💡 Lavagem interna"
+    elif any(termo in texto_cmp for termo in ("nublado", "cloud", "overcast", "encoberto")) or (codigo is not None and 4 <= codigo < 61):
+        icone = "☁️"
+        clima = texto or "Nublado"
+        sugestao = "💡 Lavagem simples"
+    elif any(termo in texto_cmp for termo in ("sol", "sun", "clear", "limpo", "ensolar")) or (codigo is not None and codigo <= 3):
+        icone = "☀️"
+        clima = texto or "Tempo limpo"
+        sugestao = "💡 Lavagem completa"
+    elif any(termo in texto_cmp for termo in ("fog", "mist", "nebl", "haze")):
+        icone = "🌫️"
+        clima = texto or "Neblina"
+        sugestao = "💡 Consulte a previsao completa."
+    else:
+        icone = "⛅"
+        clima = texto or "Clima carregado"
+        sugestao = "💡 Consulte a previsao completa."
+
+    return {
+        "clima": clima,
+        "temp": temperatura if temperatura is not None else "--",
+        "icone": icone,
+        "sugestao": sugestao,
+    }
+
+
+def obter_resultado_clima_api():
+    configuracao = obter_configuracao_empresa()
+    fallback = {
+        "clima": "Clima indisponivel",
+        "temp": "--",
+        "icone": "⚠️",
+        "sugestao": "💡 Consulte o radar do clima.",
+    }
+
+    if not configuracao.get("clima_ativo"):
+        return {
+            "clima": "Clima desativado",
+            "temp": "--",
+            "icone": "⏸️",
+            "sugestao": "💡 Ative o clima nas configuracoes.",
+        }
+
+    agora_ts = time.time()
+    cache = CLIMA_CACHE.get("resultado")
+    ultimo_teste = float(CLIMA_CACHE.get("testado_em") or 0.0)
+
+    if cache and agora_ts - ultimo_teste < CLIMA_CACHE_TTL:
+        return dict(cache)
+
+    try:
+        sessao_http = requests.Session()
+        sessao_http.trust_env = False
+        headers = {
+            "User-Agent": "WagenEstetica/1.0",
+            "Accept": "application/json",
+        }
+        clima_api_url = normalizar_url_clima_api(configuracao.get("clima_api_url"))
+        clima_latitude = configuracao.get("clima_latitude")
+        clima_longitude = configuracao.get("clima_longitude")
+        clima_timezone = quote(
+            normalizar_texto_campo(configuracao.get("clima_timezone")) or "America/Sao_Paulo",
+            safe="",
+        )
+        timeout_segundos = max(
+            3,
+            min(20, converter_inteiro(configuracao.get("clima_timeout_segundos"), 8)),
+        )
+        url_configurada = (
+            clima_api_url
+            .replace("{latitude}", str(clima_latitude))
+            .replace("{longitude}", str(clima_longitude))
+            .replace("{timezone}", clima_timezone)
+        )
+        urls = []
+        if url_configurada:
+            urls.append(url_configurada)
+
+        urls.extend(
+            [
+                (
+                    "https://api.open-meteo.com/v1/forecast"
+                    f"?latitude={clima_latitude}&longitude={clima_longitude}"
+                    "&current=temperature_2m,weather_code"
+                    "&hourly=temperature_2m"
+                    f"&timezone={clima_timezone}"
+                    "&forecast_days=1"
+                ),
+                (
+                    "https://api.open-meteo.com/v1/forecast"
+                    f"?latitude={clima_latitude}&longitude={clima_longitude}"
+                    "&current_weather=true"
+                    f"&timezone={clima_timezone}"
+                    "&forecast_days=1"
+                ),
+            ]
+        )
+        urls_unicas = []
+        vistos = set()
+        for item_url in urls:
+            texto_url = str(item_url or "").strip()
+            if not texto_url or texto_url in vistos:
+                continue
+            vistos.add(texto_url)
+            urls_unicas.append(texto_url)
+
+        resultado = None
+        for url in urls_unicas:
+            try:
+                resposta = sessao_http.get(url, timeout=timeout_segundos, headers=headers)
+            except Exception:
+                continue
+
+            if resposta.status_code != 200:
+                continue
+
+            corpo = (resposta.text or "").strip()
+            if not corpo:
+                continue
+
+            try:
+                payload = resposta.json()
+            except Exception:
+                continue
+
+            if not isinstance(payload, dict) or payload.get("error"):
+                continue
+
+            resultado = montar_resultado_clima_normalizado(payload)
+            if resultado:
+                break
+
+        if not resultado:
+            if cache:
+                return dict(cache)
+            return fallback
+
+        CLIMA_CACHE["testado_em"] = agora_ts
+        CLIMA_CACHE["resultado"] = dict(resultado)
+        return resultado
+
+    except Exception as e:
+        print("ERRO CLIMA:", e)
+        if cache:
+            return dict(cache)
+        return fallback
 
 
 def salvar_configuracao_clima_form(form):
@@ -11098,6 +11377,8 @@ def registrar_emissao_nota_fiscal(id):
 
 @app.route("/api/clima")
 def api_clima():
+    return obter_resultado_clima_api()
+
     configuracao = obter_configuracao_empresa()
     fallback = {
         "clima": "Clima indisponivel",
@@ -11739,8 +12020,7 @@ def api_sync_token():
         return jsonify({"erro": "nao autorizado"}), 401
     return jsonify({"sync_token": gerar_sync_token_leve()})
 
-@app.route("/api/hud")
-def api_hud():
+def obter_payload_hud():
     if not session.get("usuario"):
         return {"erro": "nao autorizado"}
 
@@ -11763,6 +12043,10 @@ def api_hud():
         return resultado
 
     return montar_resultado_hud_dinamico(usuario_cache, agora_cache_ts)
+
+@app.route("/api/hud")
+def api_hud():
+    return obter_payload_hud()
 
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -12014,10 +12298,9 @@ def api_hud():
     HUD_CACHE["resultado"] = dict(resultado)
     return resultado
 
-@app.route("/status_sync")
-def status_sync():
+def obter_payload_status_sync():
     if not session.get("usuario"):
-        return jsonify({"status": "erro"})
+        return {"status": "erro", "mensagem": "", "id": 0}
 
     def carregar(conn):
         c = conn.cursor()
@@ -12046,12 +12329,27 @@ def status_sync():
         },
     )
     if not row:
-        return jsonify({"status": "vazio"})
+        return {"status": "vazio", "mensagem": "", "id": 0}
 
-    return jsonify({
+    return {
         "status": row.get("ultimo_status") or "vazio",
         "mensagem": row.get("ultima_mensagem") or "",
         "id": row["id"],
+    }
+
+@app.route("/status_sync")
+def status_sync():
+    return jsonify(obter_payload_status_sync())
+
+@app.route("/api/home-snapshot")
+def api_home_snapshot():
+    if not session.get("usuario"):
+        return jsonify({"erro": "nao autorizado"}), 401
+
+    return jsonify({
+        "hud": obter_payload_hud(),
+        "clima": obter_resultado_clima_api(),
+        "sync": obter_payload_status_sync(),
     })
 
     conn = conectar_somente_leitura()
@@ -14984,30 +15282,35 @@ def listar_servicos_em_andamento_voz():
     ):
         return []
 
-    conn = conectar_somente_leitura()
-    c = conn.cursor()
-    c.execute(
-        """
-        SELECT
-            servicos.id,
-            servicos.entrada,
-            servicos.entrega_prevista,
-            servicos.valor_adicional,
-            tipos_servico.nome AS tipo_nome,
-            veiculos.placa,
-            veiculos.modelo,
-            veiculos.cor,
-            clientes.nome AS cliente_nome
-        FROM servicos
-        LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
-        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
-        LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
-        WHERE COALESCE(TRIM(UPPER(servicos.status)), '')='EM ANDAMENTO'
-        ORDER BY servicos.id DESC
-        """
-    )
-    servicos_db = c.fetchall()
-    conn.close()
+    def carregar(conn):
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT
+                servicos.id,
+                servicos.entrada,
+                servicos.entrega_prevista,
+                servicos.valor_adicional,
+                tipos_servico.nome AS tipo_nome,
+                veiculos.placa,
+                veiculos.modelo,
+                veiculos.cor,
+                clientes.nome AS cliente_nome
+            FROM servicos
+            LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
+            LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
+            LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
+            WHERE COALESCE(TRIM(UPPER(servicos.status)), '')='EM ANDAMENTO'
+            ORDER BY servicos.id DESC
+            """
+        )
+        return [dict(row) for row in c.fetchall()]
+
+    servicos_db = executar_leitura_resiliente(
+        carregar,
+        descricao="OPERACIONAL VOZ",
+        padrao=[],
+    ) or []
 
     agora_atual = datetime.now(ZoneInfo("America/Sao_Paulo"))
     servicos = []

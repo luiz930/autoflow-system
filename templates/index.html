@@ -1635,6 +1635,7 @@ let ultimoErro = "";
 const SYNC_STATUS_MS = 30000;
 
 async function verificarSync() {
+    return;
     if (document.hidden) {
         return;
     }
@@ -1668,8 +1669,7 @@ async function verificarSync() {
     }
 }
 
-setInterval(verificarSync, SYNC_STATUS_MS);
-setTimeout(verificarSync, 2500);
+// verificacao de sync integrada ao snapshot unico da home
 </script>
 
 <script>
@@ -2115,8 +2115,7 @@ garantirAgendaRetornoUI();
 
 <script>
 const APP_VERSION = "{{ app_version }}";
-const HUD_REFRESH_MS = 15000;
-const CLIMA_REFRESH_MS = 180000;
+const HOME_SNAPSHOT_REFRESH_MS = 20000;
 let climaTexto = "🌤️ Carregando...";
 let sugestaoTexto = "";
 
@@ -2155,7 +2154,6 @@ let hudAutoCollapseTimer = null;
 let ultimoSyncToken = "";
 let ultimoAvisoSyncToken = "";
 let hudExecutando = false;
-let climaExecutando = false;
 
 function obterIniciaisUsuario(nome) {
     const texto = String(nome || "").trim();
@@ -2327,6 +2325,41 @@ function montarTextoClimaHud() {
     return partes.join("\n") || "Clima indisponivel";
 }
 
+function aplicarEstadoClima(data) {
+    if (data && data.clima) {
+        const tempTexto = data.temp !== undefined && data.temp !== null && data.temp !== ""
+            ? ` (${data.temp}Â°C)`
+            : "";
+        climaTexto = `${data.icone || "â›…"} ${data.clima}${tempTexto}`;
+        sugestaoTexto = data.sugestao || "";
+        return;
+    }
+
+    climaTexto = "âš ï¸ Clima indisponÃ­vel";
+    sugestaoTexto = "ðŸ’¡ Consulte o radar do clima.";
+}
+
+function aplicarEstadoSincronizacao(data) {
+    if (!data || !data.status) {
+        return;
+    }
+
+    if (data.status === "ERRO") {
+        if (data.mensagem && data.mensagem !== ultimoErro) {
+            mostrarPopup(data.mensagem, "erro");
+            ultimoErro = data.mensagem;
+        }
+        return;
+    }
+
+    if (data.status === "OK") {
+        if (data.mensagem && data.mensagem !== ultimaMensagem) {
+            mostrarPopup(data.mensagem, "sucesso");
+            ultimaMensagem = data.mensagem;
+        }
+    }
+}
+
 function montarStatusBancoHud() {
     const ativo = Boolean(hudData.banco_online_ativo);
     const resumo = String(hudData.banco_online_resumo || "").trim();
@@ -2385,20 +2418,20 @@ function montarLinhasHud(agora) {
     ];
 }
 
-async function atualizarHUD() {
+async function atualizarHomeSnapshot() {
     if (hudExecutando || document.hidden) {
         return;
     }
 
     hudExecutando = true;
     try {
-        const res = await fetch("/api/hud");
+        const res = await fetch("/api/home-snapshot", { cache: "no-store" });
         const data = await res.json();
 
-        if (!data.erro) {
+        if (!data.erro && data.hud && !data.hud.erro) {
             const tokenAnterior = ultimoSyncToken;
-            hudData = data;
-            ultimoSyncToken = String(data.sync_token || "");
+            hudData = data.hud;
+            ultimoSyncToken = String(data.hud.sync_token || "");
             atualizarAvatarUsuario();
 
             if (tokenAnterior && ultimoSyncToken && tokenAnterior !== ultimoSyncToken) {
@@ -2421,8 +2454,11 @@ async function atualizarHUD() {
                 }
             }
         }
+
+        aplicarEstadoClima(data.clima);
+        aplicarEstadoSincronizacao(data.sync);
     } catch (e) {
-        console.log("Erro HUD");
+        console.log("Erro snapshot home");
     } finally {
         hudExecutando = false;
     }
@@ -2430,6 +2466,7 @@ async function atualizarHUD() {
 
 // CLIMA
 async function atualizarClima() {
+    return;
     if (document.hidden) {
         return;
     }
@@ -2514,12 +2551,10 @@ function atualizarRelogio() {
 } // 🔥 FECHAMENTO CORRETO DA FUNÇÃO
 // LOOP
 setInterval(atualizarRelogio, 1000);
-setInterval(atualizarClima, CLIMA_REFRESH_MS);
-setInterval(atualizarHUD, HUD_REFRESH_MS);
+setInterval(atualizarHomeSnapshot, HOME_SNAPSHOT_REFRESH_MS);
 
 // INICIAR
-setTimeout(atualizarHUD, 250);
-setTimeout(atualizarClima, 1200);
+setTimeout(atualizarHomeSnapshot, 450);
 agendarRecolhimentoHud();
 atualizarRelogio();
 </script>
