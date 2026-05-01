@@ -6,6 +6,11 @@ on:
       - main
       - master
 
+  schedule:
+    - cron: "0 9,21 * * *"
+
+  workflow_dispatch:
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
