@@ -20,7 +20,7 @@
 
 {% if usuario_logado.senha_alteracao_obrigatoria %}
 <div class="page-card error-banner top-spacing">
-    <p>Por seguranca, este acesso precisa trocar a senha antes de continuar usando o sistema. Enquanto isso, as demais areas ficam bloqueadas.</p>
+    <p>Por seguranca, este acesso precisa trocar a senha antes de continuar usando o sistema. Enquanto isso, as demais areas ficam bloqueadas, mas a conexao do banco online continua disponivel para implantacao e correcoes.</p>
 </div>
 {% endif %}
 
@@ -172,7 +172,7 @@
 </div>
 {% endif %}
 
-{% if desenvolvedor_logado %}
+{% if banco_online_logado %}
 <div class="page-grid top-spacing">
     <div class="page-card">
         <p class="pill-label">Banco online</p>

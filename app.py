@@ -3708,6 +3708,41 @@ def erro_transitorio_leitura_banco(erro):
     return any(sinal in texto for sinal in sinais)
 
 
+def mensagem_erro_login_servidor(erro):
+    texto = normalizar_texto_comparacao(str(erro or ""))
+
+    sinais_banco_online = (
+        "banco online obrigatorio",
+        "connection string",
+        "falha ao abrir conexao online",
+        "falha ao conectar no banco online",
+        "password authentication failed",
+        "could not connect to server",
+        "connection refused",
+        "timeout expired",
+    )
+    if any(sinal in texto for sinal in sinais_banco_online):
+        return (
+            "Falha ao acessar o banco configurado no servidor. "
+            "Revise DATABASE_BACKEND, SUPABASE_DATABASE_URL e STRICT_ONLINE_DATABASE."
+        )
+
+    sinais_estrutura = (
+        "no such table",
+        "undefined table",
+        "does not exist",
+        "no such column",
+        "undefined column",
+    )
+    if any(sinal in texto for sinal in sinais_estrutura):
+        return (
+            "O banco do servidor ainda nao foi preparado por completo. "
+            "Execute a inicializacao/migracao antes do primeiro login."
+        )
+
+    return "Falha interna ao autenticar. Verifique os logs e a configuracao do servidor."
+
+
 def copiar_valor_padrao(padrao):
     if isinstance(padrao, dict):
         return dict(padrao)
@@ -10874,7 +10909,7 @@ def preparar_sincronizacoes():
     if not INIT_DB_EXECUTADO:
         iniciar_bootstrap_init_db()
 
-        if request.method in {"GET", "HEAD", "OPTIONS"}:
+        if request.method in {"GET", "HEAD", "OPTIONS"} or endpoint == "login":
             return
 
         if ambiente_hospedado_gerenciado():
@@ -10922,7 +10957,14 @@ def exigir_troca_senha_obrigatoria():
     if not session.get("senha_alteracao_obrigatoria"):
         return
 
-    if endpoint in {"configuracoes", "atualizar_minha_senha", "logout"}:
+    if endpoint in {
+        "configuracoes",
+        "atualizar_minha_senha",
+        "logout",
+        "salvar_configuracao_banco",
+        "testar_configuracao_banco",
+        "migrar_banco_para_supabase",
+    }:
         return
 
     definir_feedback_configuracoes(
@@ -12638,58 +12680,73 @@ def login():
         if not usuario or not senha:
             return render_template("login.html", erro="Informe usuario e senha.")
 
-        conn = conectar()
-        c = conn.cursor()
+        conn = None
+        try:
+            conn = conectar()
+            c = conn.cursor()
 
-        c.execute("SELECT * FROM usuarios WHERE usuario=?", (usuario,))
-        user = c.fetchone()
+            c.execute("SELECT * FROM usuarios WHERE usuario=?", (usuario,))
+            user = c.fetchone()
 
-        if not user:
-            conn.close()
-            return render_template("login.html", erro="Usuario ou senha invalidos.")
+            if not user:
+                conn.close()
+                return render_template("login.html", erro="Usuario ou senha invalidos.")
 
-        if not int(user["ativo"] if user["ativo"] is not None else 1):
-            conn.close()
-            return render_template("login.html", erro="Este acesso esta desativado.")
+            if not int(user["ativo"] if user["ativo"] is not None else 1):
+                conn.close()
+                return render_template("login.html", erro="Este acesso esta desativado.")
 
-        bloqueado_ate = usuario_bloqueado_ate(user)
-        if bloqueado_ate:
-            conn.close()
-            return render_template(
-                "login.html",
-                erro=(
-                    "Login bloqueado temporariamente. "
-                    f"{formatar_tempo_restante(bloqueado_ate.isoformat(timespec='seconds'))} "
-                    "para tentar de novo."
-                )
-            )
-
-        if not verificar_senha_usuario(senha, user["senha"]):
-            novo_bloqueio = registrar_falha_login(c, user)
-            conn.commit()
-            conn.close()
-            if novo_bloqueio:
+            bloqueado_ate = usuario_bloqueado_ate(user)
+            if bloqueado_ate:
+                conn.close()
                 return render_template(
                     "login.html",
-                    erro=f"Muitas tentativas invalidas. Login bloqueado por {MINUTOS_BLOQUEIO_LOGIN} minutos."
+                    erro=(
+                        "Login bloqueado temporariamente. "
+                        f"{formatar_tempo_restante(bloqueado_ate.isoformat(timespec='seconds'))} "
+                        "para tentar de novo."
+                    )
                 )
-            return render_template("login.html", erro="Usuario ou senha invalidos.")
 
-        if not senha_usa_bcrypt(user["senha"]):
-            c.execute(
-                "UPDATE usuarios SET senha=?, senha_alteracao_obrigatoria=1, senha_atualizada_em=? WHERE id=?",
-                (senha_hash_bcrypt(senha), agora_iso(), user["id"])
-            )
-        elif senha_padrao_admin_ativa(user):
-            c.execute(
-                "UPDATE usuarios SET senha_alteracao_obrigatoria=1 WHERE id=?",
-                (user["id"],)
-            )
+            if not verificar_senha_usuario(senha, user["senha"]):
+                novo_bloqueio = registrar_falha_login(c, user)
+                conn.commit()
+                conn.close()
+                if novo_bloqueio:
+                    return render_template(
+                        "login.html",
+                        erro=f"Muitas tentativas invalidas. Login bloqueado por {MINUTOS_BLOQUEIO_LOGIN} minutos."
+                    )
+                return render_template("login.html", erro="Usuario ou senha invalidos.")
 
-        limpar_status_login_usuario(c, user["id"], registrar_login=True)
-        conn.commit()
-        c.execute("SELECT * FROM usuarios WHERE id=?", (user["id"],))
-        user = c.fetchone()
+            if not senha_usa_bcrypt(user["senha"]):
+                c.execute(
+                    "UPDATE usuarios SET senha=?, senha_alteracao_obrigatoria=1, senha_atualizada_em=? WHERE id=?",
+                    (senha_hash_bcrypt(senha), agora_iso(), user["id"])
+                )
+            elif senha_padrao_admin_ativa(user):
+                c.execute(
+                    "UPDATE usuarios SET senha_alteracao_obrigatoria=1 WHERE id=?",
+                    (user["id"],)
+                )
+
+            limpar_status_login_usuario(c, user["id"], registrar_login=True)
+            conn.commit()
+            c.execute("SELECT * FROM usuarios WHERE id=?", (user["id"],))
+            user = c.fetchone()
+        except Exception as erro:
+            try:
+                if conn:
+                    conn.rollback()
+            except Exception:
+                pass
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+            print("ERRO LOGIN:", erro)
+            return render_template("login.html", erro=mensagem_erro_login_servidor(erro))
 
         conn.close()
         preencher_sessao_usuario(user)
@@ -12725,6 +12782,7 @@ def configuracoes():
         )
     )
     pode_gerenciar_usuarios = usuario_gerencia_acessos() and not senha_pendente
+    pode_gerenciar_banco_online = usuario_desenvolvedor()
     pode_gerenciar_base = usuario_desenvolvedor() and not senha_pendente
     usuarios = []
     configuracao_empresa = {}
@@ -12743,13 +12801,7 @@ def configuracoes():
             print("ERRO CONFIG USUARIOS:", erro)
             usuarios = []
 
-    if pode_gerenciar_base:
-        try:
-            configuracao_empresa = obter_configuracao_empresa()
-        except Exception as erro:
-            print("ERRO CONFIG EMPRESA:", erro)
-            configuracao_empresa = empresa_snapshot_padrao()
-
+    if pode_gerenciar_banco_online:
         try:
             banco_status = obter_status_banco_online()
         except Exception as erro:
@@ -12761,6 +12813,13 @@ def configuracoes():
         except Exception as erro:
             print("ERRO CONFIG BANCO FORM:", erro)
             banco_config = {}
+
+    if pode_gerenciar_base:
+        try:
+            configuracao_empresa = obter_configuracao_empresa()
+        except Exception as erro:
+            print("ERRO CONFIG EMPRESA:", erro)
+            configuracao_empresa = empresa_snapshot_padrao()
 
         try:
             backup_config = obter_configuracao_backup()
@@ -12811,6 +12870,7 @@ def configuracoes():
         usuarios=usuarios,
         gerencia_usuarios_logado=pode_gerenciar_usuarios,
         desenvolvedor_logado=pode_gerenciar_base,
+        banco_online_logado=pode_gerenciar_banco_online,
         configuracao_empresa=configuracao_empresa,
         banco_status=banco_status,
         banco_config=banco_config,
