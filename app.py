@@ -5925,6 +5925,9 @@ def usuario_desenvolvedor():
 def usuario_gerencia_acessos():
     return usuario_admin() or usuario_desenvolvedor()
 
+def usuario_gerencia_banco_online():
+    return usuario_admin() or usuario_desenvolvedor()
+
 def normalizar_periodo_financeiro(valor):
     periodo = str(valor or "mes").strip().lower()
     return periodo if periodo in MAPA_PERIODOS_FINANCEIRO else "mes"
@@ -12782,7 +12785,7 @@ def configuracoes():
         )
     )
     pode_gerenciar_usuarios = usuario_gerencia_acessos() and not senha_pendente
-    pode_gerenciar_banco_online = usuario_desenvolvedor()
+    pode_gerenciar_banco_online = usuario_gerencia_banco_online()
     pode_gerenciar_base = usuario_desenvolvedor() and not senha_pendente
     usuarios = []
     configuracao_empresa = {}
@@ -12959,8 +12962,8 @@ def salvar_configuracao_banco():
         return redirect("/login")
 
     sincronizar_sessao_usuario()
-    if not usuario_desenvolvedor():
-        definir_feedback_configuracoes("erro", "Somente desenvolvedores podem alterar o banco online.")
+    if not usuario_gerencia_banco_online():
+        definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem alterar o banco online.")
         return redirect("/configuracoes")
 
     try:
@@ -13004,8 +13007,8 @@ def testar_configuracao_banco():
         return redirect("/login")
 
     sincronizar_sessao_usuario()
-    if not usuario_desenvolvedor():
-        definir_feedback_configuracoes("erro", "Somente desenvolvedores podem testar o banco online.")
+    if not usuario_gerencia_banco_online():
+        definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem testar o banco online.")
         return redirect("/configuracoes")
 
     status = diagnosticar_banco_online(force=True)
@@ -13031,8 +13034,8 @@ def migrar_banco_para_supabase():
         return redirect("/login")
 
     sincronizar_sessao_usuario()
-    if not usuario_desenvolvedor():
-        definir_feedback_configuracoes("erro", "Somente desenvolvedores podem migrar o banco para o Supabase.")
+    if not usuario_gerencia_banco_online():
+        definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem migrar o banco para o Supabase.")
         return redirect("/configuracoes")
 
     status = diagnosticar_banco_online(force=True)
