@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta charset="UTF-8">
-<title>Gestão Estética</title>
+<title>GestÃ£o EstÃ©tica</title>
 
 <link rel="icon" href="/static/favicon.jpg">
 <link rel="apple-touch-icon" href="/static/icon-192.jpg">
@@ -69,7 +69,7 @@ body.sidebar-open {
     overflow: hidden;
 }
 
-/* ================= BOTÕES ================= */
+/* ================= BOTÃ•ES ================= */
 button {
     padding: 10px;
     margin: 5px;
@@ -98,12 +98,12 @@ input, select {
     max-width: 320px;
 }
 
-/* ================= MENU BOTÃO ================= */
+/* ================= MENU BOTÃƒO ================= */
 .menu-btn {
     position: fixed;
     top: 15px;
     left: 15px;
-    z-index: 3000; /* 🔥 maior que sidebar */
+    z-index: 3000; /* ðŸ”¥ maior que sidebar */
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -123,7 +123,7 @@ input, select {
 .sidebar {
     position: fixed;
     top: 0;
-    left: -100%; /* 🔥 SEMPRE FECHADA */
+    left: -100%; /* ðŸ”¥ SEMPRE FECHADA */
 
     width: 250px;
     height: 100%;
@@ -1213,7 +1213,7 @@ input[type="file"] {
 <div class="sidebar-group">
 <p class="sidebar-group-label">Gestao</p>
 <a href="/financeiro"><button><span>&#128176;</span> Financeiro</button></a>
-<a href="/orcamento"><button><span>&#128196;</span> Orçamentos</button></a>
+<a href="/orcamento"><button><span>&#128196;</span> OrÃ§amentos</button></a>
 <a href="/nota_fiscal"><button><span>&#128220;</span> Emissao de nota fiscal</button></a>
 </div>
 
@@ -1221,7 +1221,7 @@ input[type="file"] {
 <p class="sidebar-group-label">Apoio / Administracao</p>
 <a href="/clima"><button><span>&#9729;</span> Clima</button></a>
 <a href="/auditoria"><button><span>&#128269;</span> Auditoria</button></a>
-<a href="/configuracoes"><button><span>&#9881;</span> Configurações</button></a>
+<a href="/configuracoes"><button><span>&#9881;</span> ConfiguraÃ§Ãµes</button></a>
 </div>
 <a href="/logout">
     <button style="
@@ -1229,7 +1229,7 @@ input[type="file"] {
         color: white;
         border: 1px solid rgba(255, 0, 0, 0.4);
     ">
-        <span>🚪</span> Sair
+        <span>ðŸšª</span> Sair
     </button>
 </a>
 
@@ -1239,7 +1239,7 @@ input[type="file"] {
 
 <div id="sino-container">
     <button id="btn-sino">
-        🔔 <span id="badge">0</span>
+        ðŸ”” <span id="badge">0</span>
     </button>
 
     <div id="dropdown-notificacoes" class="hidden"></div>
@@ -1249,10 +1249,10 @@ input[type="file"] {
 <div class="main full">
 
 <button onclick="toggleSidebar()" class="menu-btn">
-☰
+â˜°
 </button>
 
-<h1>🚗 Wagen Estética Automotiva</h1>
+<h1>ðŸš— Wagen EstÃ©tica Automotiva</h1>
 
 <!-- BUSCA -->
 <div class="search-panel">
@@ -1266,7 +1266,7 @@ input[type="file"] {
 {% if not buscou %}
 <div class="center-box">
     <div class="card destaque">
-        <h3>🔎 Digite uma placa para começar</h3>
+        <h3>ðŸ”Ž Digite uma placa para comeÃ§ar</h3>
     </div>
 </div>
 {% endif %}
@@ -1300,7 +1300,7 @@ input[type="file"] {
 <p><strong>Telefone:</strong> {{dados.telefone}}</p>
 <p><strong>Carro:</strong> {{dados.modelo}} - {{dados.cor}}</p>
 
-<button type="button" onclick="toggleEditar()">✏️ Editar</button>
+<button type="button" onclick="toggleEditar()">âœï¸ Editar</button>
 
 <div id="formEditar" style="display:none;">
 
@@ -1333,7 +1333,7 @@ input[type="file"] {
 
 <input name="cor" value="{{dados.cor}}"><br>
 
-<button>Salvar Alterações</button>
+<button>Salvar AlteraÃ§Ãµes</button>
 
 </form>
 </div>
@@ -1376,7 +1376,7 @@ input[type="file"] {
 
 <form id="formServico" class="hidden" action="/servico" method="POST" enctype="multipart/form-data">
 
-<p>📸 Fotos de entrada</p>
+<p>ðŸ“¸ Fotos de entrada</p>
 <input type="file" name="foto_entrada" multiple accept="image/*" required>
 
 <input name="placa" value="{{dados.placa}}" readonly><br>
@@ -1404,7 +1404,7 @@ input[type="file"] {
 </div>
 
 <p class="muted-text">No celular, esse campo abre o seletor de imagens para voce usar a galeria ou a camera do aparelho. Os detalhes operacionais, produtos aplicados e a finalizacao agora sao preenchidos no painel operacional.</p>
-<p class="muted-text">Quando voce informar o horario combinado, o sistema começa a contagem no horario de Brasilia e destaca o aviso de entrega no HUD e no painel.</p>
+<p class="muted-text">Quando voce informar o horario combinado, o sistema comeÃ§a a contagem no horario de Brasilia e destaca o aviso de entrega no HUD e no painel.</p>
 
 <button type="submit">Iniciar Atendimento</button>
 
@@ -1413,7 +1413,7 @@ input[type="file"] {
 </div>
 {% endif %}
 
-<!-- HISTÓRICO -->
+<!-- HISTÃ“RICO -->
 {% if historico %}
 <h2 class="section-heading">Historico</h2>
 <div class="historico-list">
@@ -1424,7 +1424,7 @@ input[type="file"] {
 
 <b>{{s.tipo_nome or "Servico"}}</b>
 
-<p>💰 R$ {{s.valor_exibicao}}</p>
+<p>ðŸ’° R$ {{s.valor_exibicao}}</p>
 <p>Entrada: {{s.entrada_exibicao}}</p>
 {% if s.entrega_exibicao %}
 <p>Entrega: {{s.entrega_exibicao}}</p>
@@ -1530,7 +1530,7 @@ Hidro vidros {{ "Sim" if s.hidro_vidros == "Sim" else "Nao" }}
             <div class="extra-charge-item">
                 <div>
                     <strong>{{ extra.descricao }}</strong>
-                    <p class="muted-text">Lançado por {{ extra.criado_por_nome_exibicao }}{% if extra.criado_em_exibicao %} em {{ extra.criado_em_exibicao }}{% endif %}</p>
+                    <p class="muted-text">LanÃ§ado por {{ extra.criado_por_nome_exibicao }}{% if extra.criado_em_exibicao %} em {{ extra.criado_em_exibicao }}{% endif %}</p>
                 </div>
                 <span class="extra-charge-value">R$ {{ extra.valor_exibicao }}</span>
             </div>
@@ -1646,7 +1646,7 @@ async function verificarSync() {
 
         if (data.status === "ERRO") {
 
-            // 🔥 evita spam de erro repetido
+            // ðŸ”¥ evita spam de erro repetido
             if (data.mensagem !== ultimoErro) {
                 mostrarPopup(data.mensagem, "erro");
                 ultimoErro = data.mensagem;
@@ -1677,7 +1677,7 @@ let popupAtivo = false;
 
 function mostrarPopup(texto, tipo) {
 
-    if (popupAtivo) return; // 🔥 trava spam
+    if (popupAtivo) return; // ðŸ”¥ trava spam
 
     popupAtivo = true;
 
@@ -1862,7 +1862,7 @@ function montarAcoesNotificacoes(dropdown, total) {
 
     const button = document.createElement("button");
     button.style.width = "100%";
-    button.textContent = total ? "🧹 Limpar notificações" : "Sem notificações";
+    button.textContent = total ? "ðŸ§¹ Limpar notificaÃ§Ãµes" : "Sem notificaÃ§Ãµes";
     button.disabled = total === 0;
 
     if (total) {
@@ -2041,7 +2041,7 @@ async function carregarNotificacoes(force = false) {
     if (!dados.length) {
         const vazio = document.createElement("div");
         vazio.className = "notificacao";
-        vazio.innerText = "Nenhuma notificação registrada.";
+        vazio.innerText = "Nenhuma notificaÃ§Ã£o registrada.";
         dropdown.appendChild(vazio);
     }
 
@@ -2116,7 +2116,7 @@ garantirAgendaRetornoUI();
 <script>
 const APP_VERSION = "{{ app_version }}";
 const HOME_SNAPSHOT_REFRESH_MS = 30000;
-let climaTexto = "🌤️ Carregando...";
+let climaTexto = "ðŸŒ¤ï¸ Carregando...";
 let sugestaoTexto = "";
 
 let hudData = {
@@ -2328,15 +2328,15 @@ function montarTextoClimaHud() {
 function aplicarEstadoClima(data) {
     if (data && data.clima) {
         const tempTexto = data.temp !== undefined && data.temp !== null && data.temp !== ""
-            ? ` (${data.temp}Â°C)`
+            ? ` (${data.temp}\u00B0C)`
             : "";
-        climaTexto = `${data.icone || "â›…"} ${data.clima}${tempTexto}`;
+        climaTexto = `${data.icone || ""} ${data.clima}${tempTexto}`.trim();
         sugestaoTexto = data.sugestao || "";
         return;
     }
 
-    climaTexto = "âš ï¸ Clima indisponÃ­vel";
-    sugestaoTexto = "ðŸ’¡ Consulte o radar do clima.";
+    climaTexto = "Clima indisponivel";
+    sugestaoTexto = "Consulte o radar do clima.";
 }
 
 function aplicarEstadoSincronizacao(data) {
@@ -2370,8 +2370,8 @@ function montarStatusBancoHud() {
         ativo,
         resumo: resumo || (ativo ? "Banco online ativo" : "Banco online indisponivel"),
         detalhe: ativo
-            ? `🟢 Banco online ativo e gravando em tempo real${backend ? ` (${backend})` : ""}`
-            : `🔴 ${mensagem || "Banco online indisponivel"}`,
+            ? `ðŸŸ¢ Banco online ativo e gravando em tempo real${backend ? ` (${backend})` : ""}`
+            : `ðŸ”´ ${mensagem || "Banco online indisponivel"}`,
     };
 }
 
@@ -2382,39 +2382,39 @@ function montarLinhasHud(agora) {
 
     if (!hudExpandido) {
         return [
-            { texto: `📅 ${dataAtual} • ${horaAtual}`, compacta: true },
+            { texto: `ðŸ“… ${dataAtual} â€¢ ${horaAtual}`, compacta: true },
             {
-                texto: `🗄️ ${statusBanco.resumo}`,
+                texto: `ðŸ—„ï¸ ${statusBanco.resumo}`,
                 status: true,
                 statusOk: statusBanco.ativo,
             },
             {
-                texto: `⚙️ ${hudData.andamento} • 🚨 ${hudData.atrasados} • 💰 R$ ${hudData.total}`,
+                texto: `âš™ï¸ ${hudData.andamento} â€¢ ðŸš¨ ${hudData.atrasados} â€¢ ðŸ’° R$ ${hudData.total}`,
                 compacta: true,
             },
-            { texto: `📌 ${montarResumoOperacionalCompacto()}`, compacta: true },
+            { texto: `ðŸ“Œ ${montarResumoOperacionalCompacto()}`, compacta: true },
             { texto: montarTextoClimaHud(), multilinha: true },
         ];
     }
 
     return [
-        { texto: `📅 ${dataAtual} ⏰ ${horaAtual}` },
+        { texto: `ðŸ“… ${dataAtual} â° ${horaAtual}` },
         {
             texto: statusBanco.detalhe,
             status: true,
             statusOk: statusBanco.ativo,
         },
         { texto: montarTextoClimaHud(), multilinha: true },
-        { texto: `💰 Hoje: R$ ${hudData.total}` },
-        { texto: `⚙️ Em andamento: ${hudData.andamento}` },
-        { texto: `🚨 Atrasados: ${hudData.atrasados}` },
-        { texto: `💵 Ticket: R$ ${hudData.ticket}` },
-        { texto: `📅 ${hudData.retornos_mensagem || "Painel retornos em dia"}` },
+        { texto: `ðŸ’° Hoje: R$ ${hudData.total}` },
+        { texto: `âš™ï¸ Em andamento: ${hudData.andamento}` },
+        { texto: `ðŸš¨ Atrasados: ${hudData.atrasados}` },
+        { texto: `ðŸ’µ Ticket: R$ ${hudData.ticket}` },
+        { texto: `ðŸ“… ${hudData.retornos_mensagem || "Painel retornos em dia"}` },
         ...(Number(hudData.entregas_ativas || 0) > 0
-            ? [{ texto: `📦 ${hudData.entrega_mensagem || "Entrega combinada em dia"}` }]
+            ? [{ texto: `ðŸ“¦ ${hudData.entrega_mensagem || "Entrega combinada em dia"}` }]
             : []),
-        { texto: `👤 Usuario: ${hudData.usuario_nome || "-"}` },
-        { texto: `🧠 ${hudData.versao || APP_VERSION}` },
+        { texto: `ðŸ‘¤ Usuario: ${hudData.usuario_nome || "-"}` },
+        { texto: `ðŸ§  ${hudData.versao || APP_VERSION}` },
     ];
 }
 
@@ -2478,17 +2478,17 @@ async function atualizarClima() {
         const data = await res.json();
 
         if (data && data.clima) {
-            climaTexto = `${data.icone} ${data.clima} (${data.temp}°C)`;
+            climaTexto = `${data.icone || ""} ${data.clima} (${data.temp}\u00B0C)`.trim();
             sugestaoTexto = data.sugestao;
         }
     } catch (e) {
-        climaTexto = "⚠️ Clima indisponível";
-        sugestaoTexto = "💡 Consulte o radar do clima.";
+        climaTexto = "Clima indisponivel";
+        sugestaoTexto = "Consulte o radar do clima.";
     }
 }
 
 
-// RELÓGIO
+// RELÃ“GIO
 function atualizarRelogio() {
     const agora = new Date();
     const el = document.getElementById("relogio");
@@ -2516,7 +2516,7 @@ function atualizarRelogio() {
                 .join("") +
             `</div>`;
 
-    // 🔥 ALERTA
+    // ðŸ”¥ ALERTA
     const entregaProxima = Number(hudData.entrega_proxima_em_minutos || 0);
     const entregaEmBreve = entregaProxima > 0 && entregaProxima <= 15;
     const entregaVencida = Number(hudData.entregas_vencidas || 0) > 0;
@@ -2548,7 +2548,7 @@ function atualizarRelogio() {
 
         alertaAtivo = false;
     }
-} // 🔥 FECHAMENTO CORRETO DA FUNÇÃO
+} // ðŸ”¥ FECHAMENTO CORRETO DA FUNÃ‡ÃƒO
 function agendarPrimeiroSnapshotHome() {
     const disparar = () => {
         setTimeout(atualizarHomeSnapshot, 1200);
@@ -2580,7 +2580,7 @@ atualizarRelogio();
 
 <script>
 async function limparNotificacoes() {
-    if (!confirm("Deseja limpar todas as notificações?")) return;
+    if (!confirm("Deseja limpar todas as notificaÃ§Ãµes?")) return;
 
     const resposta = await fetch("/api/notificacoes/limpar", {
         method: "POST"
@@ -2599,3 +2599,4 @@ async function limparNotificacoes() {
 
 </body>
 </html>
+
