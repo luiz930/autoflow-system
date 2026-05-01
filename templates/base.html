@@ -454,7 +454,7 @@ function toggleSidebar() {
 let baseSyncToken = "";
 let baseSyncExecutando = false;
 let baseSyncIntervalHandle = null;
-const baseSyncIntervalPadrao = 90;
+const baseSyncIntervalPadrao = 60;
 const baseSyncIntervalChave = "wagen_sync_interval_seconds";
 const baseUsaSnapshotHome = window.location.pathname === "/";
 
@@ -464,7 +464,7 @@ function baseObterIntervaloSincronia() {
         return baseSyncIntervalPadrao;
     }
 
-    return Math.max(5, Math.min(120, Math.round(valorArmazenado)));
+    return Math.max(20, Math.min(180, Math.round(valorArmazenado)));
 }
 
 function baseReiniciarAgendamentoSincronia() {
@@ -523,7 +523,7 @@ window.reiniciarSincroniaBancoBase = baseReiniciarAgendamentoSincronia;
 {% if session.get("usuario") %}
 if (!baseUsaSnapshotHome) {
 baseReiniciarAgendamentoSincronia();
-setTimeout(verificarSincroniaBancoBase, 8000);
+setTimeout(verificarSincroniaBancoBase, 12000);
 
 document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
@@ -541,9 +541,7 @@ document.addEventListener("storage", (evento) => {
 </script>
 
 <script src="/static/photo_upload.js"></script>
-{% if session.get("usuario") %}
-<script src="/static/operacional_voz.js"></script>
-{% endif %}
+{% block page_scripts %}{% endblock %}
 
 </body>
 </html>

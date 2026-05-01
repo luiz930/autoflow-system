@@ -2115,7 +2115,7 @@ garantirAgendaRetornoUI();
 
 <script>
 const APP_VERSION = "{{ app_version }}";
-const HOME_SNAPSHOT_REFRESH_MS = 20000;
+const HOME_SNAPSHOT_REFRESH_MS = 30000;
 let climaTexto = "🌤️ Carregando...";
 let sugestaoTexto = "";
 
@@ -2549,12 +2549,31 @@ function atualizarRelogio() {
         alertaAtivo = false;
     }
 } // 🔥 FECHAMENTO CORRETO DA FUNÇÃO
+function agendarPrimeiroSnapshotHome() {
+    const disparar = () => {
+        setTimeout(atualizarHomeSnapshot, 1200);
+    };
+
+    if ("requestIdleCallback" in window) {
+        requestIdleCallback(disparar, { timeout: 2000 });
+        return;
+    }
+
+    disparar();
+}
+
 // LOOP
 setInterval(atualizarRelogio, 1000);
 setInterval(atualizarHomeSnapshot, HOME_SNAPSHOT_REFRESH_MS);
 
 // INICIAR
-setTimeout(atualizarHomeSnapshot, 450);
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+        atualizarHomeSnapshot();
+    }
+});
+
+agendarPrimeiroSnapshotHome();
 agendarRecolhimentoHud();
 atualizarRelogio();
 </script>
@@ -2577,7 +2596,6 @@ async function limparNotificacoes() {
 </script>
 
 <script src="/static/photo_upload.js"></script>
-<script src="/static/operacional_voz.js"></script>
 
 </body>
 </html>

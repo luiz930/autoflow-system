@@ -1,7 +1,5 @@
 flask
 gunicorn
-waitress
-python-dotenv
 requests
 pandas
 openpyxl

@@ -698,7 +698,7 @@ const syncIntervalApply = document.querySelector("[data-sync-interval-apply]");
 const syncIntervalNow = document.querySelector("[data-sync-interval-now]");
 const syncIntervalFeedback = document.querySelector("[data-sync-interval-feedback]");
 const SYNC_INTERVAL_KEY = "wagen_sync_interval_seconds";
-const SYNC_INTERVAL_PADRAO = 12;
+const SYNC_INTERVAL_PADRAO = 60;
 
 function lerIntervaloSincroniaSalvo() {
     const valor = Number(localStorage.getItem(SYNC_INTERVAL_KEY) || SYNC_INTERVAL_PADRAO);
@@ -706,7 +706,7 @@ function lerIntervaloSincroniaSalvo() {
         return SYNC_INTERVAL_PADRAO;
     }
 
-    return Math.max(5, Math.min(120, Math.round(valor)));
+    return Math.max(20, Math.min(180, Math.round(valor)));
 }
 
 function atualizarFeedbackSincronia(texto) {
@@ -716,7 +716,7 @@ function atualizarFeedbackSincronia(texto) {
 }
 
 function aplicarIntervaloSincronia(segundos) {
-    const valor = Math.max(5, Math.min(120, Math.round(Number(segundos) || SYNC_INTERVAL_PADRAO)));
+    const valor = Math.max(20, Math.min(180, Math.round(Number(segundos) || SYNC_INTERVAL_PADRAO)));
     localStorage.setItem(SYNC_INTERVAL_KEY, String(valor));
 
     if (syncIntervalInput) {
@@ -745,7 +745,7 @@ if (syncIntervalNow) {
         atualizarFeedbackSincronia("Atualizando agora...");
 
         try {
-            const resposta = await fetch("/api/hud", { cache: "no-store" });
+            const resposta = await fetch("/api/sync-token", { cache: "no-store" });
             const dados = await resposta.json();
             if (dados.erro) {
                 throw new Error(dados.erro);

@@ -2907,40 +2907,40 @@ init_db_lock = Lock()
 INIT_DB_EXECUTADO = False
 bootstrap_init_thread_started = False
 schema_bootstrap_thread_started = False
-WORKER_SYNC_DELAY_INICIAL = 45
-WORKER_SYNC_BANCOS_DELAY_INICIAL = 180
-WORKER_MANUTENCAO_DELAY_INICIAL = 180
-WORKER_BACKUP_DELAY_INICIAL = 300
+WORKER_SYNC_DELAY_INICIAL = 90
+WORKER_SYNC_BANCOS_DELAY_INICIAL = 360
+WORKER_MANUTENCAO_DELAY_INICIAL = 600
+WORKER_BACKUP_DELAY_INICIAL = 900
 HUD_CACHE = {
     "testado_em": 0.0,
     "usuario": "",
     "resultado": None,
 }
-HUD_CACHE_TTL = 20
+HUD_CACHE_TTL = 30
 HOME_SNAPSHOT_CACHE = {
     "testado_em": 0.0,
     "usuario": "",
     "resultado": None,
 }
-HOME_SNAPSHOT_CACHE_TTL = 12
+HOME_SNAPSHOT_CACHE_TTL = 35
 NOTIFICACOES_CACHE = {
     "testado_em": 0.0,
     "usuario": "",
     "resultado": None,
 }
-NOTIFICACOES_CACHE_TTL = 15
+NOTIFICACOES_CACHE_TTL = 45
 STATUS_SYNC_CACHE = {
     "testado_em": 0.0,
     "usuario": "",
     "resultado": None,
 }
-STATUS_SYNC_CACHE_TTL = 20
+STATUS_SYNC_CACHE_TTL = 45
 SYNC_TOKEN_CACHE = {
     "testado_em": 0.0,
     "usuario": "",
     "resultado": None,
 }
-SYNC_TOKEN_CACHE_TTL = 15
+SYNC_TOKEN_CACHE_TTL = 45
 RETORNOS_HUD_CACHE = {
     "testado_em": 0.0,
     "usuario": "",
@@ -2958,15 +2958,15 @@ VOZ_CACHE = {
     "usuario": "",
     "resultado": None,
 }
-VOZ_CACHE_TTL = 30
+VOZ_CACHE_TTL = 90
 CLIMA_CACHE = {
     "testado_em": 0.0,
     "resultado": None,
 }
 CLIMA_CACHE_TTL = 600
 ULTIMO_SYNC_FONTES_SOB_DEMANDA_TS = 0.0
-SYNC_FONTES_SOB_DEMANDA_INTERVALO = 20
-USUARIO_SESSAO_SYNC_TTL = 10
+SYNC_FONTES_SOB_DEMANDA_INTERVALO = 90
+USUARIO_SESSAO_SYNC_TTL = 60
 BANCO_ONLINE_STATUS_CACHE = {
     "testado_em": 0.0,
     "resultado": {},
@@ -10920,12 +10920,20 @@ def preparar_sincronizacoes():
 
         garantir_init_db()
 
-    iniciar_worker_backup_banco()
-    iniciar_worker_manutencao_arquivos()
-    iniciar_worker_sincronizacao()
-    iniciar_worker_sincronizacao_bancos()
-    if modo_banco_preferido() == "postgres" and not SCHEMA_BANCO_ONLINE_GARANTIDO:
-        iniciar_bootstrap_schema_online()
+    pode_inicializar_servicos_pesados = (
+        sessao_ativa
+        and request.method == "GET"
+        and not endpoint.startswith("api_")
+        and endpoint not in {"login", "logout", "healthz", "status_sync"}
+    )
+
+    if pode_inicializar_servicos_pesados:
+        iniciar_worker_backup_banco()
+        iniciar_worker_manutencao_arquivos()
+        iniciar_worker_sincronizacao()
+        iniciar_worker_sincronizacao_bancos()
+        if modo_banco_preferido() == "postgres" and not SCHEMA_BANCO_ONLINE_GARANTIDO:
+            iniciar_bootstrap_schema_online()
 
     global ULTIMO_SYNC_FONTES_SOB_DEMANDA_TS
 
@@ -11805,36 +11813,16 @@ def montar_resultado_hud_dinamico(usuario_cache, agora_cache_ts):
         c = conn.cursor()
 
         c.execute("""
-            SELECT SUM(valor) FROM servicos
+            SELECT
+                COALESCE(SUM(valor), 0) AS total,
+                COUNT(*) AS quantidade
+            FROM servicos
             WHERE status='FINALIZADO' AND entrega LIKE ?
         """, (hoje + "%",))
-        total = c.fetchone()[0] or 0
-
-        c.execute(
-            "SELECT COUNT(*) FROM servicos WHERE COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'"
-        )
-        andamento = c.fetchone()[0]
-
-        c.execute("""
-            SELECT COUNT(*) FROM servicos
-            WHERE status='FINALIZADO' AND entrega LIKE ?
-        """, (hoje + "%",))
-        quantidade = c.fetchone()[0]
+        resumo_financeiro = c.fetchone() or {"total": 0, "quantidade": 0}
+        total = resumo_financeiro["total"] or 0
+        quantidade = resumo_financeiro["quantidade"] or 0
         ticket = total / quantidade if quantidade > 0 else 0
-
-        c.execute(
-            "SELECT entrada FROM servicos WHERE COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'"
-        )
-        servicos = c.fetchall()
-        atrasados = 0
-        for s in servicos:
-            try:
-                entrada = interpretar_datahora_sistema(s["entrada"])
-                diff = (agora - entrada).total_seconds() if entrada else 0
-                if diff > 7200:
-                    atrasados += 1
-            except Exception:
-                pass
 
         c.execute("""
             SELECT
@@ -11850,17 +11838,35 @@ def montar_resultado_hud_dinamico(usuario_cache, agora_cache_ts):
             LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
             WHERE COALESCE(TRIM(UPPER(servicos.status)), '')='EM ANDAMENTO'
         """)
-        entregas_raw = [dict(row) for row in c.fetchall()]
+        servicos_andamento = [dict(row) for row in c.fetchall()]
+        andamento = len(servicos_andamento)
+        atrasados = 0
+        for s in servicos_andamento:
+            try:
+                entrada = interpretar_datahora_sistema(s["entrada"])
+                diff = (agora - entrada).total_seconds() if entrada else 0
+                if diff > 7200:
+                    atrasados += 1
+            except Exception:
+                pass
 
-        totais = {}
-        for tabela in ("servicos", "veiculos", "clientes", "notificacoes", "auditoria", "usuarios"):
-            c.execute(f"""
-                SELECT
-                    COALESCE(COUNT(*), 0) AS total,
-                    COALESCE(MAX(id), 0) AS ultimo_id
-                FROM {tabela}
-            """)
-            totais[tabela] = c.fetchone() or (0, 0)
+        c.execute("""
+            SELECT 'servicos' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id FROM servicos
+            UNION ALL
+            SELECT 'veiculos' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id FROM veiculos
+            UNION ALL
+            SELECT 'clientes' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id FROM clientes
+            UNION ALL
+            SELECT 'notificacoes' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id FROM notificacoes
+            UNION ALL
+            SELECT 'auditoria' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id FROM auditoria
+            UNION ALL
+            SELECT 'usuarios' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id FROM usuarios
+        """)
+        totais = {
+            str(item["tabela"]): item
+            for item in (dict(row) for row in c.fetchall())
+        }
 
         return {
             "total": total,
@@ -11868,19 +11874,19 @@ def montar_resultado_hud_dinamico(usuario_cache, agora_cache_ts):
             "quantidade": quantidade,
             "ticket": ticket,
             "atrasados": atrasados,
-            "resumo_entregas": resumir_entregas_em_andamento(entregas_raw, referencia=agora),
-            "servicos_total": totais["servicos"][0],
-            "servicos_ultimo_id": totais["servicos"][1],
-            "veiculos_total": totais["veiculos"][0],
-            "veiculos_ultimo_id": totais["veiculos"][1],
-            "clientes_total": totais["clientes"][0],
-            "clientes_ultimo_id": totais["clientes"][1],
-            "notificacoes_total": totais["notificacoes"][0],
-            "notificacoes_ultimo_id": totais["notificacoes"][1],
-            "auditoria_total": totais["auditoria"][0],
-            "auditoria_ultimo_id": totais["auditoria"][1],
-            "usuarios_total": totais["usuarios"][0],
-            "usuarios_ultimo_id": totais["usuarios"][1],
+            "resumo_entregas": resumir_entregas_em_andamento(servicos_andamento, referencia=agora),
+            "servicos_total": totais.get("servicos", {}).get("total", 0),
+            "servicos_ultimo_id": totais.get("servicos", {}).get("ultimo_id", 0),
+            "veiculos_total": totais.get("veiculos", {}).get("total", 0),
+            "veiculos_ultimo_id": totais.get("veiculos", {}).get("ultimo_id", 0),
+            "clientes_total": totais.get("clientes", {}).get("total", 0),
+            "clientes_ultimo_id": totais.get("clientes", {}).get("ultimo_id", 0),
+            "notificacoes_total": totais.get("notificacoes", {}).get("total", 0),
+            "notificacoes_ultimo_id": totais.get("notificacoes", {}).get("ultimo_id", 0),
+            "auditoria_total": totais.get("auditoria", {}).get("total", 0),
+            "auditoria_ultimo_id": totais.get("auditoria", {}).get("ultimo_id", 0),
+            "usuarios_total": totais.get("usuarios", {}).get("total", 0),
+            "usuarios_ultimo_id": totais.get("usuarios", {}).get("ultimo_id", 0),
         }
 
     leitura_hud = executar_leitura_resiliente(

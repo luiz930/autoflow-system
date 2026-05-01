@@ -4,9 +4,9 @@
     const VOZ_LIDER_KEY = "wagenPainelVozLider";
     const VOZ_TAB_ID_KEY = "wagenPainelVozTabId";
     const VOZ_ENDPOINT = "/api/operacional/voz";
-    const UI_REFRESH_MS = 30000;
-    const SNAPSHOT_POLLING_MS = 180000;
-    const LIDER_TTL_MS = 45000;
+    const UI_REFRESH_MS = 45000;
+    const SNAPSHOT_POLLING_MS = 300000;
+    const LIDER_TTL_MS = 90000;
     const STATUS_PADRAO =
         "A cada 10 minutos, o sistema avisa em portugues do Brasil quais veiculos continuam em atendimento. Veiculos com entrega agendada avisam somente quando faltarem 30 minutos.";
 
@@ -52,9 +52,14 @@
     }
 
     function deveInicializarAvisosOperacionais() {
+        const paginaOperacionalAtiva = /^\/painel(?:\/|$)/.test(window.location.pathname);
         return (
+            paginaOperacionalAtiva &&
             obterCardsServicos().length > 0 ||
-            Boolean(obterBotaoVoz() || obterBotaoTesteVoz() || obterStatusVoz())
+            (
+                paginaOperacionalAtiva &&
+                Boolean(obterBotaoVoz() || obterBotaoTesteVoz() || obterStatusVoz())
+            )
         );
     }
 
@@ -509,7 +514,7 @@
         atualizarStatusControlesVoz();
         setTimeout(() => {
             atualizarSnapshotOperacional();
-        }, 1200);
+        }, 2200);
 
         setInterval(() => {
             atualizarCardsPainel();
@@ -527,7 +532,7 @@
             if (vozOperacionalAtiva() && estaAbaResponsavelPelosAvisos()) {
                 renovarLideranca();
             }
-        }, 30000);
+        }, 60000);
     }
 
     document.addEventListener("DOMContentLoaded", () => {
