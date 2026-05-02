@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session, jsonify, has_request_context
+﻿from flask import Flask, render_template, request, redirect, session, jsonify, has_request_context
 import csv
 import json
 import math
@@ -21,7 +21,7 @@ from io import BytesIO
 from threading import Lock, Thread
 import unicodedata
 from urllib.parse import parse_qs, quote, urlencode, urlparse, urlunparse
-import bcrypt  # 👈 se já adicionou
+import bcrypt  # ðŸ‘ˆ se jÃ¡ adicionou
 import pandas as pd
 import requests
 from werkzeug.utils import secure_filename
@@ -32,6 +32,54 @@ from reportlab.lib.units import cm
 from reportlab.platypus import Flowable
 from reportlab.lib.utils import ImageReader
 from xml.sax.saxutils import escape as xml_escape
+from core.security import (
+    append_security_headers,
+    build_flask_security_config,
+    extract_csrf_token,
+    issue_csrf_token,
+    should_enforce_csrf,
+    validate_csrf_token,
+)
+from core.product_foundation import (
+    build_brand_context,
+    run_product_foundation_migrations,
+)
+from core.telemetry import registrar_evento_telemetria as registrar_evento_telemetria_core
+from domains.clientes import (
+    consultar_contatos_clientes_por_placas as consultar_contatos_clientes_por_placas_domain,
+    consultar_estados_retorno as consultar_estados_retorno_domain,
+    consultar_historico_sync_por_placa as consultar_historico_sync_por_placa_domain,
+    consultar_registros_clientes as consultar_registros_clientes_domain,
+    consultar_sincronizacao_cliente as consultar_sincronizacao_cliente_domain,
+    consultar_sincronizacoes_clientes as consultar_sincronizacoes_clientes_domain,
+    consultar_ultima_sincronizacao_cliente as consultar_ultima_sincronizacao_cliente_domain,
+    consultar_ultimas_lavagens_sync as consultar_ultimas_lavagens_sync_domain,
+    salvar_cliente_veiculo_cursor as salvar_cliente_veiculo_cursor_domain,
+)
+from domains.historico import (
+    carregar_recursos_edicao_historico as carregar_recursos_edicao_historico_domain,
+    excluir_dependencias_historico_servico as excluir_dependencias_historico_servico_domain,
+    listar_nomes_checklist_por_servicos as listar_nomes_checklist_por_servicos_domain,
+    substituir_checklist_servico as substituir_checklist_servico_domain,
+)
+from domains.servicos import (
+    consultar_historico_servicos as consultar_historico_servicos_domain,
+    consultar_resumo_hud as consultar_resumo_hud_domain,
+    consultar_servico_operacional as consultar_servico_operacional_domain,
+    consultar_servicos_em_andamento as consultar_servicos_em_andamento_domain,
+    consultar_servicos_em_andamento_voz as consultar_servicos_em_andamento_voz_domain,
+    consultar_ultima_lavagem_local_por_placa as consultar_ultima_lavagem_local_por_placa_domain,
+    consultar_ultimas_lavagens_locais as consultar_ultimas_lavagens_locais_domain,
+    consultar_veiculo_por_placa as consultar_veiculo_por_placa_domain,
+)
+from domains.sync_clientes import (
+    alternar_sincronizacao_cliente as alternar_sincronizacao_cliente_domain,
+    atualizar_status_sincronizacao_cliente as atualizar_status_sincronizacao_cliente_domain,
+    criar_sincronizacao_cliente as criar_sincronizacao_cliente_domain,
+    excluir_sincronizacao_cliente as excluir_sincronizacao_cliente_domain,
+    salvar_historico_lavagens_sync as salvar_historico_lavagens_sync_domain,
+)
+from domains.tenant import normalize_empresa_id
 
 try:
     from google.oauth2 import service_account
@@ -164,6 +212,10 @@ DATABASE_BACKEND_RAW = (
 AUTO_MIGRAR_BANCO_RAW = (os.environ.get("AUTO_MIGRAR_BANCO") or "1").strip().lower()
 DATABASE_ONLINE_MIGRADO_RAW = (os.environ.get("DATABASE_ONLINE_MIGRADO") or "0").strip().lower()
 STRICT_ONLINE_DATABASE_RAW = (os.environ.get("STRICT_ONLINE_DATABASE") or "").strip().lower()
+SESSION_COOKIE_SECURE_RAW = (os.environ.get("SESSION_COOKIE_SECURE") or "").strip().lower()
+CSRF_PROTECTION_RAW = (os.environ.get("CSRF_PROTECTION") or "0").strip().lower()
+FLASK_SECRET_KEY_RAW = (os.environ.get("FLASK_SECRET_KEY") or "").strip()
+TELEMETRIA_ATIVA_RAW = (os.environ.get("TELEMETRIA_ATIVA") or "1").strip().lower()
 
 UPLOAD_FOLDER = "static/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -223,6 +275,9 @@ TABELAS_SISTEMA_ORDENADAS = [
     "servico_checklist",
     "historico_lavagens_sync",
     "retornos_clientes",
+    "empresas",
+    "licencas",
+    "telemetria_eventos",
     "configuracao_empresa",
     "orcamentos",
     "orcamento_itens",
@@ -251,6 +306,8 @@ TABELAS_COM_ATUALIZADO_EM_SYNC = [
     "servico_checklist",
     "historico_lavagens_sync",
     "retornos_clientes",
+    "empresas",
+    "licencas",
     "configuracao_empresa",
     "orcamentos",
     "orcamento_itens",
@@ -282,14 +339,14 @@ class ImagemRedonda(Flowable):
 
         c.saveState()
 
-        # 🔥 cria caminho circular
+        # ðŸ”¥ cria caminho circular
         path = c.beginPath()
         path.circle(self.size/2, self.size/2, self.size/2)
 
-        # 🔥 aplica máscara corretamente
+        # ðŸ”¥ aplica mÃ¡scara corretamente
         c.clipPath(path, stroke=0, fill=0)
 
-        # 🔥 desenha imagem dentro do círculo
+        # ðŸ”¥ desenha imagem dentro do cÃ­rculo
         c.drawImage(self.img, 0, 0, width=self.size, height=self.size)
 
         c.restoreState()
@@ -364,7 +421,7 @@ def ler_planilha_sheety(url, intervalo_minutos=None):
 
         data = response.json()
 
-        # 🔥 pega a lista principal
+        # ðŸ”¥ pega a lista principal
         chave = list(data.keys())[0]
         lista = data[chave]
 
@@ -398,7 +455,7 @@ def sanitizar_para_json(obj):
     if isinstance(obj, date):
         return obj.strftime("%Y-%m-%d")
     
-    if isinstance(obj, dt_time):  # 👈 corrigido
+    if isinstance(obj, dt_time):  # ðŸ‘ˆ corrigido
         return obj.strftime("%H:%M:%S")
     
     if isinstance(obj, memoryview):
@@ -2642,7 +2699,7 @@ def calcular_prioridade(entrada_iso, valor, tipo_nome):
         entrada = datetime.fromisoformat(entrada_iso)
         tempo_espera = (agora() - entrada).total_seconds() / 3600  # horas
 
-        # ⏱️ tempo de espera
+        # â±ï¸ tempo de espera
         if tempo_espera > 2:
             prioridade += 3
         elif tempo_espera > 1:
@@ -2653,7 +2710,7 @@ def calcular_prioridade(entrada_iso, valor, tipo_nome):
     except:
         pass
 
-    # 💰 valor do serviço
+    # ðŸ’° valor do serviÃ§o
     try:
         if float(valor) >= 150:
             prioridade += 3
@@ -2664,7 +2721,7 @@ def calcular_prioridade(entrada_iso, valor, tipo_nome):
     except:
         pass
 
-    # 🧽 tipo de serviço
+    # ðŸ§½ tipo de serviÃ§o
     if tipo_nome:
         tipo = tipo_nome.lower()
 
@@ -2697,11 +2754,11 @@ def calcular_prioridade_inteligente(servico):
 
     return prioridade
 
-# 📁 CONFIG UPLOAD
+# ðŸ“ CONFIG UPLOAD
 UPLOAD_FOLDER = "static/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# 🔐 SEGURANÇA UPLOAD
+# ðŸ” SEGURANÃ‡A UPLOAD
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "heic", "heif"}
 ALLOWED_SPREADSHEET_EXTENSIONS = {"csv", "tsv", "xls", "xlsx"}
 
@@ -2733,14 +2790,17 @@ def adicionar_coluna_se_preciso(cursor, tabela, definicao_coluna):
         pass
 
 app = Flask(__name__)
-app.config["SESSION_PERMANENT"] = True
+app.config.update(
+    build_flask_security_config(
+        FLASK_SECRET_KEY_RAW or None,
+        secure_cookie=SESSION_COOKIE_SECURE_RAW in {"1", "true", "yes", "on"},
+    )
+)
 app.config["SESSION_TYPE"] = "filesystem"
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = False
-app.secret_key = "wagen_super_segura_123"
+app.secret_key = app.config["SECRET_KEY"]
 
 VERSAO_SISTEMA_PADRAO = "0.7.5-alpha (Em Desenvolvimento)"
-APP_VERSION = f"Versão: {VERSAO_SISTEMA_PADRAO}"
+APP_VERSION = f"VersÃ£o: {VERSAO_SISTEMA_PADRAO}"
 MESES_CURTOS_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 PERIODOS_FINANCEIRO = [
     {"value": "hoje", "label": "Hoje"},
@@ -2849,9 +2909,9 @@ MAPA_LABEL_CAMPOS_SYNC = {
 ALIASES_CAMPOS_SYNC = {
     "placa": ["placa"],
     "nome": ["nome", "cliente"],
-    "modelo": ["modelo", "carro", "veiculo", "veículo"],
+    "modelo": ["modelo", "carro", "veiculo", "veÃ­culo"],
     "cor": ["cor"],
-    "servico": ["servico", "serviço", "servi?o", "servi o", "tipo servico", "tipo", "lavagem"],
+    "servico": ["servico", "serviÃ§o", "servi?o", "servi o", "tipo servico", "tipo", "lavagem"],
     "data": ["data", "data lavagem", "dia", "data servico"],
 }
 
@@ -2860,12 +2920,126 @@ def normalizar_versao_sistema(valor):
     texto = normalizar_texto_campo(valor)
     if not texto:
         return VERSAO_SISTEMA_PADRAO
-    texto = re.sub(r"(?i)^\s*vers[aã]o\s*:\s*", "", texto).strip()
+    texto = re.sub(r"(?i)^\s*vers[aÃ£]o\s*:\s*", "", texto).strip()
     return texto or VERSAO_SISTEMA_PADRAO
 
 
 def formatar_versao_sistema(valor):
-    return f"Versão: {normalizar_versao_sistema(valor)}"
+    return f"VersÃ£o: {normalizar_versao_sistema(valor)}"
+
+
+def row_para_dict(row):
+    if not row:
+        return {}
+    if isinstance(row, dict):
+        return dict(row)
+    if hasattr(row, "keys"):
+        return {chave: row[chave] for chave in row.keys()}
+    return {}
+
+
+def csrf_protection_ativa():
+    return bool_config_ativo(CSRF_PROTECTION_RAW)
+
+
+def telemetria_ativa():
+    return not (str(TELEMETRIA_ATIVA_RAW or "").strip().lower() in {"0", "false", "no", "off"})
+
+
+def empresa_atual_id():
+    if has_request_context():
+        try:
+            return int(session.get("empresa_id") or 1)
+        except Exception:
+            return 1
+    return 1
+
+
+def contexto_produto_padrao():
+    return build_brand_context(
+        {
+            "marca_nome": "Wagen Estetica Automotiva",
+            "marca_subtitulo": "Gestao Estetica",
+            "marca_cor_primaria": "#facc15",
+            "marca_cor_secundaria": "#111827",
+            "storage_provider": "database",
+            "licenca_plano": "starter",
+            "licenca_status": "trial",
+            "onboarding_concluido": 0,
+            "whitelabel_ativo": 0,
+        },
+        {},
+    )
+
+
+def carregar_contexto_produto():
+    padrao = contexto_produto_padrao()
+    if not INIT_DB_EXECUTADO:
+        return padrao
+
+    def carregar(conn):
+        c = conn.cursor()
+        c.execute("SELECT * FROM configuracao_empresa WHERE id=1")
+        config = row_para_dict(c.fetchone())
+
+        empresa_id = int(config.get("empresa_id") or 1)
+        empresa = {}
+        try:
+            c.execute("SELECT * FROM empresas WHERE id=?", (empresa_id,))
+            empresa = row_para_dict(c.fetchone())
+        except Exception:
+            empresa = {}
+
+        return {"config": config, "empresa": empresa}
+
+    dados = executar_leitura_resiliente(
+        carregar,
+        descricao="CONTEXTO PRODUTO",
+        padrao={"config": {}, "empresa": {}},
+    )
+    return build_brand_context(dados.get("config"), dados.get("empresa"))
+
+
+def registrar_evento_telemetria_app(evento, categoria="sistema", payload=None, severidade="info", usuario_row=None):
+    if not telemetria_ativa():
+        return False
+
+    usuario_id = None
+    usuario = None
+    empresa_id = empresa_atual_id()
+
+    if usuario_row:
+        try:
+            usuario_id = usuario_row["id"]
+        except Exception:
+            usuario_id = None
+        try:
+            usuario = usuario_row["usuario"]
+        except Exception:
+            usuario = None
+        try:
+            empresa_id = int(usuario_row["empresa_id"] or empresa_id)
+        except Exception:
+            pass
+    elif has_request_context():
+        usuario_id = session.get("usuario_id")
+        usuario = session.get("usuario")
+
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr) if has_request_context() else None
+    user_agent = request.headers.get("User-Agent", "")[:255] if has_request_context() else None
+
+    return registrar_evento_telemetria_core(
+        conectar,
+        empresa_id=empresa_id,
+        usuario_id=usuario_id,
+        usuario=usuario,
+        categoria=categoria,
+        evento=evento,
+        severidade=severidade,
+        payload=payload,
+        ip=ip,
+        user_agent=user_agent,
+    )
 
 
 def obter_versao_sistema():
@@ -2892,7 +3066,12 @@ def obter_versao_sistema():
 
 @app.context_processor
 def inject_global_template_context():
-    return {"app_version": obter_versao_sistema()}
+    produto = carregar_contexto_produto()
+    return {
+        "app_version": obter_versao_sistema(),
+        "csrf_token": lambda: issue_csrf_token(session),
+        **produto,
+    }
 
 
 sync_lock = Lock()
@@ -3652,7 +3831,7 @@ def conectar():
             return ConexaoCompat(conn, "sqlite")
 
     conn = sqlite3.connect(DATABASE_FILE)
-    conn.row_factory = sqlite3.Row  # 🔥 ESSENCIAL
+    conn.row_factory = sqlite3.Row  # ðŸ”¥ ESSENCIAL
     return ConexaoCompat(conn, "sqlite")
 
 
@@ -3846,7 +4025,7 @@ def garantir_schema_sqlite_local_minima(force=False):
             c.execute("""
             CREATE TABLE IF NOT EXISTS veiculos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                placa TEXT UNIQUE NOT NULL,
+                placa TEXT NOT NULL,
                 modelo TEXT,
                 cor TEXT,
                 cliente_id INTEGER,
@@ -4966,7 +5145,7 @@ def atualizar_banco():
     c.execute("""
     CREATE TABLE IF NOT EXISTS retornos_clientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        placa TEXT NOT NULL UNIQUE,
+        placa TEXT NOT NULL,
         status TEXT DEFAULT 'pendente',
         observacao TEXT,
         proximo_contato_em TEXT,
@@ -5133,12 +5312,29 @@ def init_db():
     atualizar_banco()
     criar_itens_checklist_padrao()
     criar_admin()
+    aplicar_migracoes_fundacao_produto()
+
+
+def aplicar_migracoes_fundacao_produto():
+    conn = conectar()
+    try:
+        run_product_foundation_migrations(
+            conn,
+            adicionar_coluna_se_preciso,
+            agora_iso,
+            print_func=print,
+        )
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 def criar_todas_tabelas():
     conn = conectar()
     c = conn.cursor()
 
-    # 🔔 NOTIFICAÇÕES
+    # ðŸ”” NOTIFICAÃ‡Ã•ES
     c.execute("""
     CREATE TABLE IF NOT EXISTS notificacoes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5149,7 +5345,7 @@ def criar_todas_tabelas():
     )
     """)
 
-    # 🔄 SINCRONIZAÇÕES
+    # ðŸ”„ SINCRONIZAÃ‡Ã•ES
     c.execute("""
     CREATE TABLE IF NOT EXISTS sincronizacoes_clientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5175,7 +5371,7 @@ def criar_todas_tabelas():
     )
     """)
 
-    # 🔐 USUÁRIOS
+    # ðŸ” USUÃRIOS
     c.execute("""
     CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5197,7 +5393,7 @@ def criar_todas_tabelas():
     )
     """)
 
-    # 👤 CLIENTES
+    # ðŸ‘¤ CLIENTES
     c.execute("""
     CREATE TABLE IF NOT EXISTS clientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5207,11 +5403,11 @@ def criar_todas_tabelas():
     )
     """)
 
-    # 🚗 VEÍCULOS
+    # ðŸš— VEÃCULOS
     c.execute("""
     CREATE TABLE IF NOT EXISTS veiculos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        placa TEXT UNIQUE NOT NULL,
+        placa TEXT NOT NULL,
         modelo TEXT,
         cor TEXT,
         cliente_id INTEGER,
@@ -5223,7 +5419,7 @@ def criar_todas_tabelas():
     )
     """)
 
-    # 🔔 NOTIFICAÇÕES
+    # ðŸ”” NOTIFICAÃ‡Ã•ES
     c.execute("""
     CREATE TABLE IF NOT EXISTS notificacoes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5234,7 +5430,7 @@ def criar_todas_tabelas():
     )
     """)
 
-    # 🔄 SINCRONIZAÇÕES
+    # ðŸ”„ SINCRONIZAÃ‡Ã•ES
     c.execute("""
     CREATE TABLE IF NOT EXISTS sincronizacoes_clientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5260,7 +5456,7 @@ def criar_todas_tabelas():
     )
     """)
 
-    # 🔥 TIPOS DE SERVIÇO
+    # ðŸ”¥ TIPOS DE SERVIÃ‡O
     c.execute("""
     CREATE TABLE IF NOT EXISTS tipos_servico (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5269,7 +5465,7 @@ def criar_todas_tabelas():
     )
     """)
 
-    # 🔥 SERVIÇOS
+    # ðŸ”¥ SERVIÃ‡OS
     c.execute("""
     CREATE TABLE IF NOT EXISTS servicos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5306,7 +5502,7 @@ def criar_todas_tabelas():
     )
     """)
 
-    # 🔥 ADICIONAIS
+    # ðŸ”¥ ADICIONAIS
     c.execute("""
     CREATE TABLE IF NOT EXISTS adicionais (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5314,7 +5510,7 @@ def criar_todas_tabelas():
     )
     """)
 
-    # 🔥 RELAÇÃO SERVIÇO ↔ ADICIONAIS
+    # ðŸ”¥ RELAÃ‡ÃƒO SERVIÃ‡O â†” ADICIONAIS
     c.execute("""
     CREATE TABLE IF NOT EXISTS servico_adicionais (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5338,7 +5534,7 @@ def criar_todas_tabelas():
     )
     """)
 
-    # 🔥 FOTOS (melhorado)
+    # ðŸ”¥ FOTOS (melhorado)
     c.execute("""
     CREATE TABLE IF NOT EXISTS fotos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5421,7 +5617,7 @@ def criar_todas_tabelas():
     c.execute("""
     CREATE TABLE IF NOT EXISTS retornos_clientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        placa TEXT NOT NULL UNIQUE,
+        placa TEXT NOT NULL,
         status TEXT DEFAULT 'pendente',
         observacao TEXT,
         proximo_contato_em TEXT,
@@ -5435,7 +5631,7 @@ def criar_todas_tabelas():
     )
     """)
 
-    # ⚡ ÍNDICES (performance)
+    # âš¡ ÃNDICES (performance)
     c.execute("""
     CREATE TABLE IF NOT EXISTS configuracao_empresa (
         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -5865,6 +6061,10 @@ def preencher_sessao_usuario(usuario_row, limpar=True):
         usuario_row["foto_perfil"],
         usuario_row["id"],
     )
+    try:
+        session["empresa_id"] = int(usuario_row["empresa_id"] or 1)
+    except Exception:
+        session["empresa_id"] = 1
     session["usuario_perfil"] = perfil_usuario
     session["senha_alteracao_obrigatoria"] = usuario_precisa_trocar_senha(usuario_row)
     session["usuario_sync_em"] = time.time()
@@ -6028,7 +6228,7 @@ ETAPAS_OPERACIONAIS_VALIDAS = {"LAVAGEM", "FINALIZACAO"}
 
 def normalizar_etapa_operacional(valor, fallback="LAVAGEM"):
     texto = normalizar_texto_campo(valor).upper()
-    texto = texto.replace("FINALIZAÇÃO", "FINALIZACAO")
+    texto = texto.replace("FINALIZAÃ‡ÃƒO", "FINALIZACAO")
     if texto not in ETAPAS_OPERACIONAIS_VALIDAS:
         return fallback
     return texto
@@ -6062,7 +6262,7 @@ def obter_inicio_etapa_servico(servico, etapa, incluir_entrada=False):
     return None
 
 
-def atualizar_campos_servico(cursor, servico_id, updates):
+def atualizar_campos_servico(cursor, servico_id, updates, empresa_id=None):
     if not updates:
         return
 
@@ -6073,11 +6273,12 @@ def atualizar_campos_servico(cursor, servico_id, updates):
         colunas.append(f"{chave}=?")
         parametros.append(valor)
 
+    sql = f"UPDATE servicos SET {', '.join(colunas)} WHERE id=?"
     parametros.append(servico_id)
-    cursor.execute(
-        f"UPDATE servicos SET {', '.join(colunas)} WHERE id=?",
-        tuple(parametros),
-    )
+    if empresa_id is not None:
+        sql += " AND empresa_id=?"
+        parametros.append(normalize_empresa_id(empresa_id))
+    cursor.execute(sql, tuple(parametros))
 
 
 def calcular_segundos_etapa_servico(servico, etapa, referencia=None):
@@ -6147,7 +6348,12 @@ def registrar_transicao_etapa_servico(cursor, servico, etapa_destino, instante=N
         campo_inicio_destino = _campo_inicio_primeiro_etapa(etapa_destino)
         if not normalizar_texto_campo(servico_dict.get(campo_inicio_destino)):
             updates[campo_inicio_destino] = instante_iso
-        atualizar_campos_servico(cursor, servico_dict["id"], updates)
+        atualizar_campos_servico(
+            cursor,
+            servico_dict["id"],
+            updates,
+            empresa_id=servico_dict.get("empresa_id"),
+        )
         servico_dict.update(updates)
         return servico_dict
 
@@ -6171,7 +6377,12 @@ def registrar_transicao_etapa_servico(cursor, servico, etapa_destino, instante=N
     if not normalizar_texto_campo(servico_dict.get(campo_inicio_destino)):
         updates[campo_inicio_destino] = instante_iso
 
-    atualizar_campos_servico(cursor, servico_dict["id"], updates)
+    atualizar_campos_servico(
+        cursor,
+        servico_dict["id"],
+        updates,
+        empresa_id=servico_dict.get("empresa_id"),
+    )
     servico_dict.update(updates)
     return servico_dict
 
@@ -6207,7 +6418,12 @@ def consolidar_tempo_etapa_atual_servico(cursor, servico, instante=None, etapa_f
 
     updates["etapa_atual_iniciada_em"] = None
 
-    atualizar_campos_servico(cursor, servico_dict["id"], updates)
+    atualizar_campos_servico(
+        cursor,
+        servico_dict["id"],
+        updates,
+        empresa_id=servico_dict.get("empresa_id"),
+    )
     servico_dict.update(updates)
     return servico_dict
 
@@ -6663,25 +6879,25 @@ def montar_resultado_clima_normalizado(payload):
         return None
 
     if any(termo in texto_cmp for termo in ("chuva", "rain", "storm", "drizzle", "shower", "trovo")) or (codigo is not None and codigo >= 61):
-        icone = "🌧️"
+        icone = "ðŸŒ§ï¸"
         clima = texto or "Chuva"
-        sugestao = "💡 Lavagem interna"
+        sugestao = "ðŸ’¡ Lavagem interna"
     elif any(termo in texto_cmp for termo in ("nublado", "cloud", "overcast", "encoberto")) or (codigo is not None and 4 <= codigo < 61):
-        icone = "☁️"
+        icone = "â˜ï¸"
         clima = texto or "Nublado"
-        sugestao = "💡 Lavagem simples"
+        sugestao = "ðŸ’¡ Lavagem simples"
     elif any(termo in texto_cmp for termo in ("sol", "sun", "clear", "limpo", "ensolar")) or (codigo is not None and codigo <= 3):
-        icone = "☀️"
+        icone = "â˜€ï¸"
         clima = texto or "Tempo limpo"
-        sugestao = "💡 Lavagem completa"
+        sugestao = "ðŸ’¡ Lavagem completa"
     elif any(termo in texto_cmp for termo in ("fog", "mist", "nebl", "haze")):
-        icone = "🌫️"
+        icone = "ðŸŒ«ï¸"
         clima = texto or "Neblina"
-        sugestao = "💡 Consulte a previsao completa."
+        sugestao = "ðŸ’¡ Consulte a previsao completa."
     else:
-        icone = "⛅"
+        icone = "â›…"
         clima = texto or "Clima carregado"
-        sugestao = "💡 Consulte a previsao completa."
+        sugestao = "ðŸ’¡ Consulte a previsao completa."
 
     return {
         "clima": clima,
@@ -6696,16 +6912,16 @@ def obter_resultado_clima_api():
     fallback = {
         "clima": "Clima indisponivel",
         "temp": "--",
-        "icone": "⚠️",
-        "sugestao": "💡 Consulte o radar do clima.",
+        "icone": "âš ï¸",
+        "sugestao": "ðŸ’¡ Consulte o radar do clima.",
     }
 
     if not configuracao.get("clima_ativo"):
         return {
             "clima": "Clima desativado",
             "temp": "--",
-            "icone": "⏸️",
-            "sugestao": "💡 Ative o clima nas configuracoes.",
+            "icone": "â¸ï¸",
+            "sugestao": "ðŸ’¡ Ative o clima nas configuracoes.",
         }
 
     agora_ts = time.time()
@@ -8251,6 +8467,7 @@ def resumir_entregas_em_andamento(servicos, referencia=None):
 def salvar_fotos_servico(cursor, servico_id, fotos, tipo):
     total_salvas = 0
     usuario_info = resumo_usuario_logado()
+    empresa_id = empresa_atual_id()
 
     for foto in fotos or []:
         if not foto or not foto.filename or not arquivo_permitido(foto.filename):
@@ -8262,12 +8479,13 @@ def salvar_fotos_servico(cursor, servico_id, fotos, tipo):
         cursor.execute(
             """
             INSERT INTO fotos (
-                servico_id, tipo, caminho, usuario, usuario_nome, tamanho_bytes, largura, altura,
+                empresa_id, servico_id, tipo, caminho, usuario, usuario_nome, tamanho_bytes, largura, altura,
                 arquivo_blob, mime_type, arquivo_nome
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                empresa_id,
                 servico_id,
                 tipo,
                 caminho,
@@ -8433,13 +8651,14 @@ def listar_fotos_servicos(ids_servicos):
 
     conn = conectar()
     c = conn.cursor()
+    empresa_id = empresa_atual_id()
     placeholders = ",".join(["?"] * len(ids))
     c.execute(f"""
         SELECT id, servico_id, tipo, caminho, criado_em, usuario, usuario_nome, tamanho_bytes, largura, altura,
                mime_type, arquivo_nome,
                CASE WHEN arquivo_blob IS NOT NULL THEN 1 ELSE 0 END AS possui_blob
         FROM fotos
-        WHERE servico_id IN ({placeholders})
+        WHERE empresa_id=? AND servico_id IN ({placeholders})
         ORDER BY
             CASE tipo
                 WHEN 'entrada' THEN 0
@@ -8448,7 +8667,7 @@ def listar_fotos_servicos(ids_servicos):
                 ELSE 3
             END,
             id DESC
-    """, ids)
+    """, (empresa_id, *ids))
 
     fotos_por_servico = {}
     labels = {
@@ -8546,11 +8765,12 @@ def listar_cobrancas_extras_servico(servico_id):
 
 def atualizar_campos_operacionais_servico(cursor, servico_id, form, usuario_info=None):
     usuario_info = usuario_info or resumo_usuario_logado()
+    empresa_id = empresa_atual_id()
     cursor.execute("""
         UPDATE servicos
         SET origem=?, guarita=?, observacoes=?, pneu=?, cera=?, hidro_lataria=?, hidro_vidros=?,
             operacional_por_usuario=?, operacional_por_nome=?
-        WHERE id=?
+        WHERE empresa_id=? AND id=?
     """, (
         normalizar_texto_campo(form.get("origem")),
         normalizar_texto_campo(form.get("guarita")),
@@ -8561,6 +8781,7 @@ def atualizar_campos_operacionais_servico(cursor, servico_id, form, usuario_info
         normalizar_flag_sim_nao(form.get("hidro_vidros")),
         normalizar_texto_campo(usuario_info.get("usuario")),
         normalizar_texto_campo(usuario_info.get("nome")),
+        empresa_id,
         servico_id,
     ))
 
@@ -8580,22 +8801,7 @@ def listar_checklist_servico(servico_id):
 def buscar_servico_operacional(servico_id):
     conn = conectar()
     c = conn.cursor()
-    c.execute("""
-        SELECT
-            servicos.*,
-            tipos_servico.nome AS tipo_nome,
-            veiculos.placa,
-            veiculos.modelo,
-            veiculos.cor,
-            clientes.nome AS cliente_nome,
-            clientes.telefone AS cliente_telefone
-        FROM servicos
-        LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
-        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
-        LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
-        WHERE servicos.id=?
-    """, (servico_id,))
-    servico = c.fetchone()
+    servico = consultar_servico_operacional_domain(c, empresa_atual_id(), servico_id)
     conn.close()
     return dict(servico) if servico else None
 
@@ -8708,101 +8914,16 @@ def formatar_item_historico_servico(servico, checklist_itens=None, fotos_por_ser
 def listar_historico_servicos(placa=None, busca="", limite=None):
     conn = conectar()
     c = conn.cursor()
-    filtros = []
-    params = []
-
-    placa = normalizar_texto_campo(placa).upper()
-    busca = normalizar_texto_campo(busca)
-
-    if placa:
-        filtros.append("UPPER(COALESCE(veiculos.placa, ''))=?")
-        params.append(placa)
-
-    if busca:
-        termo = f"%{busca}%"
-        filtros.append(
-            """
-            (
-                veiculos.placa LIKE ?
-                OR veiculos.modelo LIKE ?
-                OR veiculos.cor LIKE ?
-                OR clientes.nome LIKE ?
-                OR tipos_servico.nome LIKE ?
-            )
-            """
-        )
-        params.extend([termo, termo, termo, termo, termo])
-
-    where_sql = f"WHERE {' AND '.join(filtros)}" if filtros else ""
-    limit_sql = ""
-    if limite:
-        limit_sql = " LIMIT ?"
-        params.append(int(limite))
-
-    c.execute(
-        f"""
-            SELECT
-                servicos.id,
-                servicos.veiculo_id,
-                servicos.tipo_id,
-                servicos.valor,
-                servicos.valor_adicional,
-                servicos.entrada,
-                servicos.entrega_prevista,
-                servicos.entrega,
-                servicos.status,
-                servicos.etapa_atual,
-                servicos.etapa_atual_iniciada_em,
-                servicos.lavagem_iniciada_em,
-                servicos.finalizacao_iniciada_em,
-                servicos.lavagem_segundos,
-                servicos.finalizacao_segundos,
-                servicos.observacoes,
-                servicos.origem,
-                servicos.guarita,
-                servicos.pneu,
-                servicos.cera,
-                servicos.hidro_lataria,
-                servicos.hidro_vidros,
-                servicos.criado_por_usuario,
-                servicos.criado_por_nome,
-                servicos.operacional_por_usuario,
-                servicos.operacional_por_nome,
-                servicos.finalizado_por_usuario,
-                servicos.finalizado_por_nome,
-                tipos_servico.nome AS tipo_nome,
-                veiculos.placa,
-                veiculos.modelo,
-                veiculos.cor,
-                clientes.nome AS cliente_nome,
-                clientes.telefone AS cliente_telefone
-            FROM servicos
-            LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
-            LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
-            LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
-            {where_sql}
-            ORDER BY servicos.id DESC
-            {limit_sql}
-        """,
-        params,
+    servicos_db = consultar_historico_servicos_domain(
+        c,
+        empresa_atual_id(),
+        placa=placa,
+        busca=busca,
+        limite=limite,
     )
-    servicos_db = c.fetchall()
 
     ids_servicos = [row["id"] for row in servicos_db]
-    checklist_por_servico = {}
-    if ids_servicos:
-        placeholders = ",".join(["?"] * len(ids_servicos))
-        c.execute(
-            f"""
-                SELECT servico_id, item_nome
-                FROM servico_checklist
-                WHERE servico_id IN ({placeholders})
-                ORDER BY id ASC
-            """,
-            ids_servicos,
-        )
-        for row in c.fetchall():
-            checklist_por_servico.setdefault(row["servico_id"], []).append(row["item_nome"])
+    checklist_por_servico = listar_nomes_checklist_por_servicos_domain(c, ids_servicos)
 
     conn.close()
 
@@ -8897,11 +9018,11 @@ def corrigir_link_google_sheets(url):
         if "docs.google.com" in url and "/spreadsheets/d/" in url:
             sheet_id = extrair_sheet_id_google(url)
             if not sheet_id:
-                raise Exception("Não foi possível identificar o ID da planilha.")
+                raise Exception("NÃ£o foi possÃ­vel identificar o ID da planilha.")
 
             return montar_url_google_sheets_csv(sheet_id, extrair_gid_url(url))
 
-        raise Exception("Link não suportado. Use uma planilha do Google Sheets.")
+        raise Exception("Link nÃ£o suportado. Use uma planilha do Google Sheets.")
 
     except Exception as e:
         raise Exception(f"Erro ao processar link: {e}")
@@ -8957,8 +9078,8 @@ def ler_csv_flexivel(conteudo_bytes):
 
     if parece_html(amostra):
         raise ValueError(
-            "O link retornou uma página HTML em vez da planilha. "
-            "Verifique se a planilha do Google está acessível pelo link."
+            "O link retornou uma pÃ¡gina HTML em vez da planilha. "
+            "Verifique se a planilha do Google estÃ¡ acessÃ­vel pelo link."
         )
 
     delimitadores = [";", ",", "\t", "|"]
@@ -9022,7 +9143,7 @@ def ler_csv_flexivel(conteudo_bytes):
     if melhor_df is not None:
         return melhor_df
 
-    raise ultimo_erro or ValueError("Não foi possível interpretar o CSV.")
+    raise ultimo_erro or ValueError("NÃ£o foi possÃ­vel interpretar o CSV.")
 
 def sugerir_mapeamento_colunas(colunas):
     sugestao = {}
@@ -9048,13 +9169,13 @@ def sugerir_mapeamento_colunas(colunas):
 
 def ler_dataframe_link_planilha(url, intervalo_minutos=None):
 
-    # 🔥 DETECTAR SHEETY
+    # ðŸ”¥ DETECTAR SHEETY
     if "sheety.co" in url:
         df = ler_planilha_sheety(url, intervalo_minutos=intervalo_minutos)
         return df, url
     if not url:
 
-        raise ValueError("Informe um link de planilha válido.")
+        raise ValueError("Informe um link de planilha vÃ¡lido.")
 
     ultimo_erro = None
 
@@ -9071,7 +9192,7 @@ def ler_dataframe_link_planilha(url, intervalo_minutos=None):
 
             if "text/html" in content_type or parece_html(amostra_texto):
                 ultimo_erro = ValueError(
-                    "O link abriu uma página de visualização em vez do arquivo da planilha. "
+                    "O link abriu uma pÃ¡gina de visualizaÃ§Ã£o em vez do arquivo da planilha. "
                     "No OneDrive/SharePoint, confirme que o link permite download em modo leitura."
                 )
                 continue
@@ -9096,7 +9217,7 @@ def ler_dataframe_link_planilha(url, intervalo_minutos=None):
             ultimo_erro = e
 
     raise ultimo_erro or ValueError(
-        "Não consegui acessar um arquivo de planilha válido por esse link."
+        "NÃ£o consegui acessar um arquivo de planilha vÃ¡lido por esse link."
     )
 
 def limpar_valor_planilha(valor):
@@ -9234,32 +9355,12 @@ def montar_registros_historico_lavagens(df, mapeamento):
 
     return registros, estatisticas
 
-def salvar_historico_lavagens_sync(sync_id, registros):
+def salvar_historico_lavagens_sync(sync_id, registros, empresa_id=None):
     conn = conectar()
     c = conn.cursor()
     agora_atual = agora_iso()
-
-    c.execute("DELETE FROM historico_lavagens_sync WHERE sync_id=?", (sync_id,))
-
-    for item in registros:
-        c.execute("""
-            INSERT INTO historico_lavagens_sync (
-                sync_id, placa, cliente, carro, cor, servico,
-                data_lavagem, data_original, criado_em, atualizado_em
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            sync_id,
-            item.get("placa"),
-            item.get("cliente"),
-            item.get("carro"),
-            item.get("cor"),
-            item.get("servico"),
-            item.get("data_lavagem"),
-            item.get("data_original"),
-            agora_atual,
-            agora_atual,
-        ))
+    empresa_id = normalize_empresa_id(empresa_id or empresa_atual_id())
+    salvar_historico_lavagens_sync_domain(c, sync_id, registros, agora_atual, empresa_id)
 
     conn.commit()
     conn.close()
@@ -9267,37 +9368,14 @@ def salvar_historico_lavagens_sync(sync_id, registros):
 def buscar_ultima_lavagem_sync_placa(placa):
     conn = conectar()
     c = conn.cursor()
-    c.execute("""
-        SELECT *
-        FROM historico_lavagens_sync
-        WHERE placa=?
-        ORDER BY
-            CASE WHEN data_lavagem IS NULL OR data_lavagem='' THEN 1 ELSE 0 END,
-            data_lavagem DESC,
-            id DESC
-        LIMIT 1
-    """, (placa.upper(),))
-    row = c.fetchone()
+    row = consultar_historico_sync_por_placa_domain(c, empresa_atual_id(), placa)
     conn.close()
     return dict(row) if row else None
 
 def buscar_ultima_lavagem_local_placa(placa):
     conn = conectar()
     c = conn.cursor()
-    c.execute("""
-        SELECT
-            servicos.entrega,
-            tipos_servico.nome AS servico
-        FROM servicos
-        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
-        LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
-        WHERE veiculos.placa=?
-          AND servicos.status='FINALIZADO'
-          AND servicos.entrega IS NOT NULL
-        ORDER BY servicos.entrega DESC, servicos.id DESC
-        LIMIT 1
-    """, (placa.upper(),))
-    row = c.fetchone()
+    row = consultar_ultima_lavagem_local_por_placa_domain(c, empresa_atual_id(), placa)
     conn.close()
     return dict(row) if row else None
 
@@ -9427,29 +9505,7 @@ def montar_sugestao_contato_retorno(item):
 def listar_ultimas_lavagens_sync():
     conn = conectar()
     c = conn.cursor()
-    c.execute("""
-        SELECT
-            placa,
-            cliente,
-            carro,
-            cor,
-            servico,
-            data_lavagem,
-            data_original,
-            id
-        FROM historico_lavagens_sync
-        WHERE placa IS NOT NULL
-          AND TRIM(placa) <> ''
-        ORDER BY
-            UPPER(placa) ASC,
-            CASE
-                WHEN data_lavagem IS NULL OR data_lavagem = '' THEN 1
-                ELSE 0
-            END,
-            data_lavagem DESC,
-            id DESC
-    """)
-    rows = c.fetchall()
+    rows = consultar_ultimas_lavagens_sync_domain(c, empresa_atual_id())
     conn.close()
 
     ultimos = {}
@@ -9471,29 +9527,7 @@ def listar_ultimas_lavagens_sync():
 def listar_ultimas_lavagens_locais():
     conn = conectar()
     c = conn.cursor()
-    c.execute("""
-        SELECT
-            veiculos.placa,
-            clientes.nome AS cliente,
-            veiculos.modelo AS carro,
-            veiculos.cor AS cor,
-            tipos_servico.nome AS servico,
-            servicos.entrega,
-            servicos.id
-        FROM servicos
-        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
-        LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
-        LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
-        WHERE servicos.status = 'FINALIZADO'
-          AND servicos.entrega IS NOT NULL
-          AND veiculos.placa IS NOT NULL
-          AND TRIM(veiculos.placa) <> ''
-        ORDER BY
-            UPPER(veiculos.placa) ASC,
-            servicos.entrega DESC,
-            servicos.id DESC
-    """)
-    rows = c.fetchall()
+    rows = consultar_ultimas_lavagens_locais_domain(c, empresa_atual_id())
     conn.close()
 
     ultimos = {}
@@ -9565,19 +9599,7 @@ def buscar_contatos_clientes_por_placa(placas):
 
     conn = conectar()
     c = conn.cursor()
-    placeholders = ",".join(["?"] * len(placas))
-    c.execute(f"""
-        SELECT
-            UPPER(veiculos.placa) AS placa,
-            clientes.nome AS cliente_nome,
-            clientes.telefone,
-            veiculos.modelo AS carro,
-            veiculos.cor AS cor
-        FROM veiculos
-        LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
-        WHERE UPPER(veiculos.placa) IN ({placeholders})
-    """, tuple(placas))
-    rows = [dict(item) for item in c.fetchall()]
+    rows = consultar_contatos_clientes_por_placas_domain(c, empresa_atual_id(), placas)
     conn.close()
 
     return {
@@ -9589,22 +9611,7 @@ def buscar_contatos_clientes_por_placa(placas):
 def carregar_estados_retornos(placas=None):
     conn = conectar()
     c = conn.cursor()
-
-    if placas:
-        placas = [normalizar_texto_campo(item).upper() for item in placas if normalizar_texto_campo(item)]
-        if not placas:
-            conn.close()
-            return {}
-
-        placeholders = ",".join(["?"] * len(placas))
-        c.execute(
-            f"SELECT * FROM retornos_clientes WHERE placa IN ({placeholders})",
-            tuple(placas),
-        )
-    else:
-        c.execute("SELECT * FROM retornos_clientes")
-
-    rows = [dict(item) for item in c.fetchall()]
+    rows = consultar_estados_retorno_domain(c, empresa_atual_id(), placas=placas)
     conn.close()
 
     for item in rows:
@@ -9876,13 +9883,15 @@ def upsert_retorno_cliente(
     usuario_info = usuario or resumo_usuario_logado()
     conn = conectar()
     c = conn.cursor()
+    empresa_id = empresa_atual_id()
     c.execute("""
         INSERT INTO retornos_clientes (
-            placa, status, observacao, proximo_contato_em, ultimo_contato_em,
+            empresa_id, placa, status, observacao, proximo_contato_em, ultimo_contato_em,
             ultima_acao, reagendado_dias, usuario, usuario_nome, criado_em, atualizado_em
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(placa) DO UPDATE SET
+            empresa_id=excluded.empresa_id,
             status=excluded.status,
             observacao=excluded.observacao,
             proximo_contato_em=excluded.proximo_contato_em,
@@ -9893,6 +9902,7 @@ def upsert_retorno_cliente(
             usuario_nome=excluded.usuario_nome,
             atualizado_em=excluded.atualizado_em
     """, (
+        empresa_id,
         normalizar_texto_campo(placa).upper(),
         normalizar_status_retorno(status),
         normalizar_texto_campo(observacao),
@@ -9928,9 +9938,10 @@ def descrever_campos_sincronizados(sync):
 
     return campos
 
-def importar_clientes_dataframe(df, mapeamento):
+def importar_clientes_dataframe(df, mapeamento, empresa_id=None):
     conn = conectar()
     c = conn.cursor()
+    empresa_id = normalize_empresa_id(empresa_id or empresa_atual_id())
 
     estatisticas = {
         "linhas_lidas": len(df.index),
@@ -9966,73 +9977,29 @@ def importar_clientes_dataframe(df, mapeamento):
             if mapeamento.get("cor") else ""
         )
 
-        c.execute("""
-            SELECT id, placa, modelo, cor, cliente_id
-            FROM veiculos
-            WHERE placa=?
-        """, (placa,))
-        veiculo_existente = c.fetchone()
+        resultado = salvar_cliente_veiculo_cursor_domain(
+            c,
+            empresa_id,
+            placa,
+            nome=nome,
+            telefone=telefone,
+            modelo=modelo,
+            cor=cor,
+            placa_referencia=placa,
+            sincronizar_placa_principal_fn=sincronizar_placa_principal_cliente,
+        )
+        cliente_id = resultado.get("cliente_id")
 
-        cliente_id = veiculo_existente["cliente_id"] if veiculo_existente and veiculo_existente["cliente_id"] else None
-        cliente_existente = None
-
-        if telefone:
-            c.execute("SELECT id, nome, telefone FROM clientes WHERE telefone=?", (telefone,))
-            cliente_existente = c.fetchone()
-
-            if cliente_existente:
-                cliente_id = cliente_existente["id"]
-        elif cliente_id:
-            c.execute("SELECT id, nome, telefone FROM clientes WHERE id=?", (cliente_id,))
-            cliente_existente = c.fetchone()
-
-        if cliente_existente:
-            novo_nome = nome or cliente_existente["nome"] or ""
-            novo_telefone = telefone or cliente_existente["telefone"] or ""
-
-            if (
-                novo_nome != (cliente_existente["nome"] or "") or
-                novo_telefone != (cliente_existente["telefone"] or "")
-            ):
-                c.execute("""
-                    UPDATE clientes
-                    SET nome=?, telefone=?
-                    WHERE id=?
-                """, (novo_nome, novo_telefone, cliente_existente["id"]))
-                estatisticas["clientes_atualizados"] += 1
-        elif nome or telefone:
-            c.execute("""
-                INSERT INTO clientes (nome, telefone)
-                VALUES (?, ?)
-            """, (nome or "Sem nome", telefone))
-            cliente_id = c.lastrowid
-            estatisticas["clientes_novos"] += 1
-
-        if veiculo_existente:
-            novo_modelo = modelo or veiculo_existente["modelo"] or ""
-            nova_cor = cor or veiculo_existente["cor"] or ""
-            novo_cliente_id = cliente_id if cliente_id is not None else veiculo_existente["cliente_id"]
-
-            if (
-                novo_modelo != (veiculo_existente["modelo"] or "") or
-                nova_cor != (veiculo_existente["cor"] or "") or
-                novo_cliente_id != veiculo_existente["cliente_id"]
-            ):
-                c.execute("""
-                    UPDATE veiculos
-                    SET modelo=?, cor=?, cliente_id=?
-                    WHERE placa=?
-                """, (novo_modelo, nova_cor, novo_cliente_id, placa))
-                estatisticas["veiculos_atualizados"] += 1
-        else:
-            c.execute("""
-                INSERT INTO veiculos (placa, modelo, cor, cliente_id)
-                VALUES (?, ?, ?, ?)
-            """, (placa, modelo, cor, cliente_id))
+        if resultado.get("acao") == "novo":
             estatisticas["veiculos_novos"] += 1
-
-        if cliente_id:
-            sincronizar_placa_principal_cliente(c, cliente_id, placa)
+            if resultado.get("cliente_acao") == "novo":
+                estatisticas["clientes_novos"] += 1
+        else:
+            estatisticas["veiculos_atualizados"] += 1
+            if resultado.get("cliente_acao") == "novo":
+                estatisticas["clientes_novos"] += 1
+            elif resultado.get("cliente_acao") == "atualizado":
+                estatisticas["clientes_atualizados"] += 1
 
         estatisticas["linhas_processadas"] += 1
 
@@ -10044,8 +10011,8 @@ def importar_clientes_dataframe(df, mapeamento):
 def resumir_importacao_clientes(estatisticas):
     resumo = (
         f"{estatisticas['linhas_processadas']} linha(s) processada(s), "
-        f"{estatisticas['veiculos_novos']} veículo(s) novo(s), "
-        f"{estatisticas['veiculos_atualizados']} veículo(s) atualizado(s), "
+        f"{estatisticas['veiculos_novos']} veÃ­culo(s) novo(s), "
+        f"{estatisticas['veiculos_atualizados']} veÃ­culo(s) atualizado(s), "
         f"{estatisticas['clientes_novos']} cliente(s) novo(s), "
         f"{estatisticas['clientes_atualizados']} cliente(s) atualizado(s)"
     )
@@ -10057,29 +10024,30 @@ def resumir_importacao_clientes(estatisticas):
 
     return resumo
 
-def buscar_sincronizacao_cliente(sync_id):
+def buscar_sincronizacao_cliente(sync_id, empresa_id=None):
     conn = conectar()
     c = conn.cursor()
-    c.execute("SELECT * FROM sincronizacoes_clientes WHERE id=?", (sync_id,))
-    sync = c.fetchone()
+    sync = consultar_sincronizacao_cliente_domain(c, sync_id, empresa_id=empresa_id)
     conn.close()
     return sync
 
-def executar_sincronizacao_cliente(sync_id):
-    sync = buscar_sincronizacao_cliente(sync_id)
+def executar_sincronizacao_cliente(sync_id, empresa_id=None):
+    sync = buscar_sincronizacao_cliente(sync_id, empresa_id=empresa_id)
     debug_sync = bool_config_ativo(os.environ.get("DEBUG_SYNC_PLANILHA", ""))
 
     if not sync:
-        return False, "Sincronização não encontrada."
+        return False, "Sincronizacao nao encontrada."
+
+    empresa_id_sync = normalize_empresa_id(empresa_id or sync.get("empresa_id") or 1)
 
     try:
         url_base = sync["url"]
 
-        # 🔥 SHEETY (FLUXO DIRETO)
+        # ðŸ”¥ SHEETY (FLUXO DIRETO)
         if "sheety.co" in url_base:
             df = ler_planilha_sheety(url_base, intervalo_minutos=sync["intervalo_minutos"])
 
-            print("🔥 DADOS SHEETY:")
+            print("ðŸ”¥ DADOS SHEETY:")
             print(df.tail(5))
 
             hash_atual = hashlib.md5(
@@ -10087,7 +10055,7 @@ def executar_sincronizacao_cliente(sync_id):
             ).hexdigest()
             url_usada = url_base
 
-        # 🔽 PLANILHA NORMAL (GOOGLE, CSV, EXCEL)
+        # ðŸ”½ PLANILHA NORMAL (GOOGLE, CSV, EXCEL)
         else:
             url_base = corrigir_link_google_sheets(url_base)
 
@@ -10115,37 +10083,31 @@ def executar_sincronizacao_cliente(sync_id):
             df = df.fillna("")
             df.columns = [str(col).strip().lower() for col in df.columns]
 
-            print("🔥 DADOS PLANILHA:")
+            print("ðŸ”¥ DADOS PLANILHA:")
             print(df.tail(5))
 
             url_usada = url_base
 
         if sync["ultimo_hash"] == hash_atual:
             agora_atual = agora_iso()
-            mensagem = "Sem alterações na planilha."
+            mensagem = "Sem alteraÃ§Ãµes na planilha."
             conn = conectar()
             c = conn.cursor()
-            c.execute("""
-                UPDATE sincronizacoes_clientes
-                SET ultimo_sync_em=?,
-                    proximo_sync_em=?,
-                    ultimo_status=?,
-                    ultima_mensagem=?,
-                    atualizado_em=?
-                WHERE id=?
-            """, (
-                agora_atual,
-                somar_minutos_iso(sync["intervalo_minutos"]),
-                "OK",
-                mensagem,
-                agora_atual,
+            atualizar_status_sincronizacao_cliente_domain(
+                c,
                 sync_id,
-            ))
+                empresa_id_sync,
+                ultimo_sync_em=agora_atual,
+                proximo_sync_em=somar_minutos_iso(sync["intervalo_minutos"]),
+                ultimo_status="OK",
+                ultima_mensagem=mensagem,
+                atualizado_em=agora_atual,
+            )
             conn.commit()
             conn.close()
             return True, mensagem
 
-        # 🔽 MAPEAMENTO
+        # ðŸ”½ MAPEAMENTO
         mapeamento = {
             campo["key"]: sync[f"campo_{campo['key']}"] or ""
             for campo in CAMPOS_SINCRONIZACAO_CLIENTES
@@ -10153,39 +10115,31 @@ def executar_sincronizacao_cliente(sync_id):
         mapeamento["telefone"] = sync["campo_telefone"] or ""
         mapeamento["data"] = sync["campo_data"] or ""
 
-        # 🔽 IMPORTAÇÃO
-        estatisticas = importar_clientes_dataframe(df, mapeamento)
+        # ðŸ”½ IMPORTAÃ‡ÃƒO
+        estatisticas = importar_clientes_dataframe(df, mapeamento, empresa_id=empresa_id_sync)
         registros_historico, estatisticas_historico = montar_registros_historico_lavagens(df, mapeamento)
         estatisticas.update(estatisticas_historico)
-        salvar_historico_lavagens_sync(sync_id, registros_historico)
+        salvar_historico_lavagens_sync(sync_id, registros_historico, empresa_id=empresa_id_sync)
         mensagem = resumir_importacao_clientes(estatisticas)
 
         agora_atual = agora_iso()
 
-        # 🔽 SALVAR RESULTADO
+        # ðŸ”½ SALVAR RESULTADO
         conn = conectar()
         c = conn.cursor()
 
-        c.execute("""
-            UPDATE sincronizacoes_clientes
-            SET url=?,
-                ultimo_sync_em=?,
-                proximo_sync_em=?,
-                ultimo_status=?,
-                ultima_mensagem=?,
-                ultimo_hash=?,
-                atualizado_em=?
-            WHERE id=?
-        """, (
-            url_usada,
-            agora_atual,
-            somar_minutos_iso(sync["intervalo_minutos"]),
-            "OK",
-            mensagem,
-            hash_atual,
-            agora_atual,
-            sync_id
-        ))
+        atualizar_status_sincronizacao_cliente_domain(
+            c,
+            sync_id,
+            empresa_id_sync,
+            url=url_usada,
+            ultimo_sync_em=agora_atual,
+            proximo_sync_em=somar_minutos_iso(sync["intervalo_minutos"]),
+            ultimo_status="OK",
+            ultima_mensagem=mensagem,
+            ultimo_hash=hash_atual,
+            atualizado_em=agora_atual,
+        )
 
         conn.commit()
         conn.close()
@@ -10206,22 +10160,20 @@ def executar_sincronizacao_cliente(sync_id):
         conn = conectar()
         c = conn.cursor()
 
-        c.execute("""
-            UPDATE sincronizacoes_clientes
-            SET ultimo_status=?,
-                ultima_mensagem=?,
-                ativo=?,
-                proximo_sync_em=?,
-                atualizado_em=?
-            WHERE id=?
-        """, (
-            "PAUSADA" if fatal else "ERRO",
-            mensagem,
-            0 if fatal else sync["ativo"],
-            None if fatal else somar_minutos_iso(sync["intervalo_minutos"]),
-            agora_iso(),
-            sync_id
-        ))
+        atualizar_status_sincronizacao_cliente_domain(
+            c,
+            sync_id,
+            empresa_id_sync,
+            ultimo_status="PAUSADA" if fatal else "ERRO",
+            ultima_mensagem=mensagem,
+            proximo_sync_em=None if fatal else somar_minutos_iso(sync["intervalo_minutos"]),
+            atualizado_em=agora_iso(),
+        )
+        if fatal:
+            c.execute(
+                "UPDATE sincronizacoes_clientes SET ativo=? WHERE empresa_id=? AND id=?",
+                (0, empresa_id_sync, sync_id),
+            )
 
         conn.commit()
         conn.close()
@@ -10235,14 +10187,14 @@ def importar_planilha_local():
         caminho = os.path.join("static", "CONTROLE LAVAGENS.xlsx")
 
         if not os.path.exists(caminho):
-            return False, "Arquivo clientes.csv não encontrado."
+            return False, "Arquivo clientes.csv nÃ£o encontrado."
 
         df = pd.read_excel(caminho)
 
         df = df.fillna("")
         df.columns = [str(col).strip().lower() for col in df.columns]
 
-        # 🔽 MAPEAMENTO SIMPLES
+        # ðŸ”½ MAPEAMENTO SIMPLES
         mapeamento = {
             "placa": "placa",
             "nome": "nome",
@@ -10251,7 +10203,8 @@ def importar_planilha_local():
             "cor": "cor"
         }
 
-        estatisticas = importar_clientes_dataframe(df, mapeamento)
+        empresa_id = empresa_atual_id()
+        estatisticas = importar_clientes_dataframe(df, mapeamento, empresa_id=empresa_id)
         mensagem = resumir_importacao_clientes(estatisticas)
 
         salvar_notificacao(mensagem, "sucesso")
@@ -10266,43 +10219,9 @@ def importar_planilha_local():
 def listar_registros_clientes(busca=""):
     def executar_listagem(conn):
         c = conn.cursor()
-
-        if busca:
-            termo = f"%{busca}%"
-            c.execute("""
-                SELECT
-                    veiculos.id AS veiculo_id,
-                    veiculos.placa,
-                    veiculos.modelo,
-                    veiculos.cor,
-                    clientes.id AS cliente_id,
-                    clientes.nome,
-                    clientes.telefone,
-                    clientes.placa_principal
-                FROM veiculos
-                LEFT JOIN clientes ON clientes.id = veiculos.cliente_id
-                WHERE veiculos.placa LIKE ? OR veiculos.modelo LIKE ? OR clientes.nome LIKE ?
-                ORDER BY veiculos.id DESC
-            """, (termo, termo, termo))
-        else:
-            c.execute("""
-                SELECT
-                    veiculos.id AS veiculo_id,
-                    veiculos.placa,
-                    veiculos.modelo,
-                    veiculos.cor,
-                    clientes.id AS cliente_id,
-                    clientes.nome,
-                    clientes.telefone,
-                    clientes.placa_principal
-                FROM veiculos
-                LEFT JOIN clientes ON clientes.id = veiculos.cliente_id
-                ORDER BY veiculos.id DESC
-            """)
-
+        registros_db = consultar_registros_clientes_domain(c, empresa_atual_id(), busca=busca)
         registros = []
-        for row in c.fetchall():
-            item = dict(row)
+        for item in registros_db:
             item["nome"] = item.get("nome") or ""
             item["telefone"] = item.get("telefone") or ""
             item["modelo"] = item.get("modelo") or ""
@@ -10390,60 +10309,20 @@ def salvar_cliente_veiculo(placa, nome="", telefone="", modelo="", cor="", placa
 
     conn = conectar()
     c = conn.cursor()
+    empresa_id = empresa_atual_id()
 
     try:
-        c.execute("""
-            SELECT id, placa, modelo, cor, cliente_id
-            FROM veiculos
-            WHERE placa=?
-        """, (placa_referencia,))
-        veiculo_existente = c.fetchone()
-
-        if placa_referencia != placa_nova:
-            c.execute("SELECT id FROM veiculos WHERE placa=?", (placa_nova,))
-            conflito = c.fetchone()
-
-            if conflito and (not veiculo_existente or conflito["id"] != veiculo_existente["id"]):
-                raise ValueError("Ja existe um veiculo cadastrado com essa placa.")
-
-        cliente_existente = None
-
-        if veiculo_existente and veiculo_existente["cliente_id"]:
-            c.execute("SELECT id, nome, telefone FROM clientes WHERE id=?", (veiculo_existente["cliente_id"],))
-            cliente_existente = c.fetchone()
-        elif telefone:
-            c.execute("SELECT id, nome, telefone FROM clientes WHERE telefone=?", (telefone,))
-            cliente_existente = c.fetchone()
-
-        cliente_id = cliente_existente["id"] if cliente_existente else None
-
-        if cliente_existente:
-            c.execute("""
-                UPDATE clientes
-                SET nome=?, telefone=?
-                WHERE id=?
-            """, (nome or "Sem nome", telefone, cliente_id))
-        elif nome or telefone:
-            c.execute("""
-                INSERT INTO clientes (nome, telefone)
-                VALUES (?, ?)
-            """, (nome or "Sem nome", telefone))
-            cliente_id = c.lastrowid
-
-        if veiculo_existente:
-            c.execute("""
-                UPDATE veiculos
-                SET placa=?, modelo=?, cor=?, cliente_id=?
-                WHERE id=?
-            """, (placa_nova, modelo, cor, cliente_id, veiculo_existente["id"]))
-        else:
-            c.execute("""
-                INSERT INTO veiculos (placa, modelo, cor, cliente_id)
-                VALUES (?, ?, ?, ?)
-            """, (placa_nova, modelo, cor, cliente_id))
-
-        if cliente_id:
-            sincronizar_placa_principal_cliente(c, cliente_id, placa_nova)
+        resultado = salvar_cliente_veiculo_cursor_domain(
+            c,
+            empresa_id,
+            placa_nova,
+            nome=nome,
+            telefone=telefone,
+            modelo=modelo,
+            cor=cor,
+            placa_referencia=placa_referencia,
+            sincronizar_placa_principal_fn=sincronizar_placa_principal_cliente,
+        )
 
         conn.commit()
 
@@ -10464,9 +10343,9 @@ def salvar_cliente_veiculo(placa, nome="", telefone="", modelo="", cor="", placa
             }
 
         return {
-            "placa": placa_nova,
-            "acao": "atualizado" if veiculo_existente else "novo",
-            "cliente_id": cliente_id,
+            "placa": resultado["placa"],
+            "acao": resultado["acao"],
+            "cliente_id": resultado.get("cliente_id"),
             "espelho_planilha": espelho_planilha,
         }
     finally:
@@ -10686,15 +10565,16 @@ def escrever_registro_em_google_sheets(sync, registro_base):
     ).execute()
     return {"acao": "adicionado", "aba": titulo_aba, "planilha_id": sheet_id}
 
-def espelhar_cadastro_site_em_sincronizacoes_clientes(placa, nome="", telefone="", modelo="", cor=""):
+def espelhar_cadastro_site_em_sincronizacoes_clientes(placa, nome="", telefone="", modelo="", cor="", empresa_id=None):
     conn = conectar()
     c = conn.cursor()
+    empresa_id = normalize_empresa_id(empresa_id or empresa_atual_id())
     c.execute("""
         SELECT id, nome, url, campo_placa, campo_nome, campo_telefone, campo_modelo, campo_cor, campo_servico, campo_data, colunas_ultima_sync
         FROM sincronizacoes_clientes
-        WHERE ativo=1
+        WHERE empresa_id=? AND ativo=1
         ORDER BY id ASC
-    """)
+    """, (empresa_id,))
     sincronizacoes = [dict(row) for row in c.fetchall()]
     conn.close()
 
@@ -10869,12 +10749,9 @@ def loop_importacao():
 def carregar_contexto_clientes(busca="", limpar=False):
     busca_aplicada = "" if limpar else busca
     clientes = listar_registros_clientes(busca_aplicada)
+    empresa_id = empresa_atual_id()
     sincronizacoes_raw = executar_leitura_resiliente(
-        lambda conn: conn.cursor().execute("""
-            SELECT *
-            FROM sincronizacoes_clientes
-            ORDER BY id DESC
-        """).fetchall(),
+        lambda conn: consultar_sincronizacoes_clientes_domain(conn.cursor(), empresa_id),
         descricao="CONTEXTO CLIENTES",
         padrao=[],
     ) or []
@@ -10900,6 +10777,30 @@ def healthz():
         "init_db_executado": bool(INIT_DB_EXECUTADO),
         "modo_banco": modo_banco_preferido(),
     }
+
+@app.after_request
+def aplicar_headers_resposta(response):
+    return append_security_headers(response)
+
+@app.before_request
+def validar_csrf_basico():
+    if request.endpoint == "static":
+        return
+
+    if not should_enforce_csrf(request, csrf_protection_ativa()):
+        return
+
+    if request.endpoint in {"healthz"}:
+        return
+
+    token = extract_csrf_token(request)
+    if validate_csrf_token(session, token):
+        return
+
+    if (request.endpoint or "").startswith("api_"):
+        return jsonify({"erro": "csrf_invalido"}), 400
+
+    return "Token de seguranca invalido ou expirado.", 400
 
 @app.before_request
 def preparar_sincronizacoes():
@@ -11074,7 +10975,7 @@ def gerar_orcamento():
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.lib.enums import TA_CENTER  # 🔥 ADICIONA ISSO
+    from reportlab.lib.enums import TA_CENTER  # ðŸ”¥ ADICIONA ISSO
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -11088,13 +10989,13 @@ def gerar_orcamento():
     style_centro.alignment = TA_CENTER
     elementos = []
 
-    # 🔥 LOGO
+    # ðŸ”¥ LOGO
     try:
         logo = ImagemRedonda("static/logo.jpg", size=80)
 
         tabela_logo = Table(
             [[logo]],
-            colWidths=[500]  # 🔥 ESSENCIAL
+            colWidths=[500]  # ðŸ”¥ ESSENCIAL
         )
 
         tabela_logo.setStyle([
@@ -11108,7 +11009,7 @@ def gerar_orcamento():
 
     elementos.append(Spacer(1, 20))
 
-    # 🔥 DADOS
+    # ðŸ”¥ DADOS
     nome = request.form.get("nome")
     telefone = request.form.get("telefone")
     placa = request.form.get("placa")
@@ -11117,15 +11018,15 @@ def gerar_orcamento():
 
     elementos.append(Paragraph(f"<b>Cliente:</b> {nome}", style_centro))
     elementos.append(Paragraph(f"<b>Telefone:</b> {telefone}", style_centro))
-    elementos.append(Paragraph(f"<b>Veículo:</b> {modelo} - {placa}", style_centro))
+    elementos.append(Paragraph(f"<b>VeÃ­culo:</b> {modelo} - {placa}", style_centro))
 
     elementos.append(Spacer(1, 20))
 
-    # 🔥 TABELA
+    # ðŸ”¥ TABELA
     servicos = request.form.getlist("servico[]")
     valores = request.form.getlist("valor[]")
 
-    dados_tabela = [["Serviço", "Valor (R$)"]]
+    dados_tabela = [["ServiÃ§o", "Valor (R$)"]]
 
     total = 0
 
@@ -11155,10 +11056,10 @@ def gerar_orcamento():
 
     elementos.append(tabela)
 
-    # 🔥 OBSERVAÇÕES
+    # ðŸ”¥ OBSERVAÃ‡Ã•ES
     if observacoes:
         elementos.append(Spacer(1, 20))
-        elementos.append(Paragraph("<b>Observações:</b>", styles["Normal"]))
+        elementos.append(Paragraph("<b>ObservaÃ§Ãµes:</b>", styles["Normal"]))
         elementos.append(Paragraph(observacoes, styles["Normal"]))
 
     doc.build(elementos)
@@ -11441,15 +11342,15 @@ def api_clima():
     fallback = {
         "clima": "Clima indisponivel",
         "temp": "--",
-        "icone": "⚠️",
-        "sugestao": "💡 Consulte o radar do clima.",
+        "icone": "âš ï¸",
+        "sugestao": "ðŸ’¡ Consulte o radar do clima.",
     }
     if not configuracao.get("clima_ativo"):
         return {
             "clima": "Clima desativado",
             "temp": "--",
-            "icone": "⏸️",
-            "sugestao": "💡 Ative o clima nas configuracoes.",
+            "icone": "â¸ï¸",
+            "sugestao": "ðŸ’¡ Ative o clima nas configuracoes.",
         }
 
     agora_ts = time.time()
@@ -11581,21 +11482,21 @@ def api_clima():
 
         # Logica simplificada para recomendacao de lavagem.
         if codigo is None:
-            icone = "⛅"
+            icone = "â›…"
             clima = "Clima carregado"
-            sugestao = "💡 Consulte a previsao completa."
+            sugestao = "ðŸ’¡ Consulte a previsao completa."
         elif codigo >= 61:
-            icone = "🌧️"
+            icone = "ðŸŒ§ï¸"
             clima = "Chuva"
-            sugestao = "💡 Lavagem interna"
+            sugestao = "ðŸ’¡ Lavagem interna"
         elif codigo <= 3:
-            icone = "☀️"
+            icone = "â˜€ï¸"
             clima = "Tempo limpo"
-            sugestao = "💡 Lavagem completa"
+            sugestao = "ðŸ’¡ Lavagem completa"
         else:
-            icone = "⛅"
+            icone = "â›…"
             clima = "Nublado"
-            sugestao = "💡 Lavagem simples"
+            sugestao = "ðŸ’¡ Lavagem simples"
 
         resultado = {
             "clima": clima,
@@ -11808,37 +11709,20 @@ def montar_resultado_hud_dinamico(usuario_cache, agora_cache_ts):
 
     agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
     hoje = agora.strftime("%d/%m/%Y")
+    empresa_id = empresa_atual_id()
 
     def carregar_hud(conn):
         c = conn.cursor()
-
-        c.execute("""
-            SELECT
-                COALESCE(SUM(valor), 0) AS total,
-                COUNT(*) AS quantidade
-            FROM servicos
-            WHERE status='FINALIZADO' AND entrega LIKE ?
-        """, (hoje + "%",))
-        resumo_financeiro = c.fetchone() or {"total": 0, "quantidade": 0}
-        total = resumo_financeiro["total"] or 0
-        quantidade = resumo_financeiro["quantidade"] or 0
+        bloco = consultar_resumo_hud_domain(c, empresa_id, hoje + "%")
+        resumo_financeiro = bloco.get("resumo_financeiro") or {"total": 0, "quantidade": 0}
+        servicos_andamento = bloco.get("servicos_andamento") or []
+        totais = {
+            str(item["tabela"]): item
+            for item in (bloco.get("totais") or [])
+        }
+        total = resumo_financeiro.get("total") or 0
+        quantidade = resumo_financeiro.get("quantidade") or 0
         ticket = total / quantidade if quantidade > 0 else 0
-
-        c.execute("""
-            SELECT
-                servicos.entrada,
-                servicos.entrega_prevista,
-                tipos_servico.nome AS tipo_nome,
-                veiculos.placa,
-                veiculos.modelo,
-                clientes.nome AS cliente_nome
-            FROM servicos
-            LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
-            LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
-            LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
-            WHERE COALESCE(TRIM(UPPER(servicos.status)), '')='EM ANDAMENTO'
-        """)
-        servicos_andamento = [dict(row) for row in c.fetchall()]
         andamento = len(servicos_andamento)
         atrasados = 0
         for s in servicos_andamento:
@@ -11849,24 +11733,6 @@ def montar_resultado_hud_dinamico(usuario_cache, agora_cache_ts):
                     atrasados += 1
             except Exception:
                 pass
-
-        c.execute("""
-            SELECT 'servicos' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id FROM servicos
-            UNION ALL
-            SELECT 'veiculos' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id FROM veiculos
-            UNION ALL
-            SELECT 'clientes' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id FROM clientes
-            UNION ALL
-            SELECT 'notificacoes' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id FROM notificacoes
-            UNION ALL
-            SELECT 'auditoria' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id FROM auditoria
-            UNION ALL
-            SELECT 'usuarios' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id FROM usuarios
-        """)
-        totais = {
-            str(item["tabela"]): item
-            for item in (dict(row) for row in c.fetchall())
-        }
 
         return {
             "total": total,
@@ -12132,7 +11998,7 @@ def api_hud():
 
     hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y")
 
-    # 💰 faturamento
+    # ðŸ’° faturamento
     c.execute("""
         SELECT SUM(valor) FROM servicos 
         WHERE status='FINALIZADO' AND entrega LIKE ?
@@ -12140,11 +12006,11 @@ def api_hud():
 
     total = c.fetchone()[0] or 0
 
-    # ⚙️ em andamento
+    # âš™ï¸ em andamento
     c.execute("SELECT COUNT(*) FROM servicos WHERE COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'")
     andamento = c.fetchone()[0]
 
-    # 📦 finalizados hoje
+    # ðŸ“¦ finalizados hoje
     c.execute("""
         SELECT COUNT(*) FROM servicos 
         WHERE status='FINALIZADO' AND entrega LIKE ?
@@ -12152,10 +12018,10 @@ def api_hud():
 
     quantidade = c.fetchone()[0]
 
-    # 💵 ticket médio
+    # ðŸ’µ ticket mÃ©dio
     ticket = total / quantidade if quantidade > 0 else 0
 
-    # 🚨 atrasados (>2h)
+    # ðŸš¨ atrasados (>2h)
     c.execute("SELECT entrada FROM servicos WHERE COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'")
     servicos = c.fetchall()
 
@@ -12389,19 +12255,13 @@ def obter_payload_status_sync():
 
     def carregar(conn):
         c = conn.cursor()
-        c.execute("""
-            SELECT id, ultima_mensagem, ultimo_status
-            FROM sincronizacoes_clientes
-            ORDER BY id DESC
-            LIMIT 1
-        """)
-        row = c.fetchone()
+        row = consultar_ultima_sincronizacao_cliente_domain(c, empresa_atual_id())
         if not row:
             return None
         return {
-            "id": row["id"],
-            "ultima_mensagem": row["ultima_mensagem"],
-            "ultimo_status": row["ultimo_status"],
+            "id": row.get("id"),
+            "ultima_mensagem": row.get("ultima_mensagem"),
+            "ultimo_status": row.get("ultimo_status"),
         }
 
     row = executar_leitura_resiliente(
@@ -12473,7 +12333,7 @@ def api_home_snapshot():
         conn.close()
         return jsonify({"status": "vazio"})
 
-    # 🔥 limpa a mensagem depois de ler (ANTI-SPAM)
+    # ðŸ”¥ limpa a mensagem depois de ler (ANTI-SPAM)
     conn.close()
 
     return jsonify({
@@ -12540,7 +12400,7 @@ def editar_servico(id):
 
     return render_template("editar_servico.html", servico=servico)
 
-# 🔐 CRIAR ADMIN PADRÃO
+# ðŸ” CRIAR ADMIN PADRÃƒO
 def criar_admin():
     conn = conectar()
     c = conn.cursor()
@@ -12687,6 +12547,12 @@ def login():
         senha = request.form.get("senha") or ""
 
         if not usuario or not senha:
+            registrar_evento_telemetria_app(
+                "login_campos_incompletos",
+                categoria="auth",
+                severidade="warning",
+                payload={"usuario": usuario},
+            )
             return render_template("login.html", erro="Informe usuario e senha.")
 
         conn = None
@@ -12698,15 +12564,34 @@ def login():
             user = c.fetchone()
 
             if not user:
+                registrar_evento_telemetria_app(
+                    "login_usuario_inexistente",
+                    categoria="auth",
+                    severidade="warning",
+                    payload={"usuario": usuario},
+                )
                 conn.close()
                 return render_template("login.html", erro="Usuario ou senha invalidos.")
 
             if not int(user["ativo"] if user["ativo"] is not None else 1):
+                registrar_evento_telemetria_app(
+                    "login_usuario_inativo",
+                    categoria="auth",
+                    severidade="warning",
+                    usuario_row=user,
+                )
                 conn.close()
                 return render_template("login.html", erro="Este acesso esta desativado.")
 
             bloqueado_ate = usuario_bloqueado_ate(user)
             if bloqueado_ate:
+                registrar_evento_telemetria_app(
+                    "login_bloqueado_temporariamente",
+                    categoria="auth",
+                    severidade="warning",
+                    usuario_row=user,
+                    payload={"bloqueado_ate": bloqueado_ate.isoformat(timespec="seconds")},
+                )
                 conn.close()
                 return render_template(
                     "login.html",
@@ -12720,6 +12605,13 @@ def login():
             if not verificar_senha_usuario(senha, user["senha"]):
                 novo_bloqueio = registrar_falha_login(c, user)
                 conn.commit()
+                registrar_evento_telemetria_app(
+                    "login_senha_invalida",
+                    categoria="auth",
+                    severidade="warning",
+                    usuario_row=user,
+                    payload={"novo_bloqueio": bool(novo_bloqueio)},
+                )
                 conn.close()
                 if novo_bloqueio:
                     return render_template(
@@ -12755,10 +12647,22 @@ def login():
             except Exception:
                 pass
             print("ERRO LOGIN:", erro)
+            registrar_evento_telemetria_app(
+                "login_falha_interna",
+                categoria="auth",
+                severidade="error",
+                payload={"usuario": usuario, "erro": str(erro)},
+            )
             return render_template("login.html", erro=mensagem_erro_login_servidor(erro))
 
         conn.close()
         preencher_sessao_usuario(user)
+        registrar_evento_telemetria_app(
+            "login_sucesso",
+            categoria="auth",
+            severidade="info",
+            usuario_row=user,
+        )
         if session.get("senha_alteracao_obrigatoria"):
             definir_feedback_configuracoes(
                 "erro",
@@ -13881,6 +13785,7 @@ def financeiro():
 
     conn = conectar()
     c = conn.cursor()
+    empresa_id = empresa_atual_id()
     c.execute("""
         SELECT
             servicos.*,
@@ -13890,10 +13795,11 @@ def financeiro():
             clientes.nome AS cliente_nome
         FROM servicos
         LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
-        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
-        LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
+        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id AND veiculos.empresa_id=?
+        LEFT JOIN clientes ON veiculos.cliente_id = clientes.id AND clientes.empresa_id=?
+        WHERE servicos.empresa_id=?
         ORDER BY servicos.id DESC
-    """)
+    """, (empresa_id, empresa_id, empresa_id))
     servicos_raw = [dict(row) for row in c.fetchall()]
     conn.close()
 
@@ -14101,27 +14007,28 @@ def index():
 
     conn = conectar()
     c = conn.cursor()
+    empresa_id = empresa_atual_id()
 
-    # 🔥 LISTAS FIXAS
+    # ðŸ”¥ LISTAS FIXAS
     c.execute("SELECT * FROM tipos_servico")
     servicos_lista = c.fetchall()
 
     c.execute("SELECT * FROM produtos_pneu")
     produtos_pneu = c.fetchall()
 
-    # 🔥 POST → REDIRECT
+    # ðŸ”¥ POST â†’ REDIRECT
     if request.method == "POST":
         placa = request.form.get("placa", "").upper()
         return redirect(f"/?placa={placa}")
 
-    # 🔥 GET (AQUI ESTÁ O SEGREDO)
+    # ðŸ”¥ GET (AQUI ESTÃ O SEGREDO)
     placa = request.args.get("placa", "").upper()
 
     if placa:
         buscou = True
         lavagem_info = montar_contexto_lavagem_placa(placa)
 
-        # 🔥 CLIENTE
+        # ðŸ”¥ CLIENTE
         c.execute("""
         SELECT 
             veiculos.placa,
@@ -14130,9 +14037,9 @@ def index():
             clientes.nome,
             clientes.telefone
         FROM veiculos
-        LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
-        WHERE veiculos.placa=?
-        """, (placa,))
+        LEFT JOIN clientes ON veiculos.cliente_id = clientes.id AND clientes.empresa_id=?
+        WHERE veiculos.empresa_id=? AND veiculos.placa=?
+        """, (empresa_id, empresa_id, placa))
 
         dados = c.fetchone()
 
@@ -14198,9 +14105,9 @@ def preview_sincronizacao_clientes():
             raise ValueError("Nao encontrei uma coluna de placa para configurar a sincronizacao.")
 
         if not colunas:
-            raise ValueError("Não encontrei colunas válidas nessa planilha.")
+            raise ValueError("NÃ£o encontrei colunas vÃ¡lidas nessa planilha.")
 
-        # 🔥 CORREÇÃO CRÍTICA AQUI
+        # ðŸ”¥ CORREÃ‡ÃƒO CRÃTICA AQUI
         amostra_tratada = [
             {k: sanitizar_para_json(v) for k, v in linha.items()}
             for linha in df.head(8).to_dict(orient="records")
@@ -14214,7 +14121,7 @@ def preview_sincronizacao_clientes():
             "mapeamento_sugerido": mapeamento_sugerido,
             "mapeamento_automatico": mapeamento_sugerido,
             "colunas_exibicao": colunas_exibicao,
-            "amostra": amostra_tratada,  # ✅ agora seguro
+            "amostra": amostra_tratada,  # âœ… agora seguro
             "total_linhas": len(df.index),
             "intervalo_label": obter_label_intervalo_sincronizacao(intervalo_minutos),
             "proximo_sync_previsto": proximo_sync_previsto,
@@ -14224,12 +14131,12 @@ def preview_sincronizacao_clientes():
 
         definir_feedback_clientes(
             "sucesso",
-            f"Planilha carregada. {len(df.index)} linha(s) encontrada(s) para configurar a sincronização."
+            f"Planilha carregada. {len(df.index)} linha(s) encontrada(s) para configurar a sincronizaÃ§Ã£o."
         )
 
     except Exception as e:
         limpar_preview_sincronizacao()
-        definir_feedback_clientes("erro", f"Não consegui ler a planilha: {e}")
+        definir_feedback_clientes("erro", f"NÃ£o consegui ler a planilha: {e}")
 
     return redirect("/clientes")
 
@@ -14239,7 +14146,7 @@ def cancelar_preview_sincronizacao_clientes():
         return redirect("/login")
 
     limpar_preview_sincronizacao()
-    definir_feedback_clientes("sucesso", "Pré-visualização cancelada.")
+    definir_feedback_clientes("sucesso", "PrÃ©-visualizaÃ§Ã£o cancelada.")
     return redirect("/clientes")
 
 @app.route("/clientes/sincronizacao/adicionar", methods=["POST"])
@@ -14259,13 +14166,11 @@ def adicionar_sincronizacao_clientes():
         return redirect("/clientes")
 
     try:
-        # 🔥 1. LER PLANILHA
         df, url_normalizada = ler_dataframe_link_planilha(
             url,
             intervalo_minutos=intervalo_minutos,
         )
 
-        # 🔥 2. MAPEAR COLUNAS AUTOMATICAMENTE
         colunas = list(df.columns)
         mapeamento_sugerido = sugerir_mapeamento_colunas(colunas)
         mapeamento = {
@@ -14308,60 +14213,43 @@ def adicionar_sincronizacao_clientes():
         }
 
         if not mapeamento.get("placa"):
-            raise Exception("Não consegui identificar a coluna de PLACA automaticamente.")
+            raise Exception("Nao consegui identificar a coluna de placa automaticamente.")
 
-        # 🔥 3. IMPORTAR DIRETO PRO BANCO
-        estatisticas = importar_clientes_dataframe(df, mapeamento)
+        empresa_id = empresa_atual_id()
+        estatisticas = importar_clientes_dataframe(df, mapeamento, empresa_id=empresa_id)
         registros_historico, estatisticas_historico = montar_registros_historico_lavagens(df, mapeamento)
         estatisticas.update(estatisticas_historico)
 
-        # 🔥 4. SALVAR CONFIG DE SINCRONIZAÇÃO
         conn = conectar()
         c = conn.cursor()
-
         agora_atual = agora_iso()
-
-        c.execute("""
-        INSERT INTO sincronizacoes_clientes (
-            nome, url, intervalo_minutos,
-            campo_placa, campo_nome, campo_telefone, campo_modelo, campo_cor, campo_servico, campo_data,
-            ativo, ultimo_status, proximo_sync_em, criado_em, atualizado_em
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            nome or "Planilha automática",
+        sync_id = criar_sincronizacao_cliente_domain(
+            c,
+            empresa_id,
+            nome or "Planilha automatica",
             url_normalizada,
             intervalo_minutos,
-            mapeamento.get("placa"),
-            mapeamento.get("nome"),
-            mapeamento.get("telefone"),
-            mapeamento.get("modelo"),
-            mapeamento.get("cor"),
-            mapeamento.get("servico"),
-            mapeamento.get("data"),
-            1,
-            "OK",
-            somar_minutos_iso(intervalo_minutos),
-            agora_atual,
-            agora_atual,
-        ))
-        sync_id = c.lastrowid
-
+            mapeamento,
+            ativo=1,
+            proximo_sync_em=somar_minutos_iso(intervalo_minutos),
+            ultimo_status="OK",
+            criado_em=agora_atual,
+            atualizado_em=agora_atual,
+        )
         conn.commit()
         conn.close()
 
-        salvar_historico_lavagens_sync(sync_id, registros_historico)
+        salvar_historico_lavagens_sync(sync_id, registros_historico, empresa_id=empresa_id)
 
         definir_feedback_clientes(
             "sucesso",
-            f"Importação concluída: {resumir_importacao_clientes(estatisticas)}"
+            f"Importacao concluida: {resumir_importacao_clientes(estatisticas)}"
         )
 
     except Exception as e:
         definir_feedback_clientes("erro", f"Erro ao importar: {e}")
 
     return redirect("/clientes")
-
 @app.route("/clientes/sincronizacao/salvar", methods=["POST"])
 def salvar_sincronizacao_clientes():
     if not session.get("usuario"):
@@ -14379,6 +14267,7 @@ def salvar_sincronizacao_clientes():
         return redirect("/clientes")
 
     try:
+        empresa_id = empresa_atual_id()
         df, url_normalizada = ler_dataframe_link_planilha(
             url,
             intervalo_minutos=intervalo_minutos,
@@ -14404,7 +14293,7 @@ def salvar_sincronizacao_clientes():
             if coluna and coluna not in colunas:
                 raise ValueError(f"A coluna '{coluna}' nao foi encontrada na planilha.")
 
-        estatisticas = importar_clientes_dataframe(df, mapeamento)
+        estatisticas = importar_clientes_dataframe(df, mapeamento, empresa_id=empresa_id)
         registros_historico, estatisticas_historico = montar_registros_historico_lavagens(df, mapeamento)
         estatisticas.update(estatisticas_historico)
         mensagem_importacao = resumir_importacao_clientes(estatisticas)
@@ -14414,40 +14303,27 @@ def salvar_sincronizacao_clientes():
 
         conn = conectar()
         c = conn.cursor()
-        c.execute("""
-            INSERT INTO sincronizacoes_clientes (
-                nome, url, intervalo_minutos,
-                campo_placa, campo_nome, campo_telefone, campo_modelo, campo_cor, campo_servico, campo_data,
-                ativo, ultimo_sync_em, proximo_sync_em, ultimo_status, ultima_mensagem,
-                criado_em, atualizado_em, ultimo_hash, colunas_ultima_sync
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
+        sync_id = criar_sincronizacao_cliente_domain(
+            c,
+            empresa_id,
             nome or "Planilha automatica",
             url_normalizada,
             intervalo_minutos,
-            mapeamento.get("placa"),
-            mapeamento.get("nome"),
-            mapeamento.get("telefone"),
-            mapeamento.get("modelo"),
-            mapeamento.get("cor"),
-            mapeamento.get("servico"),
-            mapeamento.get("data"),
-            1,
-            agora_atual,
-            proximo_sync_em,
-            "OK",
-            mensagem_importacao,
-            agora_atual,
-            agora_atual,
-            hash_atual,
-            ",".join(colunas),
-        ))
-        sync_id = c.lastrowid
+            mapeamento,
+            ativo=1,
+            ultimo_sync_em=agora_atual,
+            proximo_sync_em=proximo_sync_em,
+            ultimo_status="OK",
+            ultima_mensagem=mensagem_importacao,
+            criado_em=agora_atual,
+            atualizado_em=agora_atual,
+            ultimo_hash=hash_atual,
+            colunas_ultima_sync=",".join(colunas),
+        )
         conn.commit()
         conn.close()
 
-        salvar_historico_lavagens_sync(sync_id, registros_historico)
+        salvar_historico_lavagens_sync(sync_id, registros_historico, empresa_id=empresa_id)
 
         limpar_preview_sincronizacao()
         salvar_notificacao(mensagem_importacao, "sucesso")
@@ -14464,13 +14340,12 @@ def salvar_sincronizacao_clientes():
         definir_feedback_clientes("erro", f"Erro ao salvar sincronizacao: {e}")
 
     return redirect("/clientes")
-
 @app.route("/clientes/sincronizacao/<int:sync_id>/executar", methods=["POST"])
 def executar_sync_clientes(sync_id):
     if not session.get("usuario"):
         return redirect("/login")
 
-    sucesso, mensagem = executar_sincronizacao_cliente(sync_id)
+    sucesso, mensagem = executar_sincronizacao_cliente(sync_id, empresa_id=empresa_atual_id())
     definir_feedback_clientes("sucesso" if sucesso else "erro", mensagem)
     return redirect("/clientes")
 
@@ -14479,14 +14354,14 @@ def alternar_sync_clientes(sync_id):
     if not session.get("usuario"):
         return redirect("/login")
 
+    empresa_id = empresa_atual_id()
     conn = conectar()
     c = conn.cursor()
-    c.execute("SELECT id, ativo, intervalo_minutos FROM sincronizacoes_clientes WHERE id=?", (sync_id,))
-    sync = c.fetchone()
+    sync = consultar_sincronizacao_cliente_domain(c, sync_id, empresa_id=empresa_id)
 
     if not sync:
         conn.close()
-        definir_feedback_clientes("erro", "Sincronização não encontrada.")
+        definir_feedback_clientes("erro", "SincronizaÃ§Ã£o nÃ£o encontrada.")
         return redirect("/clientes")
 
     novo_ativo = 0 if sync["ativo"] else 1
@@ -14494,17 +14369,21 @@ def alternar_sync_clientes(sync_id):
     proximo_sync = agora_iso() if novo_ativo else None
     atualizado_em = agora_iso()
 
-    c.execute("""
-        UPDATE sincronizacoes_clientes
-        SET ativo=?, ultimo_status=?, proximo_sync_em=?, atualizado_em=?
-        WHERE id=?
-    """, (novo_ativo, novo_status, proximo_sync, atualizado_em, sync_id))
+    alternar_sincronizacao_cliente_domain(
+        c,
+        sync_id,
+        empresa_id,
+        novo_ativo,
+        novo_status,
+        proximo_sync,
+        atualizado_em,
+    )
     conn.commit()
     conn.close()
 
     definir_feedback_clientes(
         "sucesso",
-        "Sincronização ativada." if novo_ativo else "Sincronização pausada."
+        "SincronizaÃ§Ã£o ativada." if novo_ativo else "SincronizaÃ§Ã£o pausada."
     )
     return redirect("/clientes")
 
@@ -14513,25 +14392,24 @@ def excluir_sync_clientes(sync_id):
     if not session.get("usuario"):
         return redirect("/login")
 
+    empresa_id = empresa_atual_id()
     try:
         conn = conectar()
         c = conn.cursor()
-        c.execute("DELETE FROM historico_lavagens_sync WHERE sync_id=?", (sync_id,))
-        c.execute("DELETE FROM sincronizacoes_clientes WHERE id=?", (sync_id,))
-        removidos = c.rowcount
+        removidos = excluir_sincronizacao_cliente_domain(c, sync_id, empresa_id)
         conn.commit()
         conn.close()
 
         if removidos:
-            definir_feedback_clientes("sucesso", "Sincronização removida.")
+            definir_feedback_clientes("sucesso", "SincronizaÃ§Ã£o removida.")
         else:
-            definir_feedback_clientes("erro", "Sincronização não encontrada.")
+            definir_feedback_clientes("erro", "SincronizaÃ§Ã£o nÃ£o encontrada.")
     except Exception as e:
         try:
             conn.close()
         except Exception:
             pass
-        definir_feedback_clientes("erro", f"Não foi possível excluir a sincronização: {e}")
+        definir_feedback_clientes("erro", f"NÃ£o foi possÃ­vel excluir a sincronizaÃ§Ã£o: {e}")
     return redirect("/clientes")
 
 @app.route("/cadastrar", methods=["POST"])
@@ -14615,24 +14493,24 @@ def servico():
 
     from datetime import datetime
     agora = datetime.now(ZoneInfo("America/Sao_Paulo")).isoformat()
+    empresa_id = empresa_atual_id()
 
     conn = conectar()
     c = conn.cursor()
 
-    # 🔥 BUSCAR VEÍCULO PELA PLACA
+    # ðŸ”¥ BUSCAR VEÃCULO PELA PLACA
     placa = data["placa"].upper()
 
-    c.execute("SELECT id, cliente_id FROM veiculos WHERE placa=?", (placa,))
-    veiculo = c.fetchone()
+    veiculo = consultar_veiculo_por_placa_domain(c, empresa_id, placa)
 
     if not veiculo:
         conn.close()
-        return "Erro: veículo não encontrado"
+        return "Erro: veÃ­culo nÃ£o encontrado"
 
     veiculo_id = veiculo["id"]
     cliente_id = veiculo["cliente_id"] if veiculo["cliente_id"] else None
 
-    # 🔥 BUSCAR TIPO DE SERVIÇO
+    # ðŸ”¥ BUSCAR TIPO DE SERVIÃ‡O
     tipo_nome = data["tipo"]
 
     c.execute("SELECT id, valor FROM tipos_servico WHERE nome=?", (tipo_nome,))
@@ -14640,7 +14518,7 @@ def servico():
 
     if not tipo:
         conn.close()
-        return "Erro: tipo não encontrado"
+        return "Erro: tipo nÃ£o encontrado"
 
     tipo_id = tipo["id"]
     valor_base = converter_valor_numerico(tipo["valor"])
@@ -14652,11 +14530,11 @@ def servico():
         if entrega_prevista else None
     )
 
-    # 🔥 PRIORIDADE
+    # ðŸ”¥ PRIORIDADE
     c.execute("""
         SELECT MAX(prioridade) FROM servicos 
-        WHERE COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'
-    """)
+        WHERE empresa_id=? AND COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'
+    """, (empresa_id,))
 
     resultado = c.fetchone()[0]
 
@@ -14665,17 +14543,18 @@ def servico():
     else:
         nova_prioridade = resultado + 1
 
-    # 🔥 INSERIR SERVIÇO (NOVO MODELO)
+    # ðŸ”¥ INSERIR SERVIÃ‡O (NOVO MODELO)
     c.execute("""
         INSERT INTO servicos 
         (
-            veiculo_id, tipo_id, valor, valor_adicional, entrada, entrega_prevista, status, prioridade,
+            empresa_id, veiculo_id, tipo_id, valor, valor_adicional, entrada, entrega_prevista, status, prioridade,
             observacoes, origem, guarita, pneu, cera, hidro_lataria, hidro_vidros,
             etapa_atual, etapa_atual_iniciada_em, lavagem_iniciada_em, lavagem_segundos, finalizacao_segundos,
             criado_por_usuario, criado_por_nome
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
+        empresa_id,
         veiculo_id,
         tipo_id,
         valor_total,
@@ -14712,7 +14591,7 @@ def servico():
         entrega=entrega_prevista_iso,
     )
 
-    # 📸 FOTOS
+    # ðŸ“¸ FOTOS
     fotos_entrada = request.files.getlist("foto_entrada")
     fotos_detalhe = request.files.getlist("foto_detalhe")
     entrada_salvas = salvar_fotos_servico(c, servico_id, fotos_entrada, "entrada")
@@ -14749,22 +14628,7 @@ def salvar_operacional_painel(id):
     usuario_info = resumo_usuario_logado()
     conn = conectar()
     c = conn.cursor()
-
-    c.execute("""
-        SELECT
-            servicos.id,
-            servicos.etapa_atual,
-            servicos.etapa_atual_iniciada_em,
-            servicos.lavagem_iniciada_em,
-            servicos.finalizacao_iniciada_em,
-            servicos.lavagem_segundos,
-            servicos.finalizacao_segundos,
-            veiculos.placa
-        FROM servicos
-        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
-        WHERE servicos.id=?
-    """, (id,))
-    servico_db = c.fetchone()
+    servico_db = consultar_servico_operacional_domain(c, empresa_atual_id(), id)
 
     if not servico_db:
         conn.close()
@@ -14844,25 +14708,7 @@ def trocar_etapa_servico_painel(id):
     etapa_destino = request.form.get("etapa_destino")
     conn = conectar()
     c = conn.cursor()
-    c.execute(
-        """
-        SELECT
-            servicos.id,
-            servicos.status,
-            servicos.etapa_atual,
-            servicos.etapa_atual_iniciada_em,
-            servicos.lavagem_iniciada_em,
-            servicos.finalizacao_iniciada_em,
-            servicos.lavagem_segundos,
-            servicos.finalizacao_segundos,
-            veiculos.placa
-        FROM servicos
-        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
-        WHERE servicos.id=?
-        """,
-        (id,),
-    )
-    servico = c.fetchone()
+    servico = consultar_servico_operacional_domain(c, empresa_atual_id(), id)
 
     if not servico:
         conn.close()
@@ -14879,11 +14725,12 @@ def trocar_etapa_servico_painel(id):
         """
         UPDATE servicos
         SET operacional_por_usuario=?, operacional_por_nome=?
-        WHERE id=?
+        WHERE empresa_id=? AND id=?
         """,
         (
             normalizar_texto_campo(usuario_info.get("usuario")),
             normalizar_texto_campo(usuario_info.get("nome")),
+            empresa_atual_id(),
             id,
         ),
     )
@@ -14928,13 +14775,8 @@ def adicionar_cobranca_extra_painel(id):
 
     conn = conectar()
     c = conn.cursor()
-    c.execute("""
-        SELECT servicos.id, servicos.status, servicos.valor, veiculos.placa
-        FROM servicos
-        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
-        WHERE servicos.id=?
-    """, (id,))
-    servico = c.fetchone()
+    empresa_id = empresa_atual_id()
+    servico = consultar_servico_operacional_domain(c, empresa_id, id)
 
     if not servico:
         conn.close()
@@ -14962,8 +14804,8 @@ def adicionar_cobranca_extra_painel(id):
         normalizar_texto_campo(usuario_info.get("nome")),
     ))
     c.execute(
-        "UPDATE servicos SET valor=? WHERE id=?",
-        (novo_total, id),
+        "UPDATE servicos SET valor=? WHERE empresa_id=? AND id=?",
+        (novo_total, empresa_id, id),
     )
     conn.commit()
     conn.close()
@@ -15057,13 +14899,7 @@ def checklist_servico(id):
         else:
             conn = conectar()
             c = conn.cursor()
-            c.execute("DELETE FROM servico_checklist WHERE servico_id=?", (id,))
-
-            for item in itens:
-                c.execute("""
-                    INSERT INTO servico_checklist (servico_id, item_id, item_nome, marcado)
-                    VALUES (?, ?, ?, 1)
-                """, (id, item["id"], item["nome"]))
+            substituir_checklist_servico_domain(c, id, itens)
 
             fotos_saida_salvas = salvar_fotos_servico(c, id, fotos_saida, "saida")
             servico = consolidar_tempo_etapa_atual_servico(c, servico, etapa_final="FINALIZACAO")
@@ -15073,11 +14909,12 @@ def checklist_servico(id):
                     entrega=?,
                     finalizado_por_usuario=?,
                     finalizado_por_nome=?
-                WHERE id=?
+                WHERE empresa_id=? AND id=?
             """, (
                 agora_iso(),
                 normalizar_texto_campo(usuario_info.get("usuario")),
                 normalizar_texto_campo(usuario_info.get("nome")),
+                empresa_atual_id(),
                 id,
             ))
 
@@ -15133,6 +14970,11 @@ def detalhe(id):
         return redirect("/login")
 
     usuario_info = resumo_usuario_logado()
+    servico = buscar_servico_operacional(id)
+    if not servico:
+        definir_feedback_painel("erro", "Atendimento nao encontrado.")
+        return redirect("/painel")
+
     conn = conectar()
     c = conn.cursor()
 
@@ -15144,6 +14986,7 @@ def detalhe(id):
         "adicionou_fotos_detalhe",
         "servico",
         entidade_id=id,
+        placa=servico.get("placa"),
         detalhes={"fotos_detalhe": fotos_salvas},
         usuario=usuario_info,
     )
@@ -15157,9 +15000,10 @@ def prioridade(id, acao):
         return redirect("/login")
     conn = conectar()
     c = conn.cursor()
+    empresa_id = empresa_atual_id()
 
     # pega prioridade atual
-    c.execute("SELECT prioridade FROM servicos WHERE id=?", (id,))
+    c.execute("SELECT prioridade FROM servicos WHERE empresa_id=? AND id=?", (empresa_id, id))
     atual = c.fetchone()
 
     if not atual:
@@ -15171,16 +15015,16 @@ def prioridade(id, acao):
     if acao == "up":
         c.execute("""
         SELECT id, prioridade FROM servicos
-        WHERE prioridade < ? AND COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'
+        WHERE empresa_id=? AND prioridade < ? AND COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'
         ORDER BY prioridade DESC LIMIT 1
-        """, (atual,))
+        """, (empresa_id, atual))
 
     elif acao == "down":
         c.execute("""
         SELECT id, prioridade FROM servicos
-        WHERE prioridade > ? AND COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'
+        WHERE empresa_id=? AND prioridade > ? AND COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'
         ORDER BY prioridade ASC LIMIT 1
-        """, (atual,))
+        """, (empresa_id, atual))
 
     else:
         conn.close()
@@ -15188,12 +15032,12 @@ def prioridade(id, acao):
 
     outro = c.fetchone()
 
-    # se existir outro, troca posição
+    # se existir outro, troca posiÃ§Ã£o
     if outro:
         outro_id, outro_prio = outro
 
-        c.execute("UPDATE servicos SET prioridade=? WHERE id=?", (outro_prio, id))
-        c.execute("UPDATE servicos SET prioridade=? WHERE id=?", (atual, outro_id))
+        c.execute("UPDATE servicos SET prioridade=? WHERE empresa_id=? AND id=?", (outro_prio, empresa_id, id))
+        c.execute("UPDATE servicos SET prioridade=? WHERE empresa_id=? AND id=?", (atual, empresa_id, outro_id))
 
         conn.commit()
 
@@ -15230,7 +15074,7 @@ def cadastrar_pneu():
         c.execute("INSERT INTO produtos_pneu (nome) VALUES (?)", (nome,))
         conn.commit()
 
-    # 🔥 LISTAR (ANTES ESTAVA FALTANDO)
+    # ðŸ”¥ LISTAR (ANTES ESTAVA FALTANDO)
     c.execute("SELECT * FROM produtos_pneu")
     lista = c.fetchall()
 
@@ -15407,27 +15251,7 @@ def listar_servicos_em_andamento_voz():
 
     def carregar(conn):
         c = conn.cursor()
-        c.execute(
-            """
-            SELECT
-                servicos.id,
-                servicos.entrada,
-                servicos.entrega_prevista,
-                servicos.valor_adicional,
-                tipos_servico.nome AS tipo_nome,
-                veiculos.placa,
-                veiculos.modelo,
-                veiculos.cor,
-                clientes.nome AS cliente_nome
-            FROM servicos
-            LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
-            LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
-            LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
-            WHERE COALESCE(TRIM(UPPER(servicos.status)), '')='EM ANDAMENTO'
-            ORDER BY servicos.id DESC
-            """
-        )
-        return [dict(row) for row in c.fetchall()]
+        return consultar_servicos_em_andamento_voz_domain(c, empresa_atual_id())
 
     servicos_db = executar_leitura_resiliente(
         carregar,
@@ -15517,23 +15341,7 @@ def api_operacional_voz():
 
 def _carregar_dados_painel(conn):
     c = conn.cursor()
-    c.execute("""
-        SELECT
-            servicos.*,
-            tipos_servico.nome AS tipo_nome,
-            veiculos.placa,
-            veiculos.modelo,
-            veiculos.cor,
-            clientes.nome AS cliente_nome,
-            clientes.telefone AS cliente_telefone
-        FROM servicos
-        LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
-        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
-        LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
-        WHERE COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'
-        ORDER BY servicos.id DESC
-    """)
-    servicos_db = c.fetchall()
+    servicos_db = consultar_servicos_em_andamento_domain(c, empresa_atual_id())
     c.execute("SELECT nome FROM produtos_pneu ORDER BY nome")
     produtos_pneu = [row[0] for row in c.fetchall()]
     return {
@@ -15564,11 +15372,11 @@ def painel():
     for s in servicos_db:
         s_dict = dict(s)
 
-        # 🔥 PRIORIDADE IA
+        # ðŸ”¥ PRIORIDADE IA
         prioridade_ia = calcular_prioridade_inteligente(s_dict)
         s_dict["prioridade_ia"] = prioridade_ia
 
-        # 🔥 TEMPO DE ESPERA
+        # ðŸ”¥ TEMPO DE ESPERA
         entrada = interpretar_datahora_sistema(s_dict.get("entrada"))
 
         try:
@@ -15626,7 +15434,7 @@ def painel():
 
         servicos.append(s_dict)
 
-    # 🔥 ORDENA PELA IA
+    # ðŸ”¥ ORDENA PELA IA
     servicos.sort(key=lambda x: x["prioridade_ia"], reverse=True)
 
     return render_template(
@@ -15669,10 +15477,7 @@ def editar_atendimento_historico(id):
 
     conn = conectar()
     c = conn.cursor()
-    c.execute("SELECT id, nome, valor FROM tipos_servico ORDER BY nome")
-    tipos_servico = [dict(item) for item in c.fetchall()]
-    c.execute("SELECT nome FROM produtos_pneu ORDER BY nome")
-    produtos_pneu = [row[0] for row in c.fetchall()]
+    tipos_servico, produtos_pneu = carregar_recursos_edicao_historico_domain(c)
     conn.close()
 
     if request.method == "POST":
@@ -15716,6 +15521,7 @@ def editar_atendimento_historico(id):
                         "etapa_atual_iniciada_em": instante_retomada,
                         "finalizacao_iniciada_em": servico.get("finalizacao_iniciada_em") or instante_retomada,
                     },
+                    empresa_id=empresa_atual_id(),
                 )
             c.execute(
                 """
@@ -15724,7 +15530,7 @@ def editar_atendimento_historico(id):
                     entrega=?, status=?, observacoes=?, origem=?, guarita=?, pneu=?,
                     cera=?, hidro_lataria=?, hidro_vidros=?, finalizado_por_usuario=?,
                     finalizado_por_nome=?
-                WHERE id=?
+                WHERE empresa_id=? AND id=?
                 """,
                 (
                     tipo_id,
@@ -15743,6 +15549,7 @@ def editar_atendimento_historico(id):
                     normalizar_texto_campo(request.form.get("hidro_vidros")) or "Nao",
                     finalizado_por_usuario,
                     finalizado_por_nome,
+                    empresa_atual_id(),
                     id,
                 ),
             )
@@ -15843,9 +15650,13 @@ def reabrir_atendimento_historico(id):
         definir_feedback_por_destino(redirect_to, "erro", "Atendimento nao encontrado.")
         return redirect(redirect_to)
 
+    empresa_id = empresa_atual_id()
     conn = conectar()
     c = conn.cursor()
-    c.execute("SELECT COALESCE(MAX(prioridade), 0) FROM servicos WHERE COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'")
+    c.execute(
+        "SELECT COALESCE(MAX(prioridade), 0) FROM servicos WHERE empresa_id=? AND COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'",
+        (empresa_id,),
+    )
     maior_prioridade = converter_inteiro((c.fetchone() or [0])[0], 0)
     c.execute(
         """
@@ -15858,9 +15669,9 @@ def reabrir_atendimento_historico(id):
             finalizacao_iniciada_em=COALESCE(finalizacao_iniciada_em, ?),
             finalizado_por_usuario=NULL,
             finalizado_por_nome=NULL
-        WHERE id=?
+        WHERE empresa_id=? AND id=?
         """,
-        (maior_prioridade + 1, agora_iso(), agora_iso(), id),
+        (maior_prioridade + 1, agora_iso(), agora_iso(), empresa_id, id),
     )
     recalcular_resumo_veiculo_por_servicos(c, servico["veiculo_id"])
     conn.commit()
@@ -15890,12 +15701,11 @@ def excluir_atendimento_historico(id):
         definir_feedback_por_destino(redirect_to, "erro", "Atendimento nao encontrado.")
         return redirect(redirect_to)
 
+    empresa_id = empresa_atual_id()
     conn = conectar()
     c = conn.cursor()
-    c.execute("DELETE FROM fotos WHERE servico_id=?", (id,))
-    c.execute("DELETE FROM servico_checklist WHERE servico_id=?", (id,))
-    c.execute("DELETE FROM servico_cobrancas_extras WHERE servico_id=?", (id,))
-    c.execute("DELETE FROM servicos WHERE id=?", (id,))
+    excluir_dependencias_historico_servico_domain(c, empresa_id, id)
+    c.execute("DELETE FROM servicos WHERE empresa_id=? AND id=?", (empresa_id, id))
     recalcular_resumo_veiculo_por_servicos(c, servico["veiculo_id"])
     conn.commit()
     conn.close()
@@ -15929,3 +15739,4 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+

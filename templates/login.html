@@ -9,6 +9,7 @@
 <div class="page-card">
 
 <form method="POST" class="stack-form">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 <input name="usuario" placeholder="Usuario" autocomplete="username" required>
 <div class="password-toggle-row">
     <input
