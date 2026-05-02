@@ -288,6 +288,27 @@
 {% if desenvolvedor_logado %}
 <div class="page-grid top-spacing">
     <div class="page-card">
+        <p class="pill-label">Banco online</p>
+        <h2 class="section-title top-spacing">Tabelas do PostgreSQL</h2>
+        <p><b>Status:</b> {{ banco_online_tabelas.mensagem }}</p>
+        <p><b>Banco:</b> {{ banco_online_tabelas.database or "-" }}</p>
+        <p><b>Usuario:</b> {{ banco_online_tabelas.usuario or "-" }}</p>
+        <p><b>Quantidade:</b> {{ banco_online_tabelas.quantidade or 0 }} tabela(s)</p>
+
+        {% if banco_online_tabelas.tabelas %}
+        <div class="top-spacing" style="max-height: 320px; overflow:auto;">
+            <div class="stack-form stack-form--wide">
+                {% for tabela in banco_online_tabelas.tabelas %}
+                <p class="muted-text" style="margin:0;">{{ tabela.rotulo }}</p>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <p class="muted-text top-spacing">Nenhuma tabela listada no momento.</p>
+        {% endif %}
+    </div>
+
+    <div class="page-card">
         <p class="pill-label">Backup automatico</p>
         <h2 class="section-title top-spacing">Protecao do sistema</h2>
         <p><b>Status:</b> Ativo</p>

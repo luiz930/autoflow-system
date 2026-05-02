@@ -3921,6 +3921,70 @@ def obter_status_banco_online():
     status["backend_label"] = "Supabase / PostgreSQL" if status.get("conectado") else "SQLite local"
     return status
 
+
+def listar_tabelas_banco_online():
+    status = obter_status_banco_online()
+    resultado = {
+        "disponivel": False,
+        "mensagem": status.get("mensagem") or "Banco online indisponivel.",
+        "database": status.get("database_real") or status.get("database") or "",
+        "usuario": status.get("usuario_real") or status.get("usuario") or "",
+        "tabelas": [],
+        "quantidade": 0,
+    }
+
+    if not status.get("conectado"):
+        return resultado
+
+    dsn = url_postgres_ajustada()
+    if not dsn:
+        resultado["mensagem"] = "A connection string do banco online nao esta completa."
+        return resultado
+
+    conn = None
+    try:
+        conn = conectar_postgres_com_fallback(dsn)
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT table_schema, table_name
+            FROM information_schema.tables
+            WHERE table_type='BASE TABLE'
+              AND table_schema NOT IN ('pg_catalog', 'information_schema')
+            ORDER BY table_schema, table_name
+            """
+        )
+        tabelas = []
+        for row in c.fetchall() or []:
+            schema = row[0] if len(row) > 0 else ""
+            nome = row[1] if len(row) > 1 else ""
+            if nome:
+                tabelas.append(
+                    {
+                        "schema": schema or "public",
+                        "nome": nome,
+                        "rotulo": f"{schema}.{nome}" if schema and schema != "public" else nome,
+                    }
+                )
+        resultado.update(
+            {
+                "disponivel": True,
+                "mensagem": "Tabelas carregadas do banco online.",
+                "tabelas": tabelas,
+                "quantidade": len(tabelas),
+            }
+        )
+    except Exception as erro:
+        resultado["mensagem"] = f"Nao foi possivel listar as tabelas online: {erro}"
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+    return resultado
+
 def conectar():
     global BANCO_ONLINE_BLOQUEADO_ATE_TS
 
@@ -12549,6 +12613,7 @@ def configuracoes():
     arquivos_status = {}
     backups_disponiveis = []
     pastas_sync_sugeridas = []
+    banco_online_tabelas = {}
 
     if pode_gerenciar_usuarios:
         try:
@@ -12578,6 +12643,18 @@ def configuracoes():
             configuracao_empresa = empresa_snapshot_padrao()
 
     if pode_gerenciar_base:
+        try:
+            banco_online_tabelas = listar_tabelas_banco_online()
+        except Exception as erro:
+            print("ERRO CONFIG TABELAS BANCO ONLINE:", erro)
+            banco_online_tabelas = {
+                "disponivel": False,
+                "mensagem": f"Nao foi possivel carregar as tabelas do banco online: {erro}",
+                "database": "",
+                "usuario": "",
+                "tabelas": [],
+                "quantidade": 0,
+            }
 
         try:
             backup_config = obter_configuracao_backup()
@@ -12640,6 +12717,7 @@ def configuracoes():
         backups_disponiveis=backups_disponiveis,
         arquivos_status=arquivos_status,
         pastas_sync_sugeridas=pastas_sync_sugeridas,
+        banco_online_tabelas=banco_online_tabelas,
     )
 
 @app.route("/configuracoes/versao", methods=["POST"])
