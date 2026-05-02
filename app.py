@@ -3803,7 +3803,9 @@ def montar_url_postgres(host, porta, database, usuario, senha):
 
 def obter_configuracao_banco_form():
     status = diagnosticar_banco_online()
-    origem = url_postgres_ajustada() or DATABASE_URL_RAW
+    # Preserve exactly what was saved in the environment/config form.
+    # The adjusted DSN is only for runtime connection attempts.
+    origem = DATABASE_URL_RAW or url_postgres_ajustada()
     partes = quebrar_url_postgres(origem)
     partes.update({
         "modo": modo_banco_preferido(),
