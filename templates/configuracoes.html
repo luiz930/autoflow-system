@@ -45,6 +45,7 @@
         <p class="muted-text">Padrao minimo: 10+ caracteres, letra maiuscula, minuscula, numero e simbolo.</p>
 
         <form action="/configuracoes/foto" method="POST" enctype="multipart/form-data" class="stack-form stack-form--wide top-spacing">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <input type="file" name="foto_perfil" accept="image/*" required>
             <p class="muted-text profile-upload-note">Envie uma foto para aparecer na tela inicial ao lado do sino e no seu perfil do sistema.</p>
             <div class="actions-row actions-row--left">
@@ -57,6 +58,7 @@
         <h2 class="section-title">Alterar minha senha</h2>
 
         <form action="/configuracoes/senha" method="POST" class="stack-form stack-form--wide">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <input name="senha_atual" type="password" placeholder="Senha atual" required>
             <input name="nova_senha" type="password" placeholder="Nova senha forte" autocomplete="new-password" required>
             <input name="confirmar_senha" type="password" placeholder="Confirmar nova senha" autocomplete="new-password" required>
@@ -88,6 +90,7 @@
     <p class="muted-text">Essa versao aparece no HUD, no rodape e nas telas do sistema. Ela vem direto do banco e pode ser ajustada sem alterar o codigo.</p>
 
     <form action="/configuracoes/versao" method="POST" class="stack-form stack-form--wide top-spacing">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <input
             name="versao_sistema"
             type="text"
@@ -110,6 +113,7 @@
     <p class="muted-text">Configure a consulta do clima sem alterar o codigo. O HUD e a recomendacao de lavagem passam a ler esses dados direto do banco.</p>
 
     <form action="/configuracoes/clima" method="POST" class="stack-form stack-form--wide top-spacing">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <label class="inline-toggle">
             <input
                 type="checkbox"
@@ -238,6 +242,7 @@
         <p class="muted-text">Troque a conexao sem editar codigo. A senha fica somente no arquivo local `.env` e nao vai para o GitHub.</p>
 
         <form action="/configuracoes/banco" method="POST" class="stack-form stack-form--wide top-spacing">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <div class="field-grid">
                 <select name="database_backend" required>
                     <option value="sqlite" {% if banco_config.modo != 'postgres' %}selected{% endif %}>SQLite local</option>
@@ -275,9 +280,11 @@
 
         <div class="actions-row actions-row--left top-spacing">
             <form action="/configuracoes/banco/testar" method="POST">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <button type="submit">Testar conexao</button>
             </form>
             <form action="/configuracoes/banco/migrar" method="POST" onsubmit="return confirm('Migrar todos os dados do banco local para o Supabase agora? O sistema vai criar uma copia preventiva antes de concluir.');">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <button type="submit">Migrar banco local</button>
             </form>
         </div>
@@ -342,6 +349,7 @@
         <p class="muted-text">Defina a frequencia automatica, o modo do backup, quantos arquivos manter e gere backups manuais quando quiser.</p>
 
         <form action="/configuracoes/backup" method="POST" class="stack-form stack-form--wide top-spacing">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <div class="field-grid">
                 <select name="frequencia" required>
                     {% for item in frequencias_backup %}
@@ -436,6 +444,7 @@
 
         <div class="actions-row actions-row--left top-spacing">
             <form action="/configuracoes/backup/agora" method="POST">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <button type="submit">Gerar backup agora</button>
             </form>
         </div>
@@ -458,6 +467,7 @@
 
             <div class="actions-row actions-row--left top-spacing">
                 <form action="/configuracoes/backup/restaurar" method="POST" onsubmit="return confirm('Restaurar este backup agora? O banco atual sera substituido, mas um backup preventivo sera criado antes.');">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="backup_nome" value="{{ item.nome }}">
                     <button type="submit">Restaurar este backup</button>
                 </form>
@@ -503,6 +513,7 @@
 
         <div class="actions-row actions-row--left top-spacing">
             <form action="/configuracoes/arquivos/manutencao" method="POST">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <button type="submit">Executar manutencao agora</button>
             </form>
             <a href="/auditoria" class="button-link">
@@ -519,6 +530,7 @@
     <p class="muted-text">Crie acessos individuais para a equipe com senha forte. No primeiro login, a troca de senha sera obrigatoria.</p>
 
     <form action="/configuracoes/usuarios" method="POST" enctype="multipart/form-data" class="stack-form stack-form--wide top-spacing">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="field-grid">
             <input name="nome" placeholder="Nome do funcionario" required>
             <input name="usuario" placeholder="Login do funcionario" required>
@@ -609,6 +621,7 @@
             <details class="top-spacing">
                 <summary>Atualizar foto</summary>
                 <form action="/configuracoes/usuarios/{{ item.id }}/foto" method="POST" enctype="multipart/form-data" class="stack-form stack-form--wide top-spacing">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <input type="file" name="foto_perfil" accept="image/*" required>
                     <div class="actions-row actions-row--left">
                         <button type="submit">Salvar foto</button>
@@ -619,6 +632,7 @@
             {% if item.usuario != "admin" %}
             <div class="actions-row actions-row--left top-spacing">
                 <form action="/configuracoes/usuarios/{{ item.id }}/alternar" method="POST">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <button type="submit">{% if item.ativo %}Pausar acesso{% else %}Ativar acesso{% endif %}</button>
                 </form>
             </div>
@@ -627,6 +641,7 @@
                 <summary>Redefinir senha</summary>
 
                 <form action="/configuracoes/usuarios/{{ item.id }}/senha" method="POST" class="stack-form stack-form--wide top-spacing">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <input name="nova_senha" type="password" placeholder="Nova senha forte para {{ item.usuario }}" autocomplete="new-password" required>
 
                     <div class="actions-row actions-row--left">

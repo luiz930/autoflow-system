@@ -3034,6 +3034,68 @@ def empresa_atual_id():
     return 1
 
 
+def selecionar_configuracao_empresa_cursor(cursor, empresa_id=None):
+    empresa_id = normalize_empresa_id(empresa_id or empresa_atual_id())
+
+    try:
+        cursor.execute(
+            "SELECT * FROM configuracao_empresa WHERE empresa_id=? ORDER BY id LIMIT 1",
+            (empresa_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            return row_para_dict(row)
+    except Exception:
+        pass
+
+    if empresa_id == 1:
+        try:
+            cursor.execute("SELECT * FROM configuracao_empresa WHERE id=1")
+            row = cursor.fetchone()
+            if row:
+                return row_para_dict(row)
+        except Exception:
+            pass
+
+    return None
+
+
+def salvar_campos_configuracao_empresa(campos, empresa_id=None):
+    empresa_id = normalize_empresa_id(empresa_id or empresa_atual_id())
+    payload = dict(campos or {})
+    payload["empresa_id"] = empresa_id
+    payload["atualizado_em"] = payload.get("atualizado_em") or agora_iso()
+
+    conn = conectar()
+    c = conn.cursor()
+    atual = selecionar_configuracao_empresa_cursor(c, empresa_id)
+
+    if atual and atual.get("id"):
+        colunas = list(payload.keys())
+        valores = [payload[coluna] for coluna in colunas]
+        sql = (
+            "UPDATE configuracao_empresa SET "
+            + ", ".join(f"{coluna}=?" for coluna in colunas)
+            + " WHERE id=?"
+        )
+        c.execute(sql, tuple(valores + [atual["id"]]))
+    else:
+        colunas = list(payload.keys())
+        valores = [payload[coluna] for coluna in colunas]
+        sql = (
+            "INSERT INTO configuracao_empresa ("
+            + ", ".join(colunas)
+            + ") VALUES ("
+            + ", ".join(["?"] * len(colunas))
+            + ")"
+        )
+        c.execute(sql, tuple(valores))
+
+    conn.commit()
+    conn.close()
+    return payload
+
+
 def contexto_produto_padrao():
     return build_brand_context(
         {
@@ -3063,6 +3125,7 @@ def carregar_contexto_produto():
 
     def carregar(conn):
         c = conn.cursor()
+        empresa_id_atual = normalize_empresa_id(empresa_atual_id())
         c.execute(
             """
             SELECT
@@ -3085,10 +3148,42 @@ def carregar_contexto_produto():
                 licenca_status,
                 onboarding_concluido
             FROM configuracao_empresa
-            WHERE id=1
-            """
+            WHERE empresa_id=?
+            ORDER BY id
+            LIMIT 1
+            """,
+            (empresa_id_atual,),
         )
         config = row_para_dict(c.fetchone())
+        if not config and empresa_id_atual == 1:
+            c.execute(
+                """
+                SELECT
+                    id,
+                    empresa_id,
+                    marca_nome,
+                    marca_subtitulo,
+                    marca_logo_url,
+                    CASE WHEN marca_logo_blob IS NOT NULL THEN 1 ELSE 0 END AS marca_logo_tem_blob,
+                    marca_cor_primaria,
+                    marca_cor_secundaria,
+                    marca_cor_fundo,
+                    marca_cor_superficie,
+                    marca_cor_texto,
+                    site_titulo,
+                    site_rodape_texto,
+                    whitelabel_ativo,
+                    storage_provider,
+                    licenca_plano,
+                    licenca_status,
+                    onboarding_concluido
+                FROM configuracao_empresa
+                WHERE id=1
+                """
+            )
+            config = row_para_dict(c.fetchone())
+        if config and "marca_logo_tem_blob" not in config:
+            config["marca_logo_tem_blob"] = 1 if config.get("marca_logo_blob") else 0
 
         empresa_id = int(config.get("empresa_id") or 1)
         empresa = {}
@@ -3160,12 +3255,23 @@ def obter_versao_sistema():
     try:
         conn = conectar()
         c = conn.cursor()
-        c.execute("SELECT versao_sistema FROM configuracao_empresa WHERE id=1")
+        empresa_id_atual = normalize_empresa_id(empresa_atual_id())
+        c.execute(
+            "SELECT versao_sistema FROM configuracao_empresa WHERE empresa_id=? ORDER BY id LIMIT 1",
+            (empresa_id_atual,),
+        )
         item = c.fetchone()
+        if not item and empresa_id_atual == 1:
+            c.execute("SELECT versao_sistema FROM configuracao_empresa WHERE id=1")
+            item = c.fetchone()
         conn.close()
 
         if item:
-            return formatar_versao_sistema(item["versao_sistema"])
+            try:
+                valor = item["versao_sistema"]
+            except Exception:
+                valor = item[0] if item else ""
+            return formatar_versao_sistema(valor)
     except Exception:
         pass
 
@@ -3264,6 +3370,12 @@ BANCO_ONLINE_STATUS_CACHE = {
     "resultado": {},
 }
 BANCO_ONLINE_STATUS_CACHE_TTL = 30
+BANCO_ONLINE_TABELAS_CACHE = {
+    "testado_em": 0.0,
+    "dsn": "",
+    "resultado": None,
+}
+BANCO_ONLINE_TABELAS_CACHE_TTL = 45
 SCHEMA_BANCO_ONLINE_GARANTIDO = False
 SCHEMA_SQLITE_LOCAL_GARANTIDO = False
 BANCO_ONLINE_BLOQUEADO_ATE_TS = 0.0
@@ -3299,6 +3411,9 @@ def limpar_caches_interface():
 def limpar_cache_banco_online():
     BANCO_ONLINE_STATUS_CACHE["testado_em"] = 0.0
     BANCO_ONLINE_STATUS_CACHE["resultado"] = {}
+    BANCO_ONLINE_TABELAS_CACHE["testado_em"] = 0.0
+    BANCO_ONLINE_TABELAS_CACHE["dsn"] = ""
+    BANCO_ONLINE_TABELAS_CACHE["resultado"] = None
 BANCO_ONLINE_ULTIMO_LOG = {"mensagem": "", "testado_em": 0.0}
 schema_sqlite_local_lock = Lock()
 
@@ -3922,8 +4037,8 @@ def obter_status_banco_online():
     return status
 
 
-def listar_tabelas_banco_online():
-    status = obter_status_banco_online()
+def listar_tabelas_banco_online(status=None):
+    status = dict(status or obter_status_banco_online())
     resultado = {
         "disponivel": False,
         "mensagem": status.get("mensagem") or "Banco online indisponivel.",
@@ -3940,6 +4055,15 @@ def listar_tabelas_banco_online():
     if not dsn:
         resultado["mensagem"] = "A connection string do banco online nao esta completa."
         return resultado
+
+    agora_ts = time.time()
+    cache_resultado = BANCO_ONLINE_TABELAS_CACHE.get("resultado")
+    if (
+        cache_resultado is not None
+        and str(BANCO_ONLINE_TABELAS_CACHE.get("dsn") or "") == dsn
+        and agora_ts - float(BANCO_ONLINE_TABELAS_CACHE.get("testado_em") or 0.0) < BANCO_ONLINE_TABELAS_CACHE_TTL
+    ):
+        return dict(cache_resultado)
 
     conn = None
     try:
@@ -3974,8 +4098,14 @@ def listar_tabelas_banco_online():
                 "quantidade": len(tabelas),
             }
         )
+        BANCO_ONLINE_TABELAS_CACHE["testado_em"] = agora_ts
+        BANCO_ONLINE_TABELAS_CACHE["dsn"] = dsn
+        BANCO_ONLINE_TABELAS_CACHE["resultado"] = dict(resultado)
     except Exception as erro:
         resultado["mensagem"] = f"Nao foi possivel listar as tabelas online: {erro}"
+        BANCO_ONLINE_TABELAS_CACHE["testado_em"] = agora_ts
+        BANCO_ONLINE_TABELAS_CACHE["dsn"] = dsn
+        BANCO_ONLINE_TABELAS_CACHE["resultado"] = dict(resultado)
     finally:
         try:
             if conn:
@@ -6883,9 +7013,7 @@ def empresa_snapshot_padrao():
 def obter_configuracao_empresa():
     def carregar(conn):
         c = conn.cursor()
-        c.execute("SELECT * FROM configuracao_empresa WHERE id=1")
-        item = c.fetchone()
-        return dict(item) if item else None
+        return selecionar_configuracao_empresa_cursor(c, empresa_atual_id())
 
     item = executar_leitura_resiliente(
         carregar,
@@ -6924,25 +7052,9 @@ def obter_configuracao_empresa():
 
 def salvar_configuracao_versao_form(form):
     versao = normalizar_versao_sistema(form.get("versao_sistema"))
-
-    conn = conectar()
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO configuracao_empresa (
-            id, versao_sistema, atualizado_em
-        )
-        VALUES (
-            1, ?, ?
-        )
-        ON CONFLICT(id) DO UPDATE SET
-            versao_sistema=excluded.versao_sistema,
-            atualizado_em=excluded.atualizado_em
-    """, (
-        versao,
-        agora_iso(),
-    ))
-    conn.commit()
-    conn.close()
+    salvar_campos_configuracao_empresa({
+        "versao_sistema": versao,
+    })
     limpar_caches_interface()
 
     return versao
@@ -7293,37 +7405,15 @@ def salvar_configuracao_clima_form(form):
     except Exception as e:
         raise ValueError("Informe latitude e longitude validas para o clima.") from e
 
-    conn = conectar()
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO configuracao_empresa (
-            id, clima_ativo, clima_api_url, clima_local_label, clima_latitude,
-            clima_longitude, clima_timezone, clima_timeout_segundos, atualizado_em
-        )
-        VALUES (
-            1, ?, ?, ?, ?, ?, ?, ?, ?
-        )
-        ON CONFLICT(id) DO UPDATE SET
-            clima_ativo=excluded.clima_ativo,
-            clima_api_url=excluded.clima_api_url,
-            clima_local_label=excluded.clima_local_label,
-            clima_latitude=excluded.clima_latitude,
-            clima_longitude=excluded.clima_longitude,
-            clima_timezone=excluded.clima_timezone,
-            clima_timeout_segundos=excluded.clima_timeout_segundos,
-            atualizado_em=excluded.atualizado_em
-    """, (
-        clima_ativo,
-        clima_api_url,
-        clima_local_label,
-        clima_latitude,
-        clima_longitude,
-        clima_timezone,
-        clima_timeout_segundos,
-        agora_iso(),
-    ))
-    conn.commit()
-    conn.close()
+    salvar_campos_configuracao_empresa({
+        "clima_ativo": clima_ativo,
+        "clima_api_url": clima_api_url,
+        "clima_local_label": clima_local_label,
+        "clima_latitude": clima_latitude,
+        "clima_longitude": clima_longitude,
+        "clima_timezone": clima_timezone,
+        "clima_timeout_segundos": clima_timeout_segundos,
+    })
     limpar_cache_clima()
     limpar_caches_interface()
 
@@ -7373,57 +7463,22 @@ def salvar_configuracao_site_form(form, files):
         logo_mime_type = logo_info.get("mime_type")
         logo_arquivo_nome = logo_info.get("arquivo_nome")
 
-    conn = conectar()
-    c = conn.cursor()
-    c.execute(
-        """
-        INSERT INTO configuracao_empresa (
-            id, marca_nome, marca_subtitulo, marca_logo_url,
-            marca_logo_blob, marca_logo_mime_type, marca_logo_arquivo_nome,
-            marca_cor_primaria, marca_cor_secundaria, marca_cor_fundo,
-            marca_cor_superficie, marca_cor_texto, site_titulo,
-            site_rodape_texto, whitelabel_ativo, atualizado_em
-        )
-        VALUES (
-            1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        )
-        ON CONFLICT(id) DO UPDATE SET
-            marca_nome=excluded.marca_nome,
-            marca_subtitulo=excluded.marca_subtitulo,
-            marca_logo_url=excluded.marca_logo_url,
-            marca_logo_blob=excluded.marca_logo_blob,
-            marca_logo_mime_type=excluded.marca_logo_mime_type,
-            marca_logo_arquivo_nome=excluded.marca_logo_arquivo_nome,
-            marca_cor_primaria=excluded.marca_cor_primaria,
-            marca_cor_secundaria=excluded.marca_cor_secundaria,
-            marca_cor_fundo=excluded.marca_cor_fundo,
-            marca_cor_superficie=excluded.marca_cor_superficie,
-            marca_cor_texto=excluded.marca_cor_texto,
-            site_titulo=excluded.site_titulo,
-            site_rodape_texto=excluded.site_rodape_texto,
-            whitelabel_ativo=excluded.whitelabel_ativo,
-            atualizado_em=excluded.atualizado_em
-        """,
-        (
-            marca_nome,
-            marca_subtitulo,
-            marca_logo_url,
-            logo_blob,
-            logo_mime_type,
-            logo_arquivo_nome,
-            marca_cor_primaria,
-            marca_cor_secundaria,
-            marca_cor_fundo,
-            marca_cor_superficie,
-            marca_cor_texto,
-            site_titulo,
-            site_rodape_texto,
-            whitelabel_ativo,
-            agora_iso(),
-        ),
-    )
-    conn.commit()
-    conn.close()
+    salvar_campos_configuracao_empresa({
+        "marca_nome": marca_nome,
+        "marca_subtitulo": marca_subtitulo,
+        "marca_logo_url": marca_logo_url,
+        "marca_logo_blob": logo_blob,
+        "marca_logo_mime_type": logo_mime_type,
+        "marca_logo_arquivo_nome": logo_arquivo_nome,
+        "marca_cor_primaria": marca_cor_primaria,
+        "marca_cor_secundaria": marca_cor_secundaria,
+        "marca_cor_fundo": marca_cor_fundo,
+        "marca_cor_superficie": marca_cor_superficie,
+        "marca_cor_texto": marca_cor_texto,
+        "site_titulo": site_titulo,
+        "site_rodape_texto": site_rodape_texto,
+        "whitelabel_ativo": whitelabel_ativo,
+    })
     limpar_caches_interface()
 
     return {
@@ -7443,58 +7498,25 @@ def salvar_configuracao_site_form(form, files):
     }
 
 def salvar_configuracao_empresa_form(form):
-    conn = conectar()
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO configuracao_empresa (
-            id, razao_social, nome_fantasia, cnpj, inscricao_municipal, inscricao_estadual,
-            regime_tributario, email, telefone, endereco, numero, complemento, bairro,
-            cidade, uf, cep, codigo_servico_padrao, aliquota_padrao, atualizado_em
-        )
-        VALUES (
-            1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        )
-        ON CONFLICT(id) DO UPDATE SET
-            razao_social=excluded.razao_social,
-            nome_fantasia=excluded.nome_fantasia,
-            cnpj=excluded.cnpj,
-            inscricao_municipal=excluded.inscricao_municipal,
-            inscricao_estadual=excluded.inscricao_estadual,
-            regime_tributario=excluded.regime_tributario,
-            email=excluded.email,
-            telefone=excluded.telefone,
-            endereco=excluded.endereco,
-            numero=excluded.numero,
-            complemento=excluded.complemento,
-            bairro=excluded.bairro,
-            cidade=excluded.cidade,
-            uf=excluded.uf,
-            cep=excluded.cep,
-            codigo_servico_padrao=excluded.codigo_servico_padrao,
-            aliquota_padrao=excluded.aliquota_padrao,
-            atualizado_em=excluded.atualizado_em
-    """, (
-        normalizar_texto_campo(form.get("razao_social")),
-        normalizar_texto_campo(form.get("nome_fantasia")),
-        normalizar_documento_fiscal(form.get("cnpj")),
-        normalizar_texto_campo(form.get("inscricao_municipal")),
-        normalizar_texto_campo(form.get("inscricao_estadual")),
-        normalizar_texto_campo(form.get("regime_tributario")),
-        normalizar_texto_campo(form.get("email")),
-        normalizar_texto_campo(form.get("telefone")),
-        normalizar_texto_campo(form.get("endereco")),
-        normalizar_texto_campo(form.get("numero")),
-        normalizar_texto_campo(form.get("complemento")),
-        normalizar_texto_campo(form.get("bairro")),
-        normalizar_texto_campo(form.get("cidade")),
-        normalizar_texto_campo(form.get("uf")).upper()[:2],
-        re.sub(r"\D", "", str(form.get("cep") or "")),
-        normalizar_texto_campo(form.get("codigo_servico_padrao")),
-        converter_valor_numerico(form.get("aliquota_padrao")),
-        agora_iso(),
-    ))
-    conn.commit()
-    conn.close()
+    salvar_campos_configuracao_empresa({
+        "razao_social": normalizar_texto_campo(form.get("razao_social")),
+        "nome_fantasia": normalizar_texto_campo(form.get("nome_fantasia")),
+        "cnpj": normalizar_documento_fiscal(form.get("cnpj")),
+        "inscricao_municipal": normalizar_texto_campo(form.get("inscricao_municipal")),
+        "inscricao_estadual": normalizar_texto_campo(form.get("inscricao_estadual")),
+        "regime_tributario": normalizar_texto_campo(form.get("regime_tributario")),
+        "email": normalizar_texto_campo(form.get("email")),
+        "telefone": normalizar_texto_campo(form.get("telefone")),
+        "endereco": normalizar_texto_campo(form.get("endereco")),
+        "numero": normalizar_texto_campo(form.get("numero")),
+        "complemento": normalizar_texto_campo(form.get("complemento")),
+        "bairro": normalizar_texto_campo(form.get("bairro")),
+        "cidade": normalizar_texto_campo(form.get("cidade")),
+        "uf": normalizar_texto_campo(form.get("uf")).upper()[:2],
+        "cep": re.sub(r"\D", "", str(form.get("cep") or "")),
+        "codigo_servico_padrao": normalizar_texto_campo(form.get("codigo_servico_padrao")),
+        "aliquota_padrao": converter_valor_numerico(form.get("aliquota_padrao")),
+    })
 
 def integracao_fiscal_padrao():
     return {
@@ -9058,15 +9080,7 @@ def servir_logo_site():
 
     def carregar(conn):
         c = conn.cursor()
-        c.execute(
-            """
-            SELECT marca_logo_blob, marca_logo_mime_type, marca_logo_arquivo_nome, marca_logo_url
-            FROM configuracao_empresa
-            WHERE id=1
-            """
-        )
-        row = c.fetchone()
-        return row_para_dict(row)
+        return selecionar_configuracao_empresa_cursor(c, empresa_atual_id()) or {}
 
     dados = executar_leitura_resiliente(
         carregar,
@@ -12644,7 +12658,7 @@ def configuracoes():
 
     if pode_gerenciar_base:
         try:
-            banco_online_tabelas = listar_tabelas_banco_online()
+            banco_online_tabelas = listar_tabelas_banco_online(banco_status)
         except Exception as erro:
             print("ERRO CONFIG TABELAS BANCO ONLINE:", erro)
             banco_online_tabelas = {
