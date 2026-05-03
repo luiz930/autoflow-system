@@ -2878,7 +2878,7 @@ app.config.update(
 app.config["SESSION_TYPE"] = "filesystem"
 app.secret_key = app.config["SECRET_KEY"]
 
-VERSAO_SISTEMA_PADRAO = "0.7.5-alpha (Em Desenvolvimento)"
+VERSAO_SISTEMA_PADRAO = "0.10.0-beta"
 APP_VERSION = f"Versao: {VERSAO_SISTEMA_PADRAO}"
 MESES_CURTOS_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 PERIODOS_FINANCEIRO = [
