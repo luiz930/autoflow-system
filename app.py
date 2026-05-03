@@ -2880,6 +2880,10 @@ app.secret_key = app.config["SECRET_KEY"]
 
 VERSAO_SISTEMA_PADRAO = "0.10.0-beta"
 APP_VERSION = f"Versao: {VERSAO_SISTEMA_PADRAO}"
+VERSOES_SISTEMA_LEGADAS = {
+    "0.7.5-alpha (Em Desenvolvimento)",
+    "0.9.5-beta (Em Desenvolvimento)",
+}
 MESES_CURTOS_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 PERIODOS_FINANCEIRO = [
     {"value": "hoje", "label": "Hoje"},
@@ -3000,6 +3004,8 @@ def normalizar_versao_sistema(valor):
     if not texto:
         return VERSAO_SISTEMA_PADRAO
     texto = re.sub(r"(?i)^\s*vers(?:ao|ão)\s*:\s*", "", texto).strip()
+    if texto in VERSOES_SISTEMA_LEGADAS:
+        return VERSAO_SISTEMA_PADRAO
     return texto or VERSAO_SISTEMA_PADRAO
 
 
