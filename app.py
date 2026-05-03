@@ -4422,6 +4422,7 @@ def garantir_schema_sqlite_local_minima(force=False):
             c.execute("""
             CREATE TABLE IF NOT EXISTS clientes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER DEFAULT 1,
                 nome TEXT NOT NULL,
                 telefone TEXT,
                 placa_principal TEXT
@@ -4430,6 +4431,7 @@ def garantir_schema_sqlite_local_minima(force=False):
             c.execute("""
             CREATE TABLE IF NOT EXISTS veiculos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER DEFAULT 1,
                 placa TEXT NOT NULL,
                 modelo TEXT,
                 cor TEXT,
@@ -4444,6 +4446,7 @@ def garantir_schema_sqlite_local_minima(force=False):
             c.execute("""
             CREATE TABLE IF NOT EXISTS servicos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER DEFAULT 1,
                 veiculo_id INTEGER,
                 tipo_id INTEGER,
                 valor REAL,
@@ -4477,6 +4480,7 @@ def garantir_schema_sqlite_local_minima(force=False):
             c.execute("""
             CREATE TABLE IF NOT EXISTS fotos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER DEFAULT 1,
                 servico_id INTEGER,
                 tipo TEXT,
                 caminho TEXT,
@@ -4494,6 +4498,7 @@ def garantir_schema_sqlite_local_minima(force=False):
             c.execute("""
             CREATE TABLE IF NOT EXISTS configuracao_empresa (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
+                empresa_id INTEGER DEFAULT 1,
                 versao_sistema TEXT,
                 clima_ativo INTEGER DEFAULT 1,
                 clima_api_url TEXT,
@@ -4508,6 +4513,7 @@ def garantir_schema_sqlite_local_minima(force=False):
             c.execute("""
             CREATE TABLE IF NOT EXISTS sincronizacoes_clientes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER DEFAULT 1,
                 nome TEXT,
                 url TEXT NOT NULL,
                 intervalo_minutos INTEGER NOT NULL DEFAULT 60,
@@ -4566,10 +4572,22 @@ def garantir_schema_sqlite_local_minima(force=False):
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_longitude REAL")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_timezone TEXT")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_timeout_segundos INTEGER DEFAULT 8")
+            adicionar_coluna_se_preciso(c, "clientes", "empresa_id INTEGER DEFAULT 1")
+            adicionar_coluna_se_preciso(c, "veiculos", "empresa_id INTEGER DEFAULT 1")
+            adicionar_coluna_se_preciso(c, "servicos", "empresa_id INTEGER DEFAULT 1")
+            adicionar_coluna_se_preciso(c, "fotos", "empresa_id INTEGER DEFAULT 1")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "empresa_id INTEGER DEFAULT 1")
+            adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "empresa_id INTEGER DEFAULT 1")
             adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "ultimo_hash TEXT")
             adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "colunas_ultima_sync TEXT")
             adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "criado_em TEXT")
             adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "atualizado_em TEXT")
+            c.execute("UPDATE clientes SET empresa_id=1 WHERE empresa_id IS NULL")
+            c.execute("UPDATE veiculos SET empresa_id=1 WHERE empresa_id IS NULL")
+            c.execute("UPDATE servicos SET empresa_id=1 WHERE empresa_id IS NULL")
+            c.execute("UPDATE fotos SET empresa_id=1 WHERE empresa_id IS NULL")
+            c.execute("UPDATE configuracao_empresa SET empresa_id=1 WHERE empresa_id IS NULL")
+            c.execute("UPDATE sincronizacoes_clientes SET empresa_id=1 WHERE empresa_id IS NULL")
             conn.commit()
             SCHEMA_SQLITE_LOCAL_GARANTIDO = True
             return True
@@ -5283,6 +5301,7 @@ def atualizar_banco():
 
         return senha_digitada == senha_salva
 
+    adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "empresa_id INTEGER DEFAULT 1")
     adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "ultimo_hash TEXT")
     adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "colunas_ultima_sync TEXT")
     adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "campo_servico TEXT")
@@ -5329,10 +5348,15 @@ def atualizar_banco():
     adicionar_coluna_se_preciso(c, "usuarios", "foto_perfil_mime_type TEXT")
     adicionar_coluna_se_preciso(c, "usuarios", "foto_perfil_arquivo_nome TEXT")
     adicionar_coluna_se_preciso(c, "clientes", "placa_principal TEXT")
+    adicionar_coluna_se_preciso(c, "clientes", "empresa_id INTEGER DEFAULT 1")
+    adicionar_coluna_se_preciso(c, "veiculos", "empresa_id INTEGER DEFAULT 1")
     adicionar_coluna_se_preciso(c, "veiculos", "status_atendimento TEXT DEFAULT 'SEM_ATENDIMENTO'")
     adicionar_coluna_se_preciso(c, "veiculos", "atendimento_ativo INTEGER DEFAULT 0")
     adicionar_coluna_se_preciso(c, "veiculos", "ultima_entrada TEXT")
     adicionar_coluna_se_preciso(c, "veiculos", "ultima_entrega TEXT")
+    adicionar_coluna_se_preciso(c, "servicos", "empresa_id INTEGER DEFAULT 1")
+    adicionar_coluna_se_preciso(c, "fotos", "empresa_id INTEGER DEFAULT 1")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "empresa_id INTEGER DEFAULT 1")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "versao_sistema TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_ativo INTEGER DEFAULT 1")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_api_url TEXT")
@@ -5353,6 +5377,12 @@ def atualizar_banco():
     adicionar_coluna_se_preciso(c, "manutencao_arquivos", "ultima_mensagem TEXT")
     adicionar_coluna_se_preciso(c, "manutencao_arquivos", "ultimo_resultado_json TEXT")
     adicionar_coluna_se_preciso(c, "integracao_fiscal", "token_api TEXT")
+    c.execute("UPDATE clientes SET empresa_id=1 WHERE empresa_id IS NULL")
+    c.execute("UPDATE veiculos SET empresa_id=1 WHERE empresa_id IS NULL")
+    c.execute("UPDATE servicos SET empresa_id=1 WHERE empresa_id IS NULL")
+    c.execute("UPDATE fotos SET empresa_id=1 WHERE empresa_id IS NULL")
+    c.execute("UPDATE configuracao_empresa SET empresa_id=1 WHERE empresa_id IS NULL")
+    c.execute("UPDATE sincronizacoes_clientes SET empresa_id=1 WHERE empresa_id IS NULL")
 
     c.execute("""
         UPDATE usuarios
