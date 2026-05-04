@@ -113,6 +113,28 @@ class AppRegressionTests(unittest.TestCase):
         conn.commit()
         return conn
 
+    def _criar_banco_servico_fluxo_memoria(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute(
+            """
+            CREATE TABLE servicos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER NOT NULL DEFAULT 1,
+                status TEXT,
+                etapa_atual TEXT,
+                etapa_atual_iniciada_em TEXT,
+                lavagem_iniciada_em TEXT,
+                finalizacao_iniciada_em TEXT,
+                lavagem_segundos INTEGER DEFAULT 0,
+                finalizacao_segundos INTEGER DEFAULT 0
+            )
+            """
+        )
+        conn.commit()
+        return conn
+
     def test_login_missing_fields_returns_error_message(self):
         with patch.object(app_module, "csrf_protection_ativa", return_value=False), \
              patch.object(app_module, "INIT_DB_EXECUTADO", True):
@@ -294,6 +316,136 @@ class AppRegressionTests(unittest.TestCase):
         sync_mock.assert_not_called()
         sync_bancos_mock.assert_not_called()
         schema_mock.assert_not_called()
+
+    def test_aplicar_fluxo_etapa_atendimento_em_edicao_reabre_em_lavagem(self):
+        conn = self._criar_banco_servico_fluxo_memoria()
+        c = conn.cursor()
+        c.execute(
+            """
+            INSERT INTO servicos (
+                empresa_id, status, etapa_atual, etapa_atual_iniciada_em,
+                lavagem_iniciada_em, finalizacao_iniciada_em, lavagem_segundos, finalizacao_segundos
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (1, "FINALIZADO", "FINALIZACAO", None, "2026-05-03T09:00:00-03:00", "2026-05-03T09:30:00-03:00", 1800, 900),
+        )
+        servico = {
+            "id": 1,
+            "empresa_id": 1,
+            "status": "FINALIZADO",
+            "etapa_atual": "FINALIZACAO",
+            "etapa_atual_iniciada_em": None,
+            "lavagem_iniciada_em": "2026-05-03T09:00:00-03:00",
+            "finalizacao_iniciada_em": "2026-05-03T09:30:00-03:00",
+            "lavagem_segundos": 1800,
+            "finalizacao_segundos": 900,
+        }
+
+        atualizado = app_module.aplicar_fluxo_etapa_atendimento_em_edicao(
+            c,
+            servico,
+            "EM ANDAMENTO",
+            "LAVAGEM",
+            instante=app_module.interpretar_datahora_sistema("2026-05-03T10:00:00-03:00"),
+        )
+        conn.commit()
+
+        c.execute("SELECT etapa_atual, etapa_atual_iniciada_em FROM servicos WHERE id=1")
+        row = c.fetchone()
+        self.assertEqual(atualizado["etapa_atual"], "LAVAGEM")
+        self.assertEqual(row["etapa_atual"], "LAVAGEM")
+        self.assertTrue(row["etapa_atual_iniciada_em"])
+        conn.close()
+
+    def test_painel_agrupar_servicos_por_etapa(self):
+        servicos = [
+            {
+                "id": 1,
+                "placa": "AAA1234",
+                "modelo": "Onix",
+                "cor": "Preto",
+                "tipo_nome": "Completa",
+                "valor": 40.0,
+                "valor_adicional": 0.0,
+                "entrada": "2026-05-03T09:00:00-03:00",
+                "cliente_nome": "Cliente 1",
+                "cliente_telefone": "",
+                "origem": "",
+                "guarita": "",
+                "observacoes": "",
+                "pneu": "",
+                "cera": "Nao",
+                "hidro_lataria": "Nao",
+                "hidro_vidros": "Nao",
+                "status": "EM ANDAMENTO",
+                "prioridade": 1,
+                "etapa_atual": "LAVAGEM",
+                "etapa_atual_iniciada_em": "2026-05-03T09:00:00-03:00",
+                "lavagem_iniciada_em": "2026-05-03T09:00:00-03:00",
+                "finalizacao_iniciada_em": None,
+                "lavagem_segundos": 0,
+                "finalizacao_segundos": 0,
+                "criado_por_nome": "Operador 1",
+                "criado_por_usuario": "operador1",
+                "operacional_por_nome": None,
+                "operacional_por_usuario": None,
+                "entrega_prevista": None,
+            },
+            {
+                "id": 2,
+                "placa": "BBB1234",
+                "modelo": "HB20",
+                "cor": "Branco",
+                "tipo_nome": "Interna",
+                "valor": 35.0,
+                "valor_adicional": 0.0,
+                "entrada": "2026-05-03T09:10:00-03:00",
+                "cliente_nome": "Cliente 2",
+                "cliente_telefone": "",
+                "origem": "",
+                "guarita": "",
+                "observacoes": "",
+                "pneu": "",
+                "cera": "Nao",
+                "hidro_lataria": "Nao",
+                "hidro_vidros": "Nao",
+                "status": "EM ANDAMENTO",
+                "prioridade": 2,
+                "etapa_atual": "FINALIZACAO",
+                "etapa_atual_iniciada_em": "2026-05-03T09:40:00-03:00",
+                "lavagem_iniciada_em": "2026-05-03T09:10:00-03:00",
+                "finalizacao_iniciada_em": "2026-05-03T09:40:00-03:00",
+                "lavagem_segundos": 900,
+                "finalizacao_segundos": 0,
+                "criado_por_nome": "Operador 2",
+                "criado_por_usuario": "operador2",
+                "operacional_por_nome": None,
+                "operacional_por_usuario": None,
+                "entrega_prevista": "2026-05-03T11:00:00-03:00",
+            },
+        ]
+
+        with app_module.app.test_request_context("/painel", method="GET"):
+            session["usuario"] = "admin"
+            session["empresa_id"] = 1
+            with patch.object(app_module, "preparar_rotinas_interface_logada"), \
+                 patch.object(app_module, "obter_cache_consulta", return_value=None), \
+                 patch.object(app_module, "executar_leitura_resiliente", return_value={
+                     "servicos_db": servicos,
+                     "produtos_pneu": [],
+                     "fotos_por_servico": {},
+                     "extras_por_servico": {},
+                 }), \
+                 patch.object(app_module, "salvar_cache_consulta"), \
+                 patch.object(app_module, "render_template", return_value="ok") as render_mock:
+                response = app_module.painel()
+
+        self.assertEqual(response, "ok")
+        kwargs = render_mock.call_args.kwargs
+        self.assertEqual(len(kwargs["servicos_lavagem"]), 1)
+        self.assertEqual(len(kwargs["servicos_finalizacao"]), 1)
+        self.assertEqual(kwargs["resumo_fluxo"]["total"], 2)
 
 
 if __name__ == "__main__":

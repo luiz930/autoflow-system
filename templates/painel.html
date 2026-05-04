@@ -29,8 +29,27 @@
 
 {% if servicos %}
 <div class="page-grid top-spacing">
+    <div class="page-card page-card--soft">
+        <p class="pill-label">Resumo do fluxo</p>
+        <p><b>Em atendimento:</b> {{ resumo_fluxo.total }}</p>
+        <p><b>Na lavagem:</b> {{ resumo_fluxo.lavagem }}</p>
+        <p><b>Na finalizacao:</b> {{ resumo_fluxo.finalizacao }}</p>
+        <p><b>Com horario combinado:</b> {{ resumo_fluxo.com_horario }}</p>
+        <p><b>Sem horario combinado:</b> {{ resumo_fluxo.sem_horario }}</p>
+        <p><b>Atrasados:</b> {{ resumo_fluxo.atrasados }}</p>
+        <p><b>Proxima entrega:</b> {{ resumo_fluxo.proxima_entrega_exibicao }}</p>
+    </div>
+</div>
 
-{% for s in servicos %}
+{% for titulo_etapa, servicos_bloco in [('Etapa de Lavagem', servicos_lavagem), ('Etapa de Finalizacao', servicos_finalizacao)] %}
+{% if servicos_bloco %}
+<div class="page-card top-spacing">
+    <p class="pill-label">{{ titulo_etapa }}</p>
+    <p class="muted-text">{{ servicos_bloco|length }} atendimento(s) nesta etapa.</p>
+</div>
+
+<div class="page-grid top-spacing">
+{% for s in servicos_bloco %}
 <div
     class="page-card js-servico-card"
     data-servico-id="{{ s.id }}"
@@ -44,7 +63,6 @@
     data-lavagem-base-segundos="{{ s.lavagem_segundos_base }}"
     data-finalizacao-base-segundos="{{ s.finalizacao_segundos_base }}"
 >
-
     <p class="pill-label">Fila {{ loop.index }}</p>
 
     <h2 class="section-title">{{ s.tipo_nome }}</h2>
@@ -101,11 +119,9 @@
         <a href="/prioridade/{{ s.id }}/up" class="button-link">
             <button type="button">Subir</button>
         </a>
-
         <a href="/prioridade/{{ s.id }}/down" class="button-link">
             <button type="button">Descer</button>
         </a>
-
         <a href="/historico/servico/{{ s.id }}/editar?redirect_to=/painel" class="button-link">
             <button type="button">Gerenciar atendimento</button>
         </a>
@@ -169,8 +185,8 @@
     </form>
 
     <div class="page-card page-card--soft top-spacing">
-        <h3 class="section-title">Cobranças extras</h3>
-        <p class="muted-text">Use este campo quando o cliente pedir um serviço adicional durante o atendimento. O valor entra no total do carro e fica no histórico.</p>
+        <h3 class="section-title">Cobrancas extras</h3>
+        <p class="muted-text">Use este campo quando o cliente pedir um servico adicional durante o atendimento. O valor entra no total do carro e fica no historico.</p>
 
         <form action="/painel/servico/{{ s.id }}/cobranca-extra" method="POST" class="stack-form stack-form--wide">
             <div class="field-grid">
@@ -178,7 +194,7 @@
                 <input type="number" name="valor_extra" min="0" step="0.01" placeholder="0,00" required>
             </div>
 
-            <button type="submit">Adicionar cobrança extra</button>
+            <button type="submit">Adicionar cobranca extra</button>
         </form>
 
         {% if s.tem_cobrancas_extras %}
@@ -188,21 +204,22 @@
             <div class="extra-charge-item">
                 <div>
                     <strong>{{ extra.descricao }}</strong>
-                    <p class="muted-text">Lançado por {{ extra.criado_por_nome_exibicao }}{% if extra.criado_em_exibicao %} em {{ extra.criado_em_exibicao }}{% endif %}</p>
+                    <p class="muted-text">Lancado por {{ extra.criado_por_nome_exibicao }}{% if extra.criado_em_exibicao %} em {{ extra.criado_em_exibicao }}{% endif %}</p>
                 </div>
                 <span class="extra-charge-value">R$ {{ extra.valor_exibicao }}</span>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <p class="muted-text top-spacing">Nenhuma cobrança extra registrada neste atendimento ainda.</p>
+        <p class="muted-text top-spacing">Nenhuma cobranca extra registrada neste atendimento ainda.</p>
         {% endif %}
     </div>
 
 </div>
 {% endfor %}
-
 </div>
+{% endif %}
+{% endfor %}
 {% else %}
 <div class="page-card page-card--soft">
     <p class="muted-text">Nenhum atendimento em andamento no momento.</p>

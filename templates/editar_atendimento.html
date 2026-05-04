@@ -65,6 +65,16 @@
             </div>
 
             <div class="field-grid">
+                <select name="etapa_atual" required>
+                    <option value="LAVAGEM" {% if servico.etapa_atual_form == "LAVAGEM" %}selected{% endif %}>Etapa: Lavagem</option>
+                    <option value="FINALIZACAO" {% if servico.etapa_atual_form == "FINALIZACAO" %}selected{% endif %}>Etapa: Finalizacao</option>
+                </select>
+                <div class="page-card page-card--soft">
+                    <p class="muted-text">Quando o status ficar como <b>FINALIZADO</b>, o sistema consolida o tempo da etapa atual e fecha o atendimento em <b>Finalizacao</b>.</p>
+                </div>
+            </div>
+
+            <div class="field-grid">
                 <input name="valor" type="number" min="0" step="0.01" value="{{ servico.valor }}" placeholder="Valor">
                 <input name="valor_adicional" type="number" min="0" step="0.01" value="{{ servico.valor_adicional_num }}" placeholder="Valor adicional">
             </div>
