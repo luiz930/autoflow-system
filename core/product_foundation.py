@@ -11,6 +11,7 @@ FOUNDATION_MIGRATIONS = (
     "foundation_empresa_scope",
     "foundation_branding_storage",
     "foundation_site_customization",
+    "foundation_branding_extended",
     "foundation_empresa_scope_extended",
     "foundation_admin_settings_scope",
     "foundation_empresa_indexes",
@@ -311,6 +312,33 @@ def apply_site_customization(cursor, add_column):
         WHERE id = 1
         """
         )
+
+
+def apply_branding_extended(cursor, add_column):
+    add_column(cursor, "configuracao_empresa", "marca_favicon_url TEXT")
+    add_column(cursor, "configuracao_empresa", "marca_favicon_blob BLOB")
+    add_column(cursor, "configuracao_empresa", "marca_favicon_mime_type TEXT")
+    add_column(cursor, "configuracao_empresa", "marca_favicon_arquivo_nome TEXT")
+    add_column(cursor, "configuracao_empresa", "login_titulo_publico TEXT")
+    add_column(cursor, "configuracao_empresa", "login_subtitulo_publico TEXT")
+    add_column(cursor, "configuracao_empresa", "login_botao_texto TEXT")
+    add_column(cursor, "configuracao_empresa", "home_busca_placeholder TEXT")
+    add_column(cursor, "configuracao_empresa", "home_busca_botao_texto TEXT")
+    add_column(cursor, "configuracao_empresa", "home_estado_inicial_titulo TEXT")
+
+    cursor.execute(
+        """
+        UPDATE configuracao_empresa
+        SET
+            marca_favicon_url = COALESCE(NULLIF(marca_favicon_url, ''), NULLIF(marca_logo_url, '')),
+            login_titulo_publico = COALESCE(NULLIF(login_titulo_publico, ''), 'Acesso ao sistema'),
+            login_subtitulo_publico = COALESCE(NULLIF(login_subtitulo_publico, ''), 'Entre no sistema'),
+            login_botao_texto = COALESCE(NULLIF(login_botao_texto, ''), 'Entrar'),
+            home_busca_placeholder = COALESCE(NULLIF(home_busca_placeholder, ''), 'Digite a placa'),
+            home_busca_botao_texto = COALESCE(NULLIF(home_busca_botao_texto, ''), 'Buscar'),
+            home_estado_inicial_titulo = COALESCE(NULLIF(home_estado_inicial_titulo, ''), 'Digite uma placa para comecar')
+        """
+    )
 
 
 def _sqlite_table_create_sql(cursor, tabela):
@@ -802,6 +830,10 @@ def run_product_foundation_migrations(conn, add_column, now_iso, print_func=prin
         apply_site_customization(cursor, add_column)
         mark_migration_applied(cursor, "foundation_site_customization", now_iso())
 
+    if "foundation_branding_extended" not in applied:
+        apply_branding_extended(cursor, add_column)
+        mark_migration_applied(cursor, "foundation_branding_extended", now_iso())
+
     if "foundation_empresa_scope_extended" not in applied:
         apply_extended_empresa_scope(cursor, add_column)
         mark_migration_applied(cursor, "foundation_empresa_scope_extended", now_iso())
@@ -838,6 +870,7 @@ def build_brand_context(config_row=None, empresa_row=None):
         or "Gestao Estetica"
     )
     logo_blob = bool(config.get("marca_logo_blob") or config.get("marca_logo_tem_blob"))
+    favicon_blob = bool(config.get("marca_favicon_blob") or config.get("marca_favicon_tem_blob"))
     site_title = (
         config.get("site_titulo")
         or config.get("marca_subtitulo")
@@ -852,11 +885,25 @@ def build_brand_context(config_row=None, empresa_row=None):
     brand_background_color = config.get("marca_cor_fundo") or "#0b0b0b"
     brand_surface_color = config.get("marca_cor_superficie") or brand_secondary_color or "#111827"
     brand_text_color = config.get("marca_cor_texto") or "#f9fafb"
+    login_title = config.get("login_titulo_publico") or "Acesso ao sistema"
+    login_subtitle = config.get("login_subtitulo_publico") or "Entre no sistema"
+    login_button_text = config.get("login_botao_texto") or "Entrar"
+    home_search_placeholder = config.get("home_busca_placeholder") or "Digite a placa"
+    home_search_button_text = config.get("home_busca_botao_texto") or "Buscar"
+    home_empty_state_title = config.get("home_estado_inicial_titulo") or "Digite uma placa para comecar"
 
     return {
         "brand_name": brand_name,
         "brand_subtitle": brand_subtitle,
         "brand_logo_url": "/branding/logo" if logo_blob else (config.get("marca_logo_url") or empresa.get("logo_url") or "/static/logo.jpg"),
+        "brand_favicon_url": (
+            "/branding/favicon"
+            if favicon_blob else
+            (
+                config.get("marca_favicon_url")
+                or ("/branding/logo" if logo_blob else (config.get("marca_logo_url") or empresa.get("logo_url") or "/static/favicon.jpg"))
+            )
+        ),
         "brand_primary_color": brand_primary_color,
         "brand_secondary_color": brand_secondary_color,
         "brand_background_color": brand_background_color,
@@ -864,6 +911,12 @@ def build_brand_context(config_row=None, empresa_row=None):
         "brand_text_color": brand_text_color,
         "site_title": site_title,
         "site_footer_text": site_footer_text,
+        "login_title": login_title,
+        "login_subtitle": login_subtitle,
+        "login_button_text": login_button_text,
+        "home_search_placeholder": home_search_placeholder,
+        "home_search_button_text": home_search_button_text,
+        "home_empty_state_title": home_empty_state_title,
         "whitelabel_ativo": bool(int(config.get("whitelabel_ativo") or 0)),
         "storage_provider": config.get("storage_provider") or empresa.get("storage_provider") or "database",
         "licenca_plano": config.get("licenca_plano") or empresa.get("plano_codigo") or "starter",

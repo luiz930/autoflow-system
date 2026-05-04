@@ -27,6 +27,8 @@
                 <p class="brand-kicker">{{ brand_subtitle }}</p>
                 <h2 class="section-title">{{ brand_name }}</h2>
                 <p class="muted-text">Aba: {{ site_title }}</p>
+                <p class="muted-text">Login: {{ login_title }}</p>
+                <p class="muted-text">Home: {{ home_empty_state_title }}</p>
             </div>
         </div>
         <p class="muted-text top-spacing">{{ site_footer_text }}</p>
@@ -77,6 +79,14 @@
                 >
             </div>
 
+            <input
+                name="marca_favicon_url"
+                type="text"
+                value="{{ configuracao_empresa.marca_favicon_url }}"
+                placeholder="URL externa do favicon (opcional)"
+                autocomplete="off"
+            >
+
             <textarea
                 name="site_rodape_texto"
                 rows="3"
@@ -92,6 +102,16 @@
                     Remover logo personalizada e voltar para a padrao
                 </label>
                 <p class="muted-text">Se enviar um arquivo, ele passa a ter prioridade sobre a URL externa.</p>
+            </div>
+
+            <div class="page-card page-card--soft top-spacing">
+                <h3 class="section-title">Favicon e icones</h3>
+                <input type="file" name="marca_favicon" accept="image/*">
+                <label class="inline-toggle top-spacing">
+                    <input type="checkbox" name="remover_favicon" value="1">
+                    Remover favicon personalizado e voltar para o padrao
+                </label>
+                <p class="muted-text">Use um arquivo quadrado. PNG com transparência tende a ficar melhor nas abas e no atalho do celular.</p>
             </div>
 
             <div class="page-card page-card--soft top-spacing">
@@ -117,6 +137,58 @@
                         <span class="muted-text">Cor do texto</span>
                         <input name="marca_cor_texto" type="color" value="{{ configuracao_empresa.marca_cor_texto }}">
                     </label>
+                </div>
+            </div>
+
+            <div class="page-card page-card--soft top-spacing">
+                <h3 class="section-title">Textos publicos</h3>
+                <div class="field-grid">
+                    <input
+                        name="login_titulo_publico"
+                        type="text"
+                        value="{{ configuracao_empresa.login_titulo_publico }}"
+                        placeholder="Titulo da tela de login"
+                        autocomplete="off"
+                    >
+                    <input
+                        name="login_subtitulo_publico"
+                        type="text"
+                        value="{{ configuracao_empresa.login_subtitulo_publico }}"
+                        placeholder="Subtitulo da tela de login"
+                        autocomplete="off"
+                    >
+                </div>
+                <div class="field-grid top-spacing">
+                    <input
+                        name="login_botao_texto"
+                        type="text"
+                        value="{{ configuracao_empresa.login_botao_texto }}"
+                        placeholder="Texto do botao de login"
+                        autocomplete="off"
+                    >
+                    <input
+                        name="home_estado_inicial_titulo"
+                        type="text"
+                        value="{{ configuracao_empresa.home_estado_inicial_titulo }}"
+                        placeholder="Mensagem inicial da home"
+                        autocomplete="off"
+                    >
+                </div>
+                <div class="field-grid top-spacing">
+                    <input
+                        name="home_busca_placeholder"
+                        type="text"
+                        value="{{ configuracao_empresa.home_busca_placeholder }}"
+                        placeholder="Placeholder da busca por placa"
+                        autocomplete="off"
+                    >
+                    <input
+                        name="home_busca_botao_texto"
+                        type="text"
+                        value="{{ configuracao_empresa.home_busca_botao_texto }}"
+                        placeholder="Texto do botao Buscar"
+                        autocomplete="off"
+                    >
                 </div>
             </div>
 

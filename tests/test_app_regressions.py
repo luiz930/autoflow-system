@@ -196,6 +196,27 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(response, "ok")
         render_mock.assert_called_once()
 
+    def test_manifesto_site_renderiza_com_branding_dinamico(self):
+        with app_module.app.test_request_context("/site.webmanifest", method="GET"):
+            with patch.object(
+                app_module,
+                "carregar_contexto_produto",
+                return_value={
+                    "site_title": "Minha Operacao",
+                    "brand_name": "Minha Marca",
+                    "brand_favicon_url": "/branding/favicon",
+                    "brand_background_color": "#010203",
+                    "brand_primary_color": "#abcdef",
+                },
+            ):
+                response = app_module.servir_manifesto_site()
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.get_data(as_text=True))
+        self.assertEqual(payload["name"], "Minha Operacao")
+        self.assertEqual(payload["short_name"], "Minha Marca")
+        self.assertEqual(payload["icons"][0]["src"], "/branding/favicon")
+
     def test_salvar_configuracao_backup_form_isola_por_empresa(self):
         conn = self._criar_banco_admin_memoria()
         wrapper = PersistentCompatConnection(conn)

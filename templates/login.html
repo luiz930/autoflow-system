@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
 {% block title %}Login{% endblock %}
-{% block titulo %}Acesso {{ brand_name }}{% endblock %}
-{% block subtitulo %}Entre no sistema{% endblock %}
+{% block titulo %}{{ login_title }}{% endblock %}
+{% block subtitulo %}{{ login_subtitle }}{% endblock %}
 
 {% block content %}
 
@@ -29,7 +29,7 @@
         Mostrar senha
     </button>
 </div>
-<button type="submit">Entrar</button>
+<button type="submit">{{ login_button_text }}</button>
 </form>
 
 {% if erro %}

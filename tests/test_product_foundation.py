@@ -69,6 +69,9 @@ class ProductFoundationMigrationsTests(unittest.TestCase):
         self.assertIn("site_rodape_texto", colunas)
         self.assertIn("marca_logo_blob", colunas)
         self.assertIn("marca_cor_fundo", colunas)
+        self.assertIn("marca_favicon_blob", colunas)
+        self.assertIn("login_titulo_publico", colunas)
+        self.assertIn("home_estado_inicial_titulo", colunas)
 
     def test_build_brand_context_prefers_config_values(self):
         contexto = build_brand_context(
@@ -78,9 +81,16 @@ class ProductFoundationMigrationsTests(unittest.TestCase):
                 "site_titulo": "Meu Sistema",
                 "site_rodape_texto": "Rodape customizado",
                 "marca_logo_blob": b"abc",
+                "marca_favicon_blob": b"def",
                 "marca_cor_fundo": "#010203",
                 "marca_cor_superficie": "#111111",
                 "marca_cor_texto": "#eeeeee",
+                "login_titulo_publico": "Portal da Marca",
+                "login_subtitulo_publico": "Entre com sua conta",
+                "login_botao_texto": "Acessar",
+                "home_busca_placeholder": "Placa do cliente",
+                "home_busca_botao_texto": "Consultar",
+                "home_estado_inicial_titulo": "Comece pela placa",
                 "licenca_plano": "pro",
                 "licenca_status": "ativa",
             },
@@ -91,9 +101,16 @@ class ProductFoundationMigrationsTests(unittest.TestCase):
         self.assertEqual(contexto["site_title"], "Meu Sistema")
         self.assertEqual(contexto["site_footer_text"], "Rodape customizado")
         self.assertEqual(contexto["brand_logo_url"], "/branding/logo")
+        self.assertEqual(contexto["brand_favicon_url"], "/branding/favicon")
         self.assertEqual(contexto["brand_background_color"], "#010203")
         self.assertEqual(contexto["brand_surface_color"], "#111111")
         self.assertEqual(contexto["brand_text_color"], "#eeeeee")
+        self.assertEqual(contexto["login_title"], "Portal da Marca")
+        self.assertEqual(contexto["login_subtitle"], "Entre com sua conta")
+        self.assertEqual(contexto["login_button_text"], "Acessar")
+        self.assertEqual(contexto["home_search_placeholder"], "Placa do cliente")
+        self.assertEqual(contexto["home_search_button_text"], "Consultar")
+        self.assertEqual(contexto["home_empty_state_title"], "Comece pela placa")
         self.assertEqual(contexto["licenca_plano"], "pro")
         self.assertEqual(contexto["licenca_status"], "ativa")
 

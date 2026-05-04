@@ -5,10 +5,10 @@
 <meta charset="UTF-8">
 <title>{{ site_title }}</title>
 
-<link rel="icon" href="{{ brand_logo_url or '/static/favicon.jpg' }}">
-<link rel="apple-touch-icon" href="{{ brand_logo_url or '/static/icon-192.jpg' }}">
+<link rel="icon" href="{{ brand_favicon_url or '/static/favicon.jpg' }}">
+<link rel="apple-touch-icon" href="{{ brand_favicon_url or '/static/icon-192.jpg' }}">
 
-<link rel="manifest" href="/static/manifest.json">
+<link rel="manifest" href="/site.webmanifest">
 <meta name="theme-color" content="{{ brand_primary_color }}">
 
 <script>
@@ -1271,8 +1271,8 @@ input[type="file"] {
 <!-- BUSCA -->
 <div class="search-panel">
 <form method="POST" class="busca-form">
-<input name="placa" placeholder="Digite a placa" required>
-<button>Buscar</button>
+<input name="placa" placeholder="{{ home_search_placeholder }}" required>
+<button>{{ home_search_button_text }}</button>
 </form>
 </div>
 
@@ -1280,7 +1280,7 @@ input[type="file"] {
 {% if not buscou %}
 <div class="center-box">
     <div class="card destaque">
-        <h3>🔎 Digite uma placa para começar</h3>
+        <h3>🔎 {{ home_empty_state_title }}</h3>
     </div>
 </div>
 {% endif %}

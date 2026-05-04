@@ -3131,7 +3131,7 @@ app.config.update(
 app.config["SESSION_TYPE"] = "filesystem"
 app.secret_key = app.config["SECRET_KEY"]
 
-VERSAO_SISTEMA_PADRAO = "0.11.5"
+VERSAO_SISTEMA_PADRAO = "0.11.6"
 APP_VERSION = f"Versao: {VERSAO_SISTEMA_PADRAO}"
 VERSOES_SISTEMA_LEGADAS = {
     "0.7.5-alpha (Em Desenvolvimento)",
@@ -3142,6 +3142,7 @@ VERSOES_SISTEMA_LEGADAS = {
     "0.11.2",
     "0.11.3",
     "0.11.4",
+    "0.11.5",
 }
 MESES_CURTOS_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 PERIODOS_FINANCEIRO = [
@@ -3433,6 +3434,8 @@ def contexto_produto_padrao():
         {
             "marca_nome": "Wagen Estetica Automotiva",
             "marca_subtitulo": "Gestao Estetica",
+            "marca_logo_url": "",
+            "marca_favicon_url": "",
             "marca_cor_primaria": "#facc15",
             "marca_cor_secundaria": "#111827",
             "marca_cor_fundo": "#0b0b0b",
@@ -3440,6 +3443,12 @@ def contexto_produto_padrao():
             "marca_cor_texto": "#f9fafb",
             "site_titulo": "Gestao Estetica",
             "site_rodape_texto": "Desenvolvido por Luiz Henrique | Qualquer Erro Contate o Desenvolvedor | Wagen Estetica Automotiva | Direitos Reservados.",
+            "login_titulo_publico": "Acesso ao sistema",
+            "login_subtitulo_publico": "Entre no sistema",
+            "login_botao_texto": "Entrar",
+            "home_busca_placeholder": "Digite a placa",
+            "home_busca_botao_texto": "Buscar",
+            "home_estado_inicial_titulo": "Digite uma placa para comecar",
             "storage_provider": "database",
             "licenca_plano": "starter",
             "licenca_status": "trial",
@@ -3450,72 +3459,116 @@ def contexto_produto_padrao():
     )
 
 
-def carregar_contexto_produto():
-    padrao = contexto_produto_padrao()
+def campos_contexto_produto_sql(incluir_blobs=False):
+    campos = [
+        "id",
+        "empresa_id",
+        "marca_nome",
+        "marca_subtitulo",
+        "marca_logo_url",
+        "CASE WHEN marca_logo_blob IS NOT NULL THEN 1 ELSE 0 END AS marca_logo_tem_blob",
+        "marca_favicon_url",
+        "CASE WHEN marca_favicon_blob IS NOT NULL THEN 1 ELSE 0 END AS marca_favicon_tem_blob",
+        "marca_cor_primaria",
+        "marca_cor_secundaria",
+        "marca_cor_fundo",
+        "marca_cor_superficie",
+        "marca_cor_texto",
+        "site_titulo",
+        "site_rodape_texto",
+        "login_titulo_publico",
+        "login_subtitulo_publico",
+        "login_botao_texto",
+        "home_busca_placeholder",
+        "home_busca_botao_texto",
+        "home_estado_inicial_titulo",
+        "whitelabel_ativo",
+        "storage_provider",
+        "licenca_plano",
+        "licenca_status",
+        "onboarding_concluido",
+    ]
+    if incluir_blobs:
+        campos.extend([
+            "marca_logo_blob",
+            "marca_logo_mime_type",
+            "marca_logo_arquivo_nome",
+            "marca_favicon_blob",
+            "marca_favicon_mime_type",
+            "marca_favicon_arquivo_nome",
+        ])
+    return ",\n                ".join(campos)
+
+
+def carregar_dados_contexto_produto(empresa_id=None, incluir_blobs=False):
+    padrao = {"config": {}, "empresa": {}}
     if not INIT_DB_EXECUTADO:
         return padrao
 
+    empresa_id_atual = normalize_empresa_id(empresa_id or empresa_atual_id())
+    campos_sql = campos_contexto_produto_sql(incluir_blobs=incluir_blobs)
+
     def carregar(conn):
         c = conn.cursor()
-        empresa_id_atual = normalize_empresa_id(empresa_atual_id())
-        c.execute(
-            """
-            SELECT
-                id,
-                empresa_id,
-                marca_nome,
-                marca_subtitulo,
-                marca_logo_url,
-                CASE WHEN marca_logo_blob IS NOT NULL THEN 1 ELSE 0 END AS marca_logo_tem_blob,
-                marca_cor_primaria,
-                marca_cor_secundaria,
-                marca_cor_fundo,
-                marca_cor_superficie,
-                marca_cor_texto,
-                site_titulo,
-                site_rodape_texto,
-                whitelabel_ativo,
-                storage_provider,
-                licenca_plano,
-                licenca_status,
-                onboarding_concluido
-            FROM configuracao_empresa
-            WHERE empresa_id=?
-            ORDER BY id
-            LIMIT 1
-            """,
-            (empresa_id_atual,),
-        )
-        config = row_para_dict(c.fetchone())
+        def carregar_configuracao(esquema_estrito=True):
+            if esquema_estrito:
+                c.execute(
+                    """
+                    SELECT
+                        """
+                    + campos_sql
+                    + """
+                    FROM configuracao_empresa
+                    WHERE empresa_id=?
+                    ORDER BY id
+                    LIMIT 1
+                    """,
+                    (empresa_id_atual,),
+                )
+            else:
+                c.execute(
+                    """
+                    SELECT *
+                    FROM configuracao_empresa
+                    WHERE empresa_id=?
+                    ORDER BY id
+                    LIMIT 1
+                    """,
+                    (empresa_id_atual,),
+                )
+            return row_para_dict(c.fetchone())
+
+        try:
+            config = carregar_configuracao(esquema_estrito=True)
+        except Exception:
+            config = carregar_configuracao(esquema_estrito=False)
+
         if not config and empresa_id_atual == 1:
-            c.execute(
-                """
-                SELECT
-                    id,
-                    empresa_id,
-                    marca_nome,
-                    marca_subtitulo,
-                    marca_logo_url,
-                    CASE WHEN marca_logo_blob IS NOT NULL THEN 1 ELSE 0 END AS marca_logo_tem_blob,
-                    marca_cor_primaria,
-                    marca_cor_secundaria,
-                    marca_cor_fundo,
-                    marca_cor_superficie,
-                    marca_cor_texto,
-                    site_titulo,
-                    site_rodape_texto,
-                    whitelabel_ativo,
-                    storage_provider,
-                    licenca_plano,
-                    licenca_status,
-                    onboarding_concluido
-                FROM configuracao_empresa
-                WHERE id=1
-                """
-            )
-            config = row_para_dict(c.fetchone())
+            try:
+                c.execute(
+                    """
+                    SELECT
+                        """
+                    + campos_sql
+                    + """
+                    FROM configuracao_empresa
+                    WHERE id=1
+                    """
+                )
+                config = row_para_dict(c.fetchone())
+            except Exception:
+                c.execute(
+                    """
+                    SELECT *
+                    FROM configuracao_empresa
+                    WHERE id=1
+                    """
+                )
+                config = row_para_dict(c.fetchone())
         if config and "marca_logo_tem_blob" not in config:
             config["marca_logo_tem_blob"] = 1 if config.get("marca_logo_blob") else 0
+        if config and "marca_favicon_tem_blob" not in config:
+            config["marca_favicon_tem_blob"] = 1 if config.get("marca_favicon_blob") else 0
 
         empresa_id = int(config.get("empresa_id") or 1)
         empresa = {}
@@ -3527,11 +3580,17 @@ def carregar_contexto_produto():
 
         return {"config": config, "empresa": empresa}
 
-    dados = executar_leitura_resiliente(
+    return executar_leitura_resiliente(
         carregar,
         descricao="CONTEXTO PRODUTO",
-        padrao={"config": {}, "empresa": {}},
+        padrao=padrao,
     )
+
+
+def carregar_contexto_produto():
+    dados = carregar_dados_contexto_produto()
+    if not dados.get("config") and not dados.get("empresa"):
+        return contexto_produto_padrao()
     return build_brand_context(dados.get("config"), dados.get("empresa"))
 
 
@@ -4848,6 +4907,34 @@ def garantir_schema_sqlite_local_minima(force=False):
                 clima_longitude REAL,
                 clima_timezone TEXT,
                 clima_timeout_segundos INTEGER DEFAULT 8,
+                marca_nome TEXT,
+                marca_subtitulo TEXT,
+                marca_logo_url TEXT,
+                marca_logo_blob BLOB,
+                marca_logo_mime_type TEXT,
+                marca_logo_arquivo_nome TEXT,
+                marca_favicon_url TEXT,
+                marca_favicon_blob BLOB,
+                marca_favicon_mime_type TEXT,
+                marca_favicon_arquivo_nome TEXT,
+                marca_cor_primaria TEXT,
+                marca_cor_secundaria TEXT,
+                marca_cor_fundo TEXT,
+                marca_cor_superficie TEXT,
+                marca_cor_texto TEXT,
+                site_titulo TEXT,
+                site_rodape_texto TEXT,
+                login_titulo_publico TEXT,
+                login_subtitulo_publico TEXT,
+                login_botao_texto TEXT,
+                home_busca_placeholder TEXT,
+                home_busca_botao_texto TEXT,
+                home_estado_inicial_titulo TEXT,
+                whitelabel_ativo INTEGER DEFAULT 0,
+                storage_provider TEXT,
+                licenca_plano TEXT,
+                licenca_status TEXT,
+                onboarding_concluido INTEGER DEFAULT 0,
                 atualizado_em TEXT
             )
             """)
@@ -4913,6 +5000,34 @@ def garantir_schema_sqlite_local_minima(force=False):
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_longitude REAL")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_timezone TEXT")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_timeout_segundos INTEGER DEFAULT 8")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_nome TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_subtitulo TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_url TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_blob BLOB")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_mime_type TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_arquivo_nome TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_favicon_url TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_favicon_blob BLOB")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_favicon_mime_type TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_favicon_arquivo_nome TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_cor_primaria TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_cor_secundaria TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_cor_fundo TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_cor_superficie TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_cor_texto TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "site_titulo TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "site_rodape_texto TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "login_titulo_publico TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "login_subtitulo_publico TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "login_botao_texto TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "home_busca_placeholder TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "home_busca_botao_texto TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "home_estado_inicial_titulo TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "whitelabel_ativo INTEGER DEFAULT 0")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "storage_provider TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "licenca_plano TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "licenca_status TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "onboarding_concluido INTEGER DEFAULT 0")
             adicionar_coluna_se_preciso(c, "clientes", "empresa_id INTEGER DEFAULT 1")
             adicionar_coluna_se_preciso(c, "veiculos", "empresa_id INTEGER DEFAULT 1")
             adicionar_coluna_se_preciso(c, "servicos", "empresa_id INTEGER DEFAULT 1")
@@ -5706,6 +5821,34 @@ def atualizar_banco():
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_longitude REAL")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_timezone TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_timeout_segundos INTEGER DEFAULT 8")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_nome TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_subtitulo TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_url TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_blob BLOB")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_mime_type TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_arquivo_nome TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_favicon_url TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_favicon_blob BLOB")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_favicon_mime_type TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_favicon_arquivo_nome TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_cor_primaria TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_cor_secundaria TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_cor_fundo TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_cor_superficie TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_cor_texto TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "site_titulo TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "site_rodape_texto TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "login_titulo_publico TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "login_subtitulo_publico TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "login_botao_texto TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "home_busca_placeholder TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "home_busca_botao_texto TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "home_estado_inicial_titulo TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "whitelabel_ativo INTEGER DEFAULT 0")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "storage_provider TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "licenca_plano TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "licenca_status TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "onboarding_concluido INTEGER DEFAULT 0")
     adicionar_coluna_se_preciso(c, "configuracao_backup", "frequencia TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_backup", "tipo_backup TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_backup", "retencao_arquivos INTEGER")
@@ -7533,6 +7676,7 @@ def empresa_snapshot_padrao():
         "marca_nome": "Wagen Estetica Automotiva",
         "marca_subtitulo": "Gestao Estetica",
         "marca_logo_url": "",
+        "marca_favicon_url": "",
         "marca_cor_primaria": "#facc15",
         "marca_cor_secundaria": "#111827",
         "marca_cor_fundo": "#0b0b0b",
@@ -7540,6 +7684,12 @@ def empresa_snapshot_padrao():
         "marca_cor_texto": "#f9fafb",
         "site_titulo": "Gestao Estetica",
         "site_rodape_texto": "Desenvolvido por Luiz Henrique | Qualquer Erro Contate o Desenvolvedor | Wagen Estetica Automotiva | Direitos Reservados.",
+        "login_titulo_publico": "Acesso ao sistema",
+        "login_subtitulo_publico": "Entre no sistema",
+        "login_botao_texto": "Entrar",
+        "home_busca_placeholder": "Digite a placa",
+        "home_busca_botao_texto": "Buscar",
+        "home_estado_inicial_titulo": "Digite uma placa para comecar",
     }
 
 def obter_configuracao_empresa():
@@ -7573,6 +7723,7 @@ def obter_configuracao_empresa():
     dados["marca_nome"] = normalizar_texto_campo(dados.get("marca_nome")) or "Wagen Estetica Automotiva"
     dados["marca_subtitulo"] = normalizar_texto_campo(dados.get("marca_subtitulo")) or "Gestao Estetica"
     dados["marca_logo_url"] = normalizar_texto_campo(dados.get("marca_logo_url"))
+    dados["marca_favicon_url"] = normalizar_texto_campo(dados.get("marca_favicon_url"))
     dados["marca_cor_primaria"] = normalizar_cor_hex(dados.get("marca_cor_primaria"), "#facc15")
     dados["marca_cor_secundaria"] = normalizar_cor_hex(dados.get("marca_cor_secundaria"), "#111827")
     dados["marca_cor_fundo"] = normalizar_cor_hex(dados.get("marca_cor_fundo"), "#0b0b0b")
@@ -7580,6 +7731,12 @@ def obter_configuracao_empresa():
     dados["marca_cor_texto"] = normalizar_cor_hex(dados.get("marca_cor_texto"), "#f9fafb")
     dados["site_titulo"] = normalizar_texto_campo(dados.get("site_titulo")) or "Gestao Estetica"
     dados["site_rodape_texto"] = normalizar_texto_campo(dados.get("site_rodape_texto")) or "Desenvolvido por Luiz Henrique | Qualquer Erro Contate o Desenvolvedor | Wagen Estetica Automotiva | Direitos Reservados."
+    dados["login_titulo_publico"] = normalizar_texto_campo(dados.get("login_titulo_publico")) or "Acesso ao sistema"
+    dados["login_subtitulo_publico"] = normalizar_texto_campo(dados.get("login_subtitulo_publico")) or "Entre no sistema"
+    dados["login_botao_texto"] = normalizar_texto_campo(dados.get("login_botao_texto")) or "Entrar"
+    dados["home_busca_placeholder"] = normalizar_texto_campo(dados.get("home_busca_placeholder")) or "Digite a placa"
+    dados["home_busca_botao_texto"] = normalizar_texto_campo(dados.get("home_busca_botao_texto")) or "Buscar"
+    dados["home_estado_inicial_titulo"] = normalizar_texto_campo(dados.get("home_estado_inicial_titulo")) or "Digite uma placa para comecar"
     return dados
 
 def salvar_configuracao_versao_form(form):
@@ -7963,7 +8120,9 @@ def salvar_configuracao_clima_form(form):
 def salvar_configuracao_site_form(form, files):
     atual = obter_configuracao_empresa()
     remover_logo = bool_config_ativo(form.get("remover_logo"))
+    remover_favicon = bool_config_ativo(form.get("remover_favicon"))
     logo_info = preparar_logo_site_upload(files.get("marca_logo"))
+    favicon_info = preparar_favicon_site_upload(files.get("marca_favicon"))
 
     marca_nome = normalizar_texto_campo(form.get("marca_nome")) or "Wagen Estetica Automotiva"
     marca_subtitulo = normalizar_texto_campo(form.get("marca_subtitulo")) or "Gestao Estetica"
@@ -7973,16 +8132,26 @@ def salvar_configuracao_site_form(form, files):
         or f"Desenvolvido por Luiz Henrique | Qualquer Erro Contate o Desenvolvedor | {marca_nome} | Direitos Reservados."
     )
     marca_logo_url = normalizar_texto_campo(form.get("marca_logo_url"))
+    marca_favicon_url = normalizar_texto_campo(form.get("marca_favicon_url"))
     marca_cor_primaria = normalizar_cor_hex(form.get("marca_cor_primaria"), "#facc15")
     marca_cor_secundaria = normalizar_cor_hex(form.get("marca_cor_secundaria"), "#111827")
     marca_cor_fundo = normalizar_cor_hex(form.get("marca_cor_fundo"), "#0b0b0b")
     marca_cor_superficie = normalizar_cor_hex(form.get("marca_cor_superficie"), "#111827")
     marca_cor_texto = normalizar_cor_hex(form.get("marca_cor_texto"), "#f9fafb")
+    login_titulo_publico = normalizar_texto_campo(form.get("login_titulo_publico")) or "Acesso ao sistema"
+    login_subtitulo_publico = normalizar_texto_campo(form.get("login_subtitulo_publico")) or "Entre no sistema"
+    login_botao_texto = normalizar_texto_campo(form.get("login_botao_texto")) or "Entrar"
+    home_busca_placeholder = normalizar_texto_campo(form.get("home_busca_placeholder")) or "Digite a placa"
+    home_busca_botao_texto = normalizar_texto_campo(form.get("home_busca_botao_texto")) or "Buscar"
+    home_estado_inicial_titulo = normalizar_texto_campo(form.get("home_estado_inicial_titulo")) or "Digite uma placa para comecar"
     whitelabel_ativo = 1 if bool_config_ativo(form.get("whitelabel_ativo")) else 0
 
     logo_blob = atual.get("marca_logo_blob")
     logo_mime_type = atual.get("marca_logo_mime_type")
     logo_arquivo_nome = atual.get("marca_logo_arquivo_nome")
+    favicon_blob = atual.get("marca_favicon_blob")
+    favicon_mime_type = atual.get("marca_favicon_mime_type")
+    favicon_arquivo_nome = atual.get("marca_favicon_arquivo_nome")
 
     if remover_logo:
         logo_blob = None
@@ -7990,10 +8159,21 @@ def salvar_configuracao_site_form(form, files):
         logo_arquivo_nome = ""
         marca_logo_url = ""
 
+    if remover_favicon:
+        favicon_blob = None
+        favicon_mime_type = ""
+        favicon_arquivo_nome = ""
+        marca_favicon_url = ""
+
     if logo_info:
         logo_blob = logo_info.get("arquivo_blob")
         logo_mime_type = logo_info.get("mime_type")
         logo_arquivo_nome = logo_info.get("arquivo_nome")
+
+    if favicon_info:
+        favicon_blob = favicon_info.get("arquivo_blob")
+        favicon_mime_type = favicon_info.get("mime_type")
+        favicon_arquivo_nome = favicon_info.get("arquivo_nome")
 
     salvar_campos_configuracao_empresa({
         "marca_nome": marca_nome,
@@ -8002,6 +8182,10 @@ def salvar_configuracao_site_form(form, files):
         "marca_logo_blob": logo_blob,
         "marca_logo_mime_type": logo_mime_type,
         "marca_logo_arquivo_nome": logo_arquivo_nome,
+        "marca_favicon_url": marca_favicon_url,
+        "marca_favicon_blob": favicon_blob,
+        "marca_favicon_mime_type": favicon_mime_type,
+        "marca_favicon_arquivo_nome": favicon_arquivo_nome,
         "marca_cor_primaria": marca_cor_primaria,
         "marca_cor_secundaria": marca_cor_secundaria,
         "marca_cor_fundo": marca_cor_fundo,
@@ -8009,6 +8193,12 @@ def salvar_configuracao_site_form(form, files):
         "marca_cor_texto": marca_cor_texto,
         "site_titulo": site_titulo,
         "site_rodape_texto": site_rodape_texto,
+        "login_titulo_publico": login_titulo_publico,
+        "login_subtitulo_publico": login_subtitulo_publico,
+        "login_botao_texto": login_botao_texto,
+        "home_busca_placeholder": home_busca_placeholder,
+        "home_busca_botao_texto": home_busca_botao_texto,
+        "home_estado_inicial_titulo": home_estado_inicial_titulo,
         "whitelabel_ativo": whitelabel_ativo,
     })
     limpar_caches_interface()
@@ -8020,13 +8210,22 @@ def salvar_configuracao_site_form(form, files):
         "site_rodape_texto": site_rodape_texto,
         "marca_logo_url": marca_logo_url,
         "marca_logo_arquivo_nome": logo_arquivo_nome,
+        "marca_favicon_url": marca_favicon_url,
+        "marca_favicon_arquivo_nome": favicon_arquivo_nome,
         "marca_cor_primaria": marca_cor_primaria,
         "marca_cor_secundaria": marca_cor_secundaria,
         "marca_cor_fundo": marca_cor_fundo,
         "marca_cor_superficie": marca_cor_superficie,
         "marca_cor_texto": marca_cor_texto,
+        "login_titulo_publico": login_titulo_publico,
+        "login_subtitulo_publico": login_subtitulo_publico,
+        "login_botao_texto": login_botao_texto,
+        "home_busca_placeholder": home_busca_placeholder,
+        "home_busca_botao_texto": home_busca_botao_texto,
+        "home_estado_inicial_titulo": home_estado_inicial_titulo,
         "whitelabel_ativo": bool(whitelabel_ativo),
         "tem_logo_blob": bool(logo_blob),
+        "tem_favicon_blob": bool(favicon_blob),
     }
 
 def salvar_configuracao_empresa_form(form):
@@ -8692,7 +8891,30 @@ def montar_prefill_nota_por_orcamento(orcamento):
         "itens": orcamento.get("itens", []),
     }
 
-def montar_tabela_itens_pdf(itens):
+def carregar_branding_documento(empresa=None):
+    empresa = dict(empresa or {})
+    empresa_id = normalize_empresa_id(empresa.get("empresa_id") or empresa_atual_id())
+    dados = carregar_dados_contexto_produto(empresa_id=empresa_id, incluir_blobs=True)
+    config = dados.get("config") or {}
+    empresa_base = dados.get("empresa") or empresa
+    contexto = build_brand_context(config, empresa_base)
+    return contexto, config, empresa_base
+
+
+def montar_logo_pdf_branding(config):
+    if config and config.get("marca_logo_blob"):
+        try:
+            return ImagemRedonda(BytesIO(bytes(config["marca_logo_blob"])), size=72)
+        except Exception:
+            pass
+
+    try:
+        return ImagemRedonda("static/logo.jpg", size=72)
+    except Exception:
+        return None
+
+
+def montar_tabela_itens_pdf(itens, cor_cabecalho="#111827"):
     from reportlab.platypus import Table, TableStyle
     from reportlab.lib import colors
 
@@ -8708,7 +8930,7 @@ def montar_tabela_itens_pdf(itens):
 
     tabela = Table(dados_tabela, colWidths=[250, 60, 90, 90])
     tabela.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(cor_cabecalho or "#111827")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("GRID", (0, 0), (-1, -1), 0.7, colors.HexColor("#d1d5db")),
@@ -8728,52 +8950,65 @@ def gerar_pdf_orcamento_buffer(orcamento):
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     empresa = orcamento.get("empresa") or empresa_snapshot_padrao()
+    branding, config_brand, empresa_brand = carregar_branding_documento(empresa)
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=28, bottomMargin=28)
     styles = getSampleStyleSheet()
+    cor_titulo = colors.HexColor(branding.get("brand_surface_color") or "#111827")
+    cor_subtitulo = colors.HexColor(branding.get("brand_primary_color") or "#facc15")
+    cor_cabecalho_tabela = branding.get("brand_surface_color") or "#111827"
+    cor_destaque_total = colors.HexColor(branding.get("brand_primary_color") or "#facc15")
     titulo_style = ParagraphStyle(
         "DocTitulo",
         parent=styles["Heading1"],
         alignment=TA_CENTER,
         fontName="Helvetica-Bold",
         fontSize=18,
-        textColor=colors.HexColor("#111827"),
+        textColor=cor_titulo,
         spaceAfter=6,
     )
     subtitulo_style = ParagraphStyle(
         "DocSubtitulo",
         parent=styles["BodyText"],
         alignment=TA_CENTER,
-        textColor=colors.HexColor("#4b5563"),
+        textColor=cor_subtitulo,
         spaceAfter=12,
     )
     normal = styles["BodyText"]
     elementos = []
 
     try:
-        logo = ImagemRedonda("static/logo.jpg", size=72)
-        tabela_logo = Table([[logo]], colWidths=[523])
-        tabela_logo.setStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")])
-        elementos.append(tabela_logo)
-        elementos.append(Spacer(1, 10))
+        logo = montar_logo_pdf_branding(config_brand)
+        if logo:
+            tabela_logo = Table([[logo]], colWidths=[523])
+            tabela_logo.setStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")])
+            elementos.append(tabela_logo)
+            elementos.append(Spacer(1, 10))
     except Exception:
         pass
 
-    nome_empresa = empresa.get("nome_fantasia") or empresa.get("razao_social") or "Wagen Estetica Automotiva"
+    nome_empresa = (
+        empresa_brand.get("nome_fantasia")
+        or empresa_brand.get("razao_social")
+        or branding.get("brand_name")
+        or "Wagen Estetica Automotiva"
+    )
     elementos.append(Paragraph(xml_escape(nome_empresa), titulo_style))
 
     linhas_empresa = []
-    if empresa.get("razao_social"):
-        linhas_empresa.append(f"Razao social: {empresa['razao_social']}")
-    if empresa.get("cnpj"):
-        linhas_empresa.append(f"CNPJ: {formatar_documento_fiscal(empresa['cnpj'])}")
-    linhas_empresa.extend(montar_endereco_empresa(empresa))
-    if empresa.get("telefone") or empresa.get("email"):
+    if branding.get("brand_subtitle"):
+        linhas_empresa.append(str(branding["brand_subtitle"]))
+    if empresa_brand.get("razao_social"):
+        linhas_empresa.append(f"Razao social: {empresa_brand['razao_social']}")
+    if empresa_brand.get("cnpj"):
+        linhas_empresa.append(f"CNPJ: {formatar_documento_fiscal(empresa_brand['cnpj'])}")
+    linhas_empresa.extend(montar_endereco_empresa(empresa_brand))
+    if empresa_brand.get("telefone") or empresa_brand.get("email"):
         linhas_empresa.append(
             " | ".join(
                 parte for parte in [
-                    normalizar_texto_campo(empresa.get("telefone")),
-                    normalizar_texto_campo(empresa.get("email")),
+                    normalizar_texto_campo(empresa_brand.get("telefone")),
+                    normalizar_texto_campo(empresa_brand.get("email")),
                 ]
                 if parte
             )
@@ -8808,7 +9043,7 @@ def gerar_pdf_orcamento_buffer(orcamento):
     ]))
     elementos.append(cliente_tabela)
     elementos.append(Spacer(1, 14))
-    elementos.append(montar_tabela_itens_pdf(orcamento.get("itens", [])))
+    elementos.append(montar_tabela_itens_pdf(orcamento.get("itens", []), cor_cabecalho=cor_cabecalho_tabela))
     elementos.append(Spacer(1, 14))
 
     totais = Table([
@@ -8817,7 +9052,7 @@ def gerar_pdf_orcamento_buffer(orcamento):
         ["Total", f"R$ {orcamento['total_exibicao']}"],
     ], colWidths=[120, 130], hAlign="RIGHT")
     totais.setStyle(TableStyle([
-        ("BACKGROUND", (0, 2), (-1, 2), colors.HexColor("#facc15")),
+        ("BACKGROUND", (0, 2), (-1, 2), cor_destaque_total),
         ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
         ("GRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#d1d5db")),
         ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
@@ -8840,27 +9075,42 @@ def gerar_pdf_nota_fiscal_buffer(nota):
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     empresa = nota.get("empresa") or empresa_snapshot_padrao()
+    branding, config_brand, empresa_brand = carregar_branding_documento(empresa)
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=28, bottomMargin=28)
     styles = getSampleStyleSheet()
+    cor_titulo = colors.HexColor(branding.get("brand_surface_color") or "#111827")
+    cor_subtitulo = colors.HexColor(branding.get("brand_primary_color") or "#facc15")
+    cor_cabecalho_tabela = branding.get("brand_surface_color") or "#111827"
+    cor_destaque_total = colors.HexColor(branding.get("brand_primary_color") or "#facc15")
     titulo_style = ParagraphStyle(
         "FiscalTitulo",
         parent=styles["Heading1"],
         alignment=TA_CENTER,
         fontName="Helvetica-Bold",
         fontSize=18,
-        textColor=colors.HexColor("#111827"),
+        textColor=cor_titulo,
         spaceAfter=6,
     )
     subtitulo_style = ParagraphStyle(
         "FiscalSubtitulo",
         parent=styles["BodyText"],
         alignment=TA_CENTER,
-        textColor=colors.HexColor("#4b5563"),
+        textColor=cor_subtitulo,
         spaceAfter=10,
     )
     normal = styles["BodyText"]
     elementos = []
+
+    try:
+        logo = montar_logo_pdf_branding(config_brand)
+        if logo:
+            tabela_logo = Table([[logo]], colWidths=[523])
+            tabela_logo.setStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")])
+            elementos.append(tabela_logo)
+            elementos.append(Spacer(1, 10))
+    except Exception:
+        pass
 
     elementos.append(Paragraph("Espelho Fiscal de Servico", titulo_style))
     elementos.append(Paragraph(
@@ -8882,19 +9132,19 @@ def gerar_pdf_nota_fiscal_buffer(nota):
         ))
 
     emitente_tabela = Table([
-        ["Emitente", empresa.get("razao_social") or empresa.get("nome_fantasia") or "-"],
-        ["CNPJ", formatar_documento_fiscal(empresa.get("cnpj")) or "-"],
+        ["Emitente", empresa_brand.get("razao_social") or empresa_brand.get("nome_fantasia") or branding.get("brand_name") or "-"],
+        ["CNPJ", formatar_documento_fiscal(empresa_brand.get("cnpj")) or "-"],
         ["IM / IE", " / ".join(
             parte for parte in [
-                normalizar_texto_campo(empresa.get("inscricao_municipal")),
-                normalizar_texto_campo(empresa.get("inscricao_estadual")),
+                normalizar_texto_campo(empresa_brand.get("inscricao_municipal")),
+                normalizar_texto_campo(empresa_brand.get("inscricao_estadual")),
             ] if parte
         ) or "-"],
-        ["Endereco", " | ".join(montar_endereco_empresa(empresa)) or "-"],
+        ["Endereco", " | ".join(montar_endereco_empresa(empresa_brand)) or "-"],
         ["Contato", " | ".join(
             parte for parte in [
-                normalizar_texto_campo(empresa.get("telefone")),
-                normalizar_texto_campo(empresa.get("email")),
+                normalizar_texto_campo(empresa_brand.get("telefone")),
+                normalizar_texto_campo(empresa_brand.get("email")),
             ] if parte
         ) or "-"],
     ], colWidths=[120, 403])
@@ -8945,7 +9195,7 @@ def gerar_pdf_nota_fiscal_buffer(nota):
     ]))
     elementos.append(tomador_tabela)
     elementos.append(Spacer(1, 12))
-    elementos.append(montar_tabela_itens_pdf(nota.get("itens", [])))
+    elementos.append(montar_tabela_itens_pdf(nota.get("itens", []), cor_cabecalho=cor_cabecalho_tabela))
     elementos.append(Spacer(1, 14))
 
     fiscal_tabela = Table([
@@ -8958,7 +9208,7 @@ def gerar_pdf_nota_fiscal_buffer(nota):
     ], colWidths=[150, 120], hAlign="RIGHT")
     fiscal_tabela.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#d1d5db")),
-        ("BACKGROUND", (0, 5), (-1, 5), colors.HexColor("#facc15")),
+        ("BACKGROUND", (0, 5), (-1, 5), cor_destaque_total),
         ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
     ]))
     elementos.append(fiscal_tabela)
@@ -9140,16 +9390,24 @@ def salvar_foto_perfil_usuario(foto, identificador="usuario"):
     }
 
 
-def preparar_logo_site_upload(foto):
+def preparar_imagem_site_upload(
+    foto,
+    nome_padrao="logo",
+    max_dimensao=640,
+    formato_saida="JPEG",
+    qualidade=92,
+    preservar_alpha=False,
+    fundo_rgb=(11, 11, 11),
+):
     if not foto or not str(getattr(foto, "filename", "") or "").strip():
         return None
 
     if not arquivo_permitido(foto.filename):
-        raise ValueError("Envie a logo em JPG, PNG, WEBP, HEIC ou HEIF.")
+        raise ValueError("Envie a imagem em JPG, PNG, WEBP, HEIC ou HEIF.")
 
-    nome_seguro = secure_filename(foto.filename or "") or "logo"
+    nome_seguro = secure_filename(foto.filename or "") or nome_padrao
     nome_base, ext_original = os.path.splitext(nome_seguro)
-    nome_base = re.sub(r"[^A-Za-z0-9_-]+", "_", nome_base or "logo").strip("_") or "logo"
+    nome_base = re.sub(r"[^A-Za-z0-9_-]+", "_", nome_base or nome_padrao).strip("_") or nome_padrao
     ext_original = (ext_original or ".jpg").lower()
 
     if PILLOW_DISPONIVEL:
@@ -9157,38 +9415,83 @@ def preparar_logo_site_upload(foto):
             foto.stream.seek(0)
             imagem = Image.open(foto.stream)
             imagem = ImageOps.exif_transpose(imagem)
-            if max(imagem.size) > 640:
-                imagem.thumbnail((640, 640), obter_resample_lanczos())
-            if imagem.mode != "RGBA":
-                imagem = imagem.convert("RGBA")
-            fundo = Image.new("RGB", imagem.size, (11, 11, 11))
-            fundo.paste(imagem, mask=imagem.split()[-1] if "A" in imagem.getbands() else None)
+            if max(imagem.size) > max_dimensao:
+                imagem.thumbnail((max_dimensao, max_dimensao), obter_resample_lanczos())
             buffer = BytesIO()
-            fundo.save(
-                buffer,
-                format="JPEG",
-                quality=92,
-                optimize=True,
-                progressive=True,
-            )
+
+            if preservar_alpha:
+                imagem = imagem.convert("RGBA")
+                imagem.save(
+                    buffer,
+                    format=formato_saida,
+                    optimize=True,
+                )
+            else:
+                if imagem.mode != "RGBA":
+                    imagem = imagem.convert("RGBA")
+                fundo = Image.new("RGB", imagem.size, fundo_rgb)
+                fundo.paste(imagem, mask=imagem.split()[-1] if "A" in imagem.getbands() else None)
+                fundo.save(
+                    buffer,
+                    format=formato_saida,
+                    quality=qualidade,
+                    optimize=True,
+                    progressive=True,
+                )
             conteudo = buffer.getvalue()
+            ext_saida = ".png" if formato_saida.upper() == "PNG" else ".jpg"
+            mime_type = "image/png" if ext_saida == ".png" else "image/jpeg"
             return {
                 "arquivo_blob": conteudo,
-                "mime_type": "image/jpeg",
-                "arquivo_nome": f"{nome_base}.jpg",
+                "mime_type": mime_type,
+                "arquivo_nome": f"{nome_base}{ext_saida}",
             }
         except (UnidentifiedImageError, OSError, ValueError):
-            raise ValueError("Nao consegui processar a logo enviada. Tente outra imagem.")
+            raise ValueError("Nao consegui processar a imagem enviada. Tente outra imagem.")
         except Exception:
-            raise ValueError("Nao consegui salvar a logo do site agora.")
+            raise ValueError("Nao consegui salvar a imagem do site agora.")
 
     foto.stream.seek(0)
     conteudo = foto.stream.read()
     return {
         "arquivo_blob": conteudo,
-        "mime_type": detectar_mime_type_arquivo(f"logo{ext_original}"),
+        "mime_type": detectar_mime_type_arquivo(f"{nome_padrao}{ext_original}"),
         "arquivo_nome": f"{nome_base}{ext_original}",
     }
+
+
+def preparar_logo_site_upload(foto):
+    try:
+        return preparar_imagem_site_upload(
+            foto,
+            nome_padrao="logo",
+            max_dimensao=640,
+            formato_saida="JPEG",
+            qualidade=92,
+            preservar_alpha=False,
+            fundo_rgb=(11, 11, 11),
+        )
+    except ValueError as erro:
+        texto = str(erro)
+        if "imagem" in texto.lower():
+            raise ValueError(texto.replace("imagem", "logo", 1))
+        raise
+
+
+def preparar_favicon_site_upload(foto):
+    try:
+        return preparar_imagem_site_upload(
+            foto,
+            nome_padrao="favicon",
+            max_dimensao=256,
+            formato_saida="PNG",
+            preservar_alpha=True,
+        )
+    except ValueError as erro:
+        texto = str(erro)
+        if "imagem" in texto.lower():
+            raise ValueError(texto.replace("imagem", "favicon", 1))
+        raise
 
 
 def detectar_mime_type_arquivo(caminho):
@@ -9595,15 +9898,7 @@ def servir_logo_site():
     if not INIT_DB_EXECUTADO:
         return redirect("/static/logo.jpg")
 
-    def carregar(conn):
-        c = conn.cursor()
-        return selecionar_configuracao_empresa_cursor(c, empresa_atual_id()) or {}
-
-    dados = executar_leitura_resiliente(
-        carregar,
-        descricao="LOGO SITE",
-        padrao={},
-    )
+    dados = (carregar_dados_contexto_produto(incluir_blobs=True).get("config") or {})
 
     blob = dados.get("marca_logo_blob")
     if blob:
@@ -9621,6 +9916,63 @@ def servir_logo_site():
         return redirect(logo_url)
 
     return redirect("/static/logo.jpg")
+
+
+@app.route("/branding/favicon")
+def servir_favicon_site():
+    if not INIT_DB_EXECUTADO:
+        return redirect("/static/favicon.jpg")
+
+    dados = (carregar_dados_contexto_produto(incluir_blobs=True).get("config") or {})
+
+    blob = dados.get("marca_favicon_blob")
+    if blob:
+        nome_arquivo = str(dados.get("marca_favicon_arquivo_nome") or "").strip() or "favicon-site.png"
+        mime_type = str(dados.get("marca_favicon_mime_type") or "").strip() or detectar_mime_type_arquivo(nome_arquivo)
+        return send_file(
+            BytesIO(bytes(blob)),
+            mimetype=mime_type,
+            download_name=nome_arquivo,
+            max_age=86400,
+        )
+
+    favicon_url = normalizar_texto_campo(dados.get("marca_favicon_url"))
+    if favicon_url:
+        return redirect(favicon_url)
+
+    logo_blob = dados.get("marca_logo_blob")
+    if logo_blob:
+        return redirect("/branding/logo")
+
+    logo_url = normalizar_texto_campo(dados.get("marca_logo_url"))
+    if logo_url:
+        return redirect(logo_url)
+
+    return redirect("/static/favicon.jpg")
+
+
+@app.route("/site.webmanifest")
+def servir_manifesto_site():
+    produto = carregar_contexto_produto()
+    manifest = {
+        "name": produto.get("site_title") or produto.get("brand_name") or "Gestao Estetica",
+        "short_name": (produto.get("brand_name") or "Gestao")[:24],
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": produto.get("brand_background_color") or "#0b0b0b",
+        "theme_color": produto.get("brand_primary_color") or "#facc15",
+        "icons": [
+            {
+                "src": produto.get("brand_favicon_url") or "/branding/favicon",
+                "sizes": "192x192",
+            },
+            {
+                "src": produto.get("brand_favicon_url") or "/branding/favicon",
+                "sizes": "512x512",
+            },
+        ],
+    }
+    return jsonify(manifest)
 
 
 def listar_fotos_servicos(ids_servicos, conn=None, cursor=None):
@@ -13387,8 +13739,11 @@ def configuracoes_site():
                 "marca_nome": site.get("marca_nome"),
                 "marca_subtitulo": site.get("marca_subtitulo"),
                 "site_titulo": site.get("site_titulo"),
+                "login_titulo_publico": site.get("login_titulo_publico"),
+                "home_estado_inicial_titulo": site.get("home_estado_inicial_titulo"),
                 "whitelabel_ativo": site.get("whitelabel_ativo"),
                 "tem_logo_blob": site.get("tem_logo_blob"),
+                "tem_favicon_blob": site.get("tem_favicon_blob"),
             },
         )
         definir_feedback_configuracoes(
