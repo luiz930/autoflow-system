@@ -18,7 +18,7 @@ import string
 import tempfile
 import zipfile
 from threading import Thread
-from io import BytesIO
+from io import BytesIO, StringIO
 from threading import Lock, Thread
 import unicodedata
 from urllib.parse import parse_qs, quote, urlencode, urlparse, urlunparse
@@ -3131,7 +3131,7 @@ app.config.update(
 app.config["SESSION_TYPE"] = "filesystem"
 app.secret_key = app.config["SECRET_KEY"]
 
-VERSAO_SISTEMA_PADRAO = "0.11.6"
+VERSAO_SISTEMA_PADRAO = "0.11.7"
 APP_VERSION = f"Versao: {VERSAO_SISTEMA_PADRAO}"
 VERSOES_SISTEMA_LEGADAS = {
     "0.7.5-alpha (Em Desenvolvimento)",
@@ -3143,6 +3143,7 @@ VERSOES_SISTEMA_LEGADAS = {
     "0.11.3",
     "0.11.4",
     "0.11.5",
+    "0.11.6",
 }
 MESES_CURTOS_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 PERIODOS_FINANCEIRO = [
@@ -7094,6 +7095,503 @@ def dias_do_periodo_financeiro(periodo, data_referencia):
     if periodo == "30dias":
         return 30
     return max(1, data_referencia.day)
+
+
+def filtrar_registros_por_periodo(registros, periodo, data_referencia, campo_data):
+    resultado = []
+    for item in registros or []:
+        datahora = item.get(campo_data)
+        if not datahora:
+            continue
+        data_item = datahora.date()
+        if periodo == "hoje" and data_item == data_referencia:
+            resultado.append(item)
+        elif periodo == "7dias" and data_referencia - timedelta(days=6) <= data_item <= data_referencia:
+            resultado.append(item)
+        elif periodo == "30dias" and data_referencia - timedelta(days=29) <= data_item <= data_referencia:
+            resultado.append(item)
+        elif periodo == "mes" and data_item.year == data_referencia.year and data_item.month == data_referencia.month:
+            resultado.append(item)
+    return resultado
+
+
+def formatar_taxa_percentual(parte, total):
+    if not total:
+        return "0%"
+    return f"{round((float(parte) / float(total)) * 100)}%"
+
+
+def consultar_documentos_relatorios_cursor(cursor, empresa_id):
+    try:
+        cursor.execute(
+            """
+            SELECT id, numero, cliente_nome, placa, modelo, total, status, criado_em, usuario
+            FROM orcamentos
+            WHERE empresa_id=?
+            ORDER BY numero DESC
+            """,
+            (empresa_id,),
+        )
+    except Exception:
+        cursor.execute(
+            """
+            SELECT id, numero, cliente_nome, placa, modelo, total, status, criado_em, usuario
+            FROM orcamentos
+            ORDER BY numero DESC
+            """
+        )
+    orcamentos = [dict(item) for item in cursor.fetchall()]
+
+    try:
+        cursor.execute(
+            """
+            SELECT id, rps_numero, numero_nota, serie, ambiente, status, cliente_nome, placa, modelo, valor_total, criado_em, usuario
+            FROM notas_fiscais
+            WHERE empresa_id=?
+            ORDER BY rps_numero DESC
+            """,
+            (empresa_id,),
+        )
+    except Exception:
+        cursor.execute(
+            """
+            SELECT id, rps_numero, numero_nota, serie, ambiente, status, cliente_nome, placa, modelo, valor_total, criado_em, usuario
+            FROM notas_fiscais
+            ORDER BY rps_numero DESC
+            """
+        )
+    notas = [dict(item) for item in cursor.fetchall()]
+    return orcamentos, notas
+
+
+def normalizar_orcamentos_relatorios(registros):
+    resultado = []
+    for item in registros or []:
+        item = dict(item)
+        criado_em_dt = interpretar_datahora_sistema(item.get("criado_em"))
+        item["criado_em_dt"] = criado_em_dt
+        item["numero_formatado"] = formatar_numero_documento(item.get("numero"))
+        item["valor_num"] = converter_valor_numerico(item.get("total"))
+        item["valor_exibicao"] = formatar_valor_monetario(item["valor_num"])
+        item["cliente_nome"] = item.get("cliente_nome") or "Sem cliente"
+        item["placa"] = item.get("placa") or "-"
+        item["modelo"] = item.get("modelo") or ""
+        item["criado_em_fmt"] = formatar_datahora(item.get("criado_em"))
+        resultado.append(item)
+    resultado.sort(key=lambda row: row.get("criado_em_dt") or datetime.min.replace(tzinfo=ZoneInfo("America/Sao_Paulo")), reverse=True)
+    return resultado
+
+
+def normalizar_notas_relatorios(registros):
+    resultado = []
+    for item in registros or []:
+        item = dict(item)
+        criado_em_dt = interpretar_datahora_sistema(item.get("criado_em"))
+        item["criado_em_dt"] = criado_em_dt
+        item["rps_formatado"] = formatar_numero_documento(item.get("rps_numero"))
+        item["valor_num"] = converter_valor_numerico(item.get("valor_total"))
+        item["valor_exibicao"] = formatar_valor_monetario(item["valor_num"])
+        item["cliente_nome"] = item.get("cliente_nome") or "Sem cliente"
+        item["placa"] = item.get("placa") or "-"
+        item["modelo"] = item.get("modelo") or ""
+        item["criado_em_fmt"] = formatar_datahora(item.get("criado_em"))
+        item["emitida"] = bool(normalizar_texto_campo(item.get("numero_nota")) or "EMITIDA" in str(item.get("status") or "").upper())
+        resultado.append(item)
+    resultado.sort(key=lambda row: row.get("criado_em_dt") or datetime.min.replace(tzinfo=ZoneInfo("America/Sao_Paulo")), reverse=True)
+    return resultado
+
+
+def montar_ranking_equipe_relatorios(servicos):
+    ranking = {}
+    for item in servicos or []:
+        responsavel = (
+            normalizar_texto_campo(item.get("finalizado_por_nome"))
+            or normalizar_texto_campo(item.get("operacional_por_nome"))
+            or normalizar_texto_campo(item.get("criado_por_nome"))
+            or normalizar_texto_campo(item.get("usuario"))
+            or "Equipe"
+        )
+        resumo = ranking.setdefault(
+            responsavel,
+            {"nome": responsavel, "quantidade": 0, "valor_total": 0.0, "tempo_total_segundos": 0},
+        )
+        resumo["quantidade"] += 1
+        resumo["valor_total"] += converter_valor_numerico(item.get("valor_num"))
+        resumo["tempo_total_segundos"] += max(
+            0,
+            int(item.get("lavagem_segundos") or 0) + int(item.get("finalizacao_segundos") or 0),
+        )
+
+    itens = sorted(
+        ranking.values(),
+        key=lambda row: (row["quantidade"], row["valor_total"]),
+        reverse=True,
+    )
+    referencia = itens[0]["quantidade"] if itens else 0
+    for item in itens:
+        item["valor_exibicao"] = formatar_valor_monetario(item["valor_total"])
+        item["tempo_medio_exibicao"] = formatar_duracao_segundos(
+            item["tempo_total_segundos"] / item["quantidade"] if item["quantidade"] else 0
+        )
+        item["percentual"] = round((item["quantidade"] / referencia) * 100) if referencia else 0
+    return itens[:5]
+
+
+def construir_linhas_csv_relatorio_servicos(servicos):
+    linhas = []
+    for item in servicos or []:
+        entrega_prevista = interpretar_datahora_sistema(item.get("entrega_prevista"))
+        entrega_real = item.get("entrega_dt") or interpretar_datahora_sistema(item.get("entrega"))
+        status_prazo = ""
+        if entrega_prevista and entrega_real:
+            status_prazo = "No prazo" if entrega_real <= entrega_prevista else "Fora do prazo"
+        linhas.append(
+            {
+                "Entrega": item.get("entrega_exibicao") or formatar_datahora(item.get("entrega")),
+                "Entrega prevista": entrega_prevista.strftime("%d/%m/%Y %H:%M") if entrega_prevista else "-",
+                "Status prazo": status_prazo or "-",
+                "Cliente": item.get("cliente_nome") or "Sem cliente",
+                "Placa": item.get("placa") or "-",
+                "Modelo": item.get("modelo") or "",
+                "Servico": item.get("tipo_nome") or "Servico",
+                "Valor": formatar_valor_monetario(item.get("valor_num")),
+                "Lavagem": formatar_duracao_segundos(item.get("lavagem_segundos") or 0),
+                "Finalizacao": formatar_duracao_segundos(item.get("finalizacao_segundos") or 0),
+                "Responsavel": normalizar_texto_campo(item.get("finalizado_por_nome")) or normalizar_texto_campo(item.get("operacional_por_nome")) or "-",
+            }
+        )
+    return linhas
+
+
+def construir_linhas_csv_relatorio_documentos(orcamentos, notas):
+    linhas = []
+    for item in orcamentos or []:
+        linhas.append(
+            {
+                "Tipo": "Orcamento",
+                "Numero": item.get("numero_formatado") or "-",
+                "Cliente": item.get("cliente_nome") or "Sem cliente",
+                "Placa": item.get("placa") or "-",
+                "Valor": item.get("valor_exibicao") or formatar_valor_monetario(item.get("valor_num")),
+                "Status": item.get("status") or "-",
+                "Data": item.get("criado_em_fmt") or formatar_datahora(item.get("criado_em")),
+                "Usuario": item.get("usuario") or "-",
+            }
+        )
+    for item in notas or []:
+        linhas.append(
+            {
+                "Tipo": "Nota fiscal",
+                "Numero": item.get("numero_nota") or item.get("rps_formatado") or "-",
+                "Cliente": item.get("cliente_nome") or "Sem cliente",
+                "Placa": item.get("placa") or "-",
+                "Valor": item.get("valor_exibicao") or formatar_valor_monetario(item.get("valor_num")),
+                "Status": item.get("status") or "-",
+                "Data": item.get("criado_em_fmt") or formatar_datahora(item.get("criado_em")),
+                "Usuario": item.get("usuario") or "-",
+            }
+        )
+    return linhas
+
+
+def montar_csv_resposta(nome_arquivo, linhas):
+    buffer = StringIO()
+    if linhas:
+        campos = list(linhas[0].keys())
+        writer = csv.DictWriter(buffer, fieldnames=campos)
+        writer.writeheader()
+        writer.writerows(linhas)
+    else:
+        buffer.write("Sem dados\r\n")
+
+    output = BytesIO(buffer.getvalue().encode("utf-8-sig"))
+    output.seek(0)
+    return send_file(
+        output,
+        mimetype="text/csv; charset=utf-8",
+        as_attachment=True,
+        download_name=nome_arquivo,
+    )
+
+
+def carregar_contexto_relatorios(periodo_atual=None):
+    periodo_atual = normalizar_periodo_financeiro(periodo_atual)
+    empresa_id = empresa_atual_id()
+    agora_atual = agora()
+    hoje = agora_atual.date()
+    ano_atual = hoje.year
+    mes_atual = hoje.month
+
+    conn = conectar()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT
+            servicos.*,
+            tipos_servico.nome AS tipo_nome,
+            veiculos.placa,
+            veiculos.modelo,
+            clientes.nome AS cliente_nome
+        FROM servicos
+        LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
+        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id AND veiculos.empresa_id=?
+        LEFT JOIN clientes ON veiculos.cliente_id = clientes.id AND clientes.empresa_id=?
+        WHERE servicos.empresa_id=?
+        ORDER BY servicos.id DESC
+        """,
+        (empresa_id, empresa_id, empresa_id),
+    )
+    servicos_raw = [dict(row) for row in c.fetchall()]
+    orcamentos_raw, notas_raw = consultar_documentos_relatorios_cursor(c, empresa_id)
+    conn.close()
+
+    periodo_label = MAPA_PERIODOS_FINANCEIRO[periodo_atual]
+    finalizados = []
+    servicos_em_andamento = []
+
+    for item in servicos_raw:
+        entrega_prevista_dt = interpretar_datahora_sistema(item.get("entrega_prevista"))
+        item["entrega_prevista_dt"] = entrega_prevista_dt
+        item["entrega_prevista_vencida"] = bool(
+            entrega_prevista_dt and entrega_prevista_dt < agora_atual
+        )
+
+        if item.get("status") == "EM ANDAMENTO":
+            servicos_em_andamento.append(item)
+
+        if item.get("status") != "FINALIZADO":
+            continue
+
+        entrega = interpretar_datahora_sistema(item.get("entrega"))
+        if not entrega:
+            continue
+
+        valor_num = converter_valor_numerico(item.get("valor"))
+        item["entrega_dt"] = entrega
+        item["valor_num"] = valor_num
+        item["valor_exibicao"] = formatar_valor_monetario(valor_num)
+        item["tipo_nome"] = item.get("tipo_nome") or "Servico"
+        item["cliente_nome"] = item.get("cliente_nome") or "Sem cliente"
+        item["placa"] = item.get("placa") or "-"
+        item["modelo"] = item.get("modelo") or ""
+        item["entrega_exibicao"] = entrega.strftime("%d/%m/%Y %H:%M")
+        finalizados.append(item)
+
+    finalizados.sort(key=lambda item: item["entrega_dt"], reverse=True)
+    orcamentos = normalizar_orcamentos_relatorios(orcamentos_raw)
+    notas = normalizar_notas_relatorios(notas_raw)
+
+    finalizados_hoje = [item for item in finalizados if item["entrega_dt"].date() == hoje]
+    finalizados_mes = [
+        item
+        for item in finalizados
+        if item["entrega_dt"].year == ano_atual and item["entrega_dt"].month == mes_atual
+    ]
+    finalizados_periodo = filtrar_servicos_por_periodo(finalizados, periodo_atual, hoje)
+    orcamentos_periodo = filtrar_registros_por_periodo(orcamentos, periodo_atual, hoje, "criado_em_dt")
+    notas_periodo = filtrar_registros_por_periodo(notas, periodo_atual, hoje, "criado_em_dt")
+
+    total_hoje = sum(item["valor_num"] for item in finalizados_hoje)
+    total_mes = sum(item["valor_num"] for item in finalizados_mes)
+    total_geral = sum(item["valor_num"] for item in finalizados)
+    quantidade_hoje = len(finalizados_hoje)
+    quantidade_mes = len(finalizados_mes)
+    quantidade_geral = len(finalizados)
+    quantidade_periodo = len(finalizados_periodo)
+    ticket_geral = total_geral / quantidade_geral if quantidade_geral else 0
+    total_periodo = sum(item["valor_num"] for item in finalizados_periodo)
+    ticket_periodo = total_periodo / quantidade_periodo if quantidade_periodo else 0
+    media_periodo = total_periodo / dias_do_periodo_financeiro(periodo_atual, hoje)
+
+    base_ranking = finalizados_periodo
+    ranking_servicos = {}
+    for item in base_ranking:
+        nome_servico = item["tipo_nome"]
+        resumo = ranking_servicos.setdefault(
+            nome_servico,
+            {"nome": nome_servico, "quantidade": 0, "valor_total": 0.0},
+        )
+        resumo["quantidade"] += 1
+        resumo["valor_total"] += item["valor_num"]
+
+    ranking_faturamento = sorted(
+        ranking_servicos.values(),
+        key=lambda item: (item["valor_total"], item["quantidade"]),
+        reverse=True,
+    )
+    ranking_quantidade = sorted(
+        ranking_servicos.values(),
+        key=lambda item: (item["quantidade"], item["valor_total"]),
+        reverse=True,
+    )
+    referencia_ranking = ranking_faturamento[0]["valor_total"] if ranking_faturamento else 0
+    referencia_quantidade = ranking_quantidade[0]["quantidade"] if ranking_quantidade else 0
+    for item in ranking_faturamento:
+        item["valor_exibicao"] = formatar_valor_monetario(item["valor_total"])
+        item["ticket_exibicao"] = formatar_valor_monetario(
+            item["valor_total"] / item["quantidade"] if item["quantidade"] else 0
+        )
+        item["percentual"] = round((item["valor_total"] / referencia_ranking) * 100) if referencia_ranking else 0
+
+    ranking_quantidade_formatado = []
+    for item in ranking_quantidade[:5]:
+        ranking_quantidade_formatado.append(
+            {
+                "nome": item["nome"],
+                "quantidade": item["quantidade"],
+                "valor_exibicao": formatar_valor_monetario(item["valor_total"]),
+                "percentual": round((item["quantidade"] / referencia_quantidade) * 100) if referencia_quantidade else 0,
+            }
+        )
+
+    ultimos_7_dias = []
+    totais_por_data = {}
+    for deslocamento in range(6, -1, -1):
+        dia = hoje - timedelta(days=deslocamento)
+        totais_por_data[dia] = 0.0
+    for item in finalizados:
+        data_entrega = item["entrega_dt"].date()
+        if data_entrega in totais_por_data:
+            totais_por_data[data_entrega] += item["valor_num"]
+    referencia_7_dias = max(totais_por_data.values(), default=0)
+    for data_ref, total_dia in totais_por_data.items():
+        ultimos_7_dias.append(
+            {
+                "label": data_ref.strftime("%d/%m"),
+                "valor": total_dia,
+                "valor_exibicao": formatar_valor_monetario(total_dia),
+                "percentual": round((total_dia / referencia_7_dias) * 100) if referencia_7_dias else 0,
+            }
+        )
+
+    ultimos_6_meses = []
+    totais_por_mes = []
+    for deslocamento in range(5, -1, -1):
+        ano_ref = ano_atual
+        mes_ref = mes_atual - deslocamento
+        while mes_ref <= 0:
+            mes_ref += 12
+            ano_ref -= 1
+        total_mes_ref = sum(
+            item["valor_num"]
+            for item in finalizados
+            if item["entrega_dt"].year == ano_ref and item["entrega_dt"].month == mes_ref
+        )
+        totais_por_mes.append(total_mes_ref)
+        ultimos_6_meses.append(
+            {
+                "label": f"{MESES_CURTOS_PT[mes_ref - 1]}/{str(ano_ref)[-2:]}",
+                "valor": total_mes_ref,
+                "valor_exibicao": formatar_valor_monetario(total_mes_ref),
+            }
+        )
+    referencia_6_meses = max(totais_por_mes, default=0)
+    for item in ultimos_6_meses:
+        item["percentual"] = round((item["valor"] / referencia_6_meses) * 100) if referencia_6_meses else 0
+
+    entregas_com_previsao = 0
+    entregas_no_prazo = 0
+    entregas_fora_prazo = 0
+    tempos_lavagem = []
+    tempos_finalizacao = []
+    tempos_ciclo = []
+    for item in finalizados_periodo:
+        lavagem_segundos = max(0, int(item.get("lavagem_segundos") or 0))
+        finalizacao_segundos = max(0, int(item.get("finalizacao_segundos") or 0))
+        ciclo_segundos = lavagem_segundos + finalizacao_segundos
+        if lavagem_segundos:
+            tempos_lavagem.append(lavagem_segundos)
+        if finalizacao_segundos:
+            tempos_finalizacao.append(finalizacao_segundos)
+        if ciclo_segundos:
+            tempos_ciclo.append(ciclo_segundos)
+        prevista = item.get("entrega_prevista_dt")
+        entrega_real = item.get("entrega_dt")
+        if prevista and entrega_real:
+            entregas_com_previsao += 1
+            if entrega_real <= prevista:
+                entregas_no_prazo += 1
+            else:
+                entregas_fora_prazo += 1
+
+    resumo_fluxo_aberto = montar_resumo_fluxo_atendimento(servicos_em_andamento)
+    ranking_equipe = montar_ranking_equipe_relatorios(finalizados_periodo)
+    resumo_retornos = obter_resumo_retornos_hud(str(session.get("usuario") or ""), time.time(), agora_atual)
+    orcamentos_valor_total = sum(item["valor_num"] for item in orcamentos_periodo)
+    notas_emitidas_periodo = [item for item in notas_periodo if item.get("emitida")]
+    notas_pendentes_periodo = [item for item in notas_periodo if not item.get("emitida")]
+    valor_fiscal_periodo = sum(item["valor_num"] for item in notas_emitidas_periodo)
+
+    resumo_operacional = {
+        "lavagem_media_exibicao": formatar_duracao_segundos(
+            sum(tempos_lavagem) / len(tempos_lavagem) if tempos_lavagem else 0
+        ),
+        "finalizacao_media_exibicao": formatar_duracao_segundos(
+            sum(tempos_finalizacao) / len(tempos_finalizacao) if tempos_finalizacao else 0
+        ),
+        "ciclo_medio_exibicao": formatar_duracao_segundos(
+            sum(tempos_ciclo) / len(tempos_ciclo) if tempos_ciclo else 0
+        ),
+        "entregas_no_prazo": entregas_no_prazo,
+        "entregas_com_previsao": entregas_com_previsao,
+        "entregas_fora_prazo": entregas_fora_prazo,
+        "taxa_no_prazo": formatar_taxa_percentual(entregas_no_prazo, entregas_com_previsao),
+        "abertos_total": resumo_fluxo_aberto["total"],
+        "abertos_lavagem": resumo_fluxo_aberto["lavagem"],
+        "abertos_finalizacao": resumo_fluxo_aberto["finalizacao"],
+        "abertos_atrasados": resumo_fluxo_aberto["atrasados"],
+        "proxima_entrega_exibicao": resumo_fluxo_aberto["proxima_entrega_exibicao"],
+    }
+    resumo_comercial = {
+        "orcamentos_total": len(orcamentos_periodo),
+        "orcamentos_valor_exibicao": formatar_valor_monetario(orcamentos_valor_total),
+        "notas_emitidas_total": len(notas_emitidas_periodo),
+        "notas_pendentes_total": len(notas_pendentes_periodo),
+        "notas_valor_exibicao": formatar_valor_monetario(valor_fiscal_periodo),
+        "retornos_acao_agora": resumo_retornos["acao_agora"],
+        "retornos_reagendados": resumo_retornos["reagendados_vencidos"],
+        "retornos_contatados_hoje": resumo_retornos["contatados_hoje"],
+    }
+    periodo_descricao = {
+        "hoje": "Resultados fechados hoje com leitura financeira, operacional e comercial.",
+        "7dias": "Panorama consolidado dos ultimos 7 dias com documentos e produtividade.",
+        "30dias": "Panorama consolidado dos ultimos 30 dias com servicos, equipe e documentos.",
+        "mes": "Fechamentos acumulados no mes atual com visao completa da operacao.",
+    }[periodo_atual]
+
+    return {
+        "periodo_atual": periodo_atual,
+        "periodo_label": periodo_label,
+        "periodo_descricao": periodo_descricao,
+        "periodos_financeiro": PERIODOS_FINANCEIRO,
+        "total_periodo": formatar_valor_monetario(total_periodo),
+        "quantidade_periodo": quantidade_periodo,
+        "ticket_periodo": formatar_valor_monetario(ticket_periodo),
+        "media_periodo": formatar_valor_monetario(media_periodo),
+        "total_hoje": formatar_valor_monetario(total_hoje),
+        "total_mes": formatar_valor_monetario(total_mes),
+        "total_geral": formatar_valor_monetario(total_geral),
+        "quantidade_hoje": quantidade_hoje,
+        "quantidade_mes": quantidade_mes,
+        "quantidade_geral": quantidade_geral,
+        "ticket_geral": formatar_valor_monetario(ticket_geral),
+        "em_andamento": len(servicos_em_andamento),
+        "ranking_faturamento": ranking_faturamento[:5],
+        "ranking_quantidade": ranking_quantidade_formatado,
+        "ultimos_7_dias": ultimos_7_dias,
+        "ultimos_6_meses": ultimos_6_meses,
+        "ultimos_finalizados": finalizados_periodo[:8],
+        "servico_campeao": ranking_faturamento[0] if ranking_faturamento else None,
+        "referencia_ranking_periodo": periodo_label,
+        "resumo_operacional": resumo_operacional,
+        "resumo_comercial": resumo_comercial,
+        "ranking_equipe": ranking_equipe,
+        "orcamentos_periodo": orcamentos_periodo[:5],
+        "notas_periodo": notas_periodo[:5],
+        "finalizados_periodo_raw": finalizados_periodo,
+        "orcamentos_periodo_raw": orcamentos_periodo,
+        "notas_periodo_raw": notas_periodo,
+    }
 
 def obter_label_intervalo_sincronizacao(minutos):
     return MAPA_INTERVALOS_SINCRONIZACAO.get(minutos, f"{minutos} min")
@@ -14732,221 +15230,39 @@ def clima():
 
     return render_template("clima.html")
 
+@app.route("/relatorios/exportar.csv")
+def exportar_relatorios_csv():
+    if not session.get("usuario"):
+        return redirect("/login")
+
+    periodo_atual = normalizar_periodo_financeiro(request.args.get("periodo"))
+    tipo = normalizar_texto_campo(request.args.get("tipo")).lower() if request.args.get("tipo") else "servicos"
+    contexto = carregar_contexto_relatorios(periodo_atual)
+
+    if tipo == "documentos":
+        linhas = construir_linhas_csv_relatorio_documentos(
+            contexto.get("orcamentos_periodo_raw"),
+            contexto.get("notas_periodo_raw"),
+        )
+        return montar_csv_resposta(
+            f"relatorios_documentos_{periodo_atual}.csv",
+            linhas,
+        )
+
+    linhas = construir_linhas_csv_relatorio_servicos(contexto.get("finalizados_periodo_raw"))
+    return montar_csv_resposta(
+        f"relatorios_atendimentos_{periodo_atual}.csv",
+        linhas,
+    )
+
+
+@app.route("/relatorios")
 @app.route("/financeiro")
 def financeiro():
     if not session.get("usuario"):
         return redirect("/login")
-
-    conn = conectar()
-    c = conn.cursor()
-    empresa_id = empresa_atual_id()
-    c.execute("""
-        SELECT
-            servicos.*,
-            tipos_servico.nome AS tipo_nome,
-            veiculos.placa,
-            veiculos.modelo,
-            clientes.nome AS cliente_nome
-        FROM servicos
-        LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
-        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id AND veiculos.empresa_id=?
-        LEFT JOIN clientes ON veiculos.cliente_id = clientes.id AND clientes.empresa_id=?
-        WHERE servicos.empresa_id=?
-        ORDER BY servicos.id DESC
-    """, (empresa_id, empresa_id, empresa_id))
-    servicos_raw = [dict(row) for row in c.fetchall()]
-    conn.close()
-
-    agora_atual = agora()
-    hoje = agora_atual.date()
-    ano_atual = hoje.year
-    mes_atual = hoje.month
-    periodo_atual = normalizar_periodo_financeiro(request.args.get("periodo"))
-    periodo_label = MAPA_PERIODOS_FINANCEIRO[periodo_atual]
-
-    finalizados = []
-    em_andamento = 0
-
-    for item in servicos_raw:
-        if item.get("status") == "EM ANDAMENTO":
-            em_andamento += 1
-
-        if item.get("status") != "FINALIZADO":
-            continue
-
-        entrega = interpretar_datahora_sistema(item.get("entrega"))
-
-        if not entrega:
-            continue
-
-        valor_num = converter_valor_numerico(item.get("valor"))
-        item["entrega_dt"] = entrega
-        item["valor_num"] = valor_num
-        item["valor_exibicao"] = formatar_valor_monetario(valor_num)
-        item["tipo_nome"] = item.get("tipo_nome") or "Servico"
-        item["cliente_nome"] = item.get("cliente_nome") or "Sem cliente"
-        item["placa"] = item.get("placa") or "-"
-        item["modelo"] = item.get("modelo") or ""
-        item["entrega_exibicao"] = entrega.strftime("%d/%m/%Y %H:%M")
-        finalizados.append(item)
-
-    finalizados.sort(key=lambda item: item["entrega_dt"], reverse=True)
-
-    finalizados_hoje = [item for item in finalizados if item["entrega_dt"].date() == hoje]
-    finalizados_mes = [
-        item for item in finalizados
-        if item["entrega_dt"].year == ano_atual and item["entrega_dt"].month == mes_atual
-    ]
-    finalizados_periodo = filtrar_servicos_por_periodo(finalizados, periodo_atual, hoje)
-
-    total_hoje = sum(item["valor_num"] for item in finalizados_hoje)
-    total_mes = sum(item["valor_num"] for item in finalizados_mes)
-    total_geral = sum(item["valor_num"] for item in finalizados)
-    quantidade_hoje = len(finalizados_hoje)
-    quantidade_mes = len(finalizados_mes)
-    quantidade_geral = len(finalizados)
-    quantidade_periodo = len(finalizados_periodo)
-    ticket_hoje = total_hoje / quantidade_hoje if quantidade_hoje else 0
-    ticket_mes = total_mes / quantidade_mes if quantidade_mes else 0
-    ticket_geral = total_geral / quantidade_geral if quantidade_geral else 0
-    media_dia_mes = total_mes / max(1, hoje.day)
-    total_periodo = sum(item["valor_num"] for item in finalizados_periodo)
-    ticket_periodo = total_periodo / quantidade_periodo if quantidade_periodo else 0
-    media_periodo = total_periodo / dias_do_periodo_financeiro(periodo_atual, hoje)
-
-    base_ranking = finalizados_periodo
-    ranking_servicos = {}
-
-    for item in base_ranking:
-        nome_servico = item["tipo_nome"]
-        resumo = ranking_servicos.setdefault(nome_servico, {
-            "nome": nome_servico,
-            "quantidade": 0,
-            "valor_total": 0.0,
-        })
-        resumo["quantidade"] += 1
-        resumo["valor_total"] += item["valor_num"]
-
-    ranking_faturamento = sorted(
-        ranking_servicos.values(),
-        key=lambda item: (item["valor_total"], item["quantidade"]),
-        reverse=True
-    )
-
-    ranking_quantidade = sorted(
-        ranking_servicos.values(),
-        key=lambda item: (item["quantidade"], item["valor_total"]),
-        reverse=True
-    )
-
-    referencia_ranking = ranking_faturamento[0]["valor_total"] if ranking_faturamento else 0
-    referencia_quantidade = ranking_quantidade[0]["quantidade"] if ranking_quantidade else 0
-
-    for item in ranking_faturamento:
-        item["valor_exibicao"] = formatar_valor_monetario(item["valor_total"])
-        item["ticket_exibicao"] = formatar_valor_monetario(
-            item["valor_total"] / item["quantidade"] if item["quantidade"] else 0
-        )
-        item["percentual"] = round(
-            (item["valor_total"] / referencia_ranking) * 100
-        ) if referencia_ranking else 0
-
-    ranking_quantidade_formatado = []
-    for item in ranking_quantidade[:5]:
-        ranking_quantidade_formatado.append({
-            "nome": item["nome"],
-            "quantidade": item["quantidade"],
-            "valor_exibicao": formatar_valor_monetario(item["valor_total"]),
-            "percentual": round((item["quantidade"] / referencia_quantidade) * 100) if referencia_quantidade else 0,
-        })
-
-    ultimos_7_dias = []
-    totais_por_data = {}
-
-    for deslocamento in range(6, -1, -1):
-        dia = hoje - timedelta(days=deslocamento)
-        totais_por_data[dia] = 0.0
-
-    for item in finalizados:
-        data_entrega = item["entrega_dt"].date()
-        if data_entrega in totais_por_data:
-            totais_por_data[data_entrega] += item["valor_num"]
-
-    referencia_7_dias = max(totais_por_data.values(), default=0)
-
-    for data_ref, total_dia in totais_por_data.items():
-        ultimos_7_dias.append({
-            "label": data_ref.strftime("%d/%m"),
-            "valor": total_dia,
-            "valor_exibicao": formatar_valor_monetario(total_dia),
-            "percentual": round((total_dia / referencia_7_dias) * 100) if referencia_7_dias else 0,
-        })
-
-    ultimos_6_meses = []
-    totais_por_mes = []
-
-    for deslocamento in range(5, -1, -1):
-        ano_ref = ano_atual
-        mes_ref = mes_atual - deslocamento
-
-        while mes_ref <= 0:
-            mes_ref += 12
-            ano_ref -= 1
-
-        total_mes_ref = sum(
-            item["valor_num"]
-            for item in finalizados
-            if item["entrega_dt"].year == ano_ref and item["entrega_dt"].month == mes_ref
-        )
-        totais_por_mes.append(total_mes_ref)
-        ultimos_6_meses.append({
-            "label": f"{MESES_CURTOS_PT[mes_ref - 1]}/{str(ano_ref)[-2:]}",
-            "valor": total_mes_ref,
-            "valor_exibicao": formatar_valor_monetario(total_mes_ref),
-        })
-
-    referencia_6_meses = max(totais_por_mes, default=0)
-    for item in ultimos_6_meses:
-        item["percentual"] = round((item["valor"] / referencia_6_meses) * 100) if referencia_6_meses else 0
-
-    ultimos_finalizados = finalizados_periodo[:8]
-    servico_campeao = ranking_faturamento[0] if ranking_faturamento else None
-    periodo_descricao = {
-        "hoje": "Resultados fechados hoje.",
-        "7dias": "Panorama consolidado dos ultimos 7 dias.",
-        "30dias": "Panorama consolidado dos ultimos 30 dias.",
-        "mes": "Fechamentos acumulados no mes atual.",
-    }[periodo_atual]
-
-    return render_template(
-        "financeiro.html",
-        periodo_atual=periodo_atual,
-        periodo_label=periodo_label,
-        periodo_descricao=periodo_descricao,
-        periodos_financeiro=PERIODOS_FINANCEIRO,
-        total_periodo=formatar_valor_monetario(total_periodo),
-        quantidade_periodo=quantidade_periodo,
-        ticket_periodo=formatar_valor_monetario(ticket_periodo),
-        media_periodo=formatar_valor_monetario(media_periodo),
-        total_hoje=formatar_valor_monetario(total_hoje),
-        total_mes=formatar_valor_monetario(total_mes),
-        total_geral=formatar_valor_monetario(total_geral),
-        quantidade_hoje=quantidade_hoje,
-        quantidade_mes=quantidade_mes,
-        quantidade_geral=quantidade_geral,
-        ticket_hoje=formatar_valor_monetario(ticket_hoje),
-        ticket_mes=formatar_valor_monetario(ticket_mes),
-        ticket_geral=formatar_valor_monetario(ticket_geral),
-        media_dia_mes=formatar_valor_monetario(media_dia_mes),
-        em_andamento=em_andamento,
-        ranking_faturamento=ranking_faturamento[:5],
-        ranking_quantidade=ranking_quantidade_formatado,
-        ultimos_7_dias=ultimos_7_dias,
-        ultimos_6_meses=ultimos_6_meses,
-        ultimos_finalizados=ultimos_finalizados,
-        servico_campeao=servico_campeao,
-        referencia_ranking_periodo=periodo_label,
-    )
+    contexto = carregar_contexto_relatorios(request.args.get("periodo"))
+    return render_template("financeiro.html", **contexto)
 
 
 @app.route("/", methods=["GET", "POST"])

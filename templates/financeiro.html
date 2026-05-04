@@ -1,12 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Financeiro{% endblock %}
-{% block titulo %}Painel Financeiro{% endblock %}
-{% block subtitulo %}Faturamento, ticket medio e servicos que mais rendem{% endblock %}
+{% block title %}Relatorios{% endblock %}
+{% block titulo %}Relatorios{% endblock %}
+{% block subtitulo %}Financeiro, operacao e comercial em uma visao unica{% endblock %}
 
 {% block actions %}
 <a href="/" class="button-link">
     <button type="button">Voltar</button>
+</a>
+<a href="/relatorios/exportar.csv?tipo=servicos&periodo={{ periodo_atual }}" class="button-link">
+    <button type="button">Exportar atendimentos CSV</button>
+</a>
+<a href="/relatorios/exportar.csv?tipo=documentos&periodo={{ periodo_atual }}" class="button-link">
+    <button type="button">Exportar documentos CSV</button>
 </a>
 {% endblock %}
 
@@ -167,6 +173,58 @@
     <p class="muted-text">Visao atual: <b>{{ periodo_label|capitalize }}</b>. {{ periodo_descricao }}</p>
 </div>
 
+<div class="page-grid top-spacing">
+    <div class="page-card page-card--soft">
+        <p class="pill-label">Resumo operacional</p>
+        <div class="financial-mini-grid top-spacing">
+            <div class="financial-mini-card">
+                Lavagem media
+                <strong>{{ resumo_operacional.lavagem_media_exibicao }}</strong>
+            </div>
+            <div class="financial-mini-card">
+                Finalizacao media
+                <strong>{{ resumo_operacional.finalizacao_media_exibicao }}</strong>
+            </div>
+            <div class="financial-mini-card">
+                Ciclo medio
+                <strong>{{ resumo_operacional.ciclo_medio_exibicao }}</strong>
+            </div>
+            <div class="financial-mini-card">
+                Entregas no prazo
+                <strong>{{ resumo_operacional.taxa_no_prazo }}</strong>
+            </div>
+        </div>
+        <p class="financial-note">
+            {{ resumo_operacional.entregas_no_prazo }} de {{ resumo_operacional.entregas_com_previsao }} entrega(s) com previsao ficaram no prazo.
+        </p>
+    </div>
+
+    <div class="page-card page-card--soft">
+        <p class="pill-label">Resumo comercial</p>
+        <div class="financial-mini-grid top-spacing">
+            <div class="financial-mini-card">
+                Orcamentos
+                <strong>{{ resumo_comercial.orcamentos_total }}</strong>
+            </div>
+            <div class="financial-mini-card">
+                Valor orcado
+                <strong>R$ {{ resumo_comercial.orcamentos_valor_exibicao }}</strong>
+            </div>
+            <div class="financial-mini-card">
+                Notas emitidas
+                <strong>{{ resumo_comercial.notas_emitidas_total }}</strong>
+            </div>
+            <div class="financial-mini-card">
+                Valor fiscal
+                <strong>R$ {{ resumo_comercial.notas_valor_exibicao }}</strong>
+            </div>
+        </div>
+        <p class="financial-note">
+            Retornos: {{ resumo_comercial.retornos_acao_agora }} em acao agora, {{ resumo_comercial.retornos_reagendados }} reagendado(s) vencido(s), {{ resumo_comercial.retornos_contatados_hoje }} contato(s) hoje.
+        </p>
+    </div>
+</div>
+
 {% if servico_campeao %}
 <div class="financial-hero">
     <div class="page-card financial-highlight">
@@ -251,6 +309,51 @@
         <p class="pill-label">Receita acumulada</p>
         <div class="metric-value">R$ {{ total_geral }}</div>
         <p class="financial-note">{{ quantidade_geral }} servico(s) finalizado(s) no historico</p>
+    </div>
+</div>
+
+<div class="page-grid top-spacing">
+    <div class="page-card">
+        <p class="pill-label">Fila operacional atual</p>
+        <div class="financial-mini-grid top-spacing">
+            <div class="financial-mini-card">
+                Em andamento
+                <strong>{{ resumo_operacional.abertos_total }}</strong>
+            </div>
+            <div class="financial-mini-card">
+                Lavagem
+                <strong>{{ resumo_operacional.abertos_lavagem }}</strong>
+            </div>
+            <div class="financial-mini-card">
+                Finalizacao
+                <strong>{{ resumo_operacional.abertos_finalizacao }}</strong>
+            </div>
+            <div class="financial-mini-card">
+                Atrasados
+                <strong>{{ resumo_operacional.abertos_atrasados }}</strong>
+            </div>
+        </div>
+        <p class="financial-note">Proxima entrega combinada: {{ resumo_operacional.proxima_entrega_exibicao }}</p>
+    </div>
+
+    <div class="page-card">
+        <h2 class="section-title">Equipe com mais atendimentos</h2>
+        <div class="progress-list top-spacing">
+            {% for item in ranking_equipe %}
+            <div class="progress-item">
+                <header>
+                    <strong>{{ item.nome }}</strong>
+                    <span>{{ item.quantidade }} atendimento(s)</span>
+                </header>
+                <div class="progress-track">
+                    <div class="progress-fill" style="width: {{ item.percentual }}%;"></div>
+                </div>
+                <span class="muted-text">Receita R$ {{ item.valor_exibicao }} | ciclo medio {{ item.tempo_medio_exibicao }}</span>
+            </div>
+            {% else %}
+            <p class="muted-text">Sem dados suficientes para montar o ranking da equipe.</p>
+            {% endfor %}
+        </div>
     </div>
 </div>
 
@@ -359,6 +462,72 @@
                 {% endfor %}
             </tbody>
         </table>
+    </div>
+</div>
+
+<div class="page-grid top-spacing">
+    <div class="page-card">
+        <h2 class="section-title">Orcamentos em {{ periodo_label }}</h2>
+        <div class="table-wrap top-spacing">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Numero</th>
+                        <th>Cliente</th>
+                        <th>Placa</th>
+                        <th>Valor</th>
+                        <th>Data</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in orcamentos_periodo %}
+                    <tr>
+                        <td>{{ item.numero_formatado }}</td>
+                        <td>{{ item.cliente_nome }}</td>
+                        <td>{{ item.placa }}</td>
+                        <td>R$ {{ item.valor_exibicao }}</td>
+                        <td>{{ item.criado_em_fmt }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="empty-state">Nenhum orcamento encontrado para {{ periodo_label }}.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="page-card">
+        <h2 class="section-title">Notas fiscais em {{ periodo_label }}</h2>
+        <div class="table-wrap top-spacing">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Numero</th>
+                        <th>Cliente</th>
+                        <th>Valor</th>
+                        <th>Status</th>
+                        <th>Data</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in notas_periodo %}
+                    <tr>
+                        <td>{{ item.numero_nota or item.rps_formatado }}</td>
+                        <td>{{ item.cliente_nome }}</td>
+                        <td>R$ {{ item.valor_exibicao }}</td>
+                        <td>{{ item.status }}</td>
+                        <td>{{ item.criado_em_fmt }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="empty-state">Nenhuma nota fiscal encontrada para {{ periodo_label }}.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 

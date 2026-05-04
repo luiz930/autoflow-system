@@ -217,6 +217,63 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(payload["short_name"], "Minha Marca")
         self.assertEqual(payload["icons"][0]["src"], "/branding/favicon")
 
+    def test_filtrar_registros_por_periodo_generico(self):
+        referencia = app_module.date(2026, 5, 3)
+        registros = [
+            {"criado_em_dt": app_module.datetime(2026, 5, 3, 10, 0)},
+            {"criado_em_dt": app_module.datetime(2026, 5, 1, 12, 0)},
+            {"criado_em_dt": app_module.datetime(2026, 4, 1, 8, 0)},
+        ]
+
+        filtrados = app_module.filtrar_registros_por_periodo(
+            registros,
+            "7dias",
+            referencia,
+            "criado_em_dt",
+        )
+
+        self.assertEqual(len(filtrados), 2)
+
+    def test_exportar_relatorios_csv_documentos(self):
+        contexto = {
+            "orcamentos_periodo_raw": [
+                {
+                    "numero_formatado": "0001",
+                    "cliente_nome": "Cliente A",
+                    "placa": "ABC1234",
+                    "valor_exibicao": "120,00",
+                    "status": "GERADO",
+                    "criado_em_fmt": "03/05/2026 10:00",
+                    "usuario": "admin",
+                }
+            ],
+            "notas_periodo_raw": [
+                {
+                    "numero_nota": "NF-10",
+                    "rps_formatado": "0010",
+                    "cliente_nome": "Cliente B",
+                    "placa": "XYZ9876",
+                    "valor_exibicao": "80,00",
+                    "status": "EMITIDA",
+                    "criado_em_fmt": "03/05/2026 11:00",
+                    "usuario": "admin",
+                }
+            ],
+            "finalizados_periodo_raw": [],
+        }
+
+        with app_module.app.test_request_context("/relatorios/exportar.csv?tipo=documentos&periodo=mes", method="GET"):
+            session["usuario"] = "admin"
+            with patch.object(app_module, "carregar_contexto_relatorios", return_value=contexto):
+                response = app_module.exportar_relatorios_csv()
+
+        response.direct_passthrough = False
+        corpo = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("attachment;", response.headers.get("Content-Disposition", ""))
+        self.assertIn("Orcamento", corpo)
+        self.assertIn("Nota fiscal", corpo)
+
     def test_salvar_configuracao_backup_form_isola_por_empresa(self):
         conn = self._criar_banco_admin_memoria()
         wrapper = PersistentCompatConnection(conn)
