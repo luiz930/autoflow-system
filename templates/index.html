@@ -284,6 +284,43 @@ input, select {
     transition: all 0.3s ease;
 }
 
+.home-layout {
+    width: min(100%, 1320px);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 28px;
+    align-items: start;
+}
+
+.home-primary {
+    min-width: 0;
+}
+
+.home-status-column {
+    position: sticky;
+    top: 86px;
+    align-self: start;
+}
+
+.hud-shell {
+    padding: 16px;
+    border-radius: 22px;
+    border: 1px solid rgba(var(--primary-rgb), 0.18);
+    background: linear-gradient(180deg, rgba(var(--surface-rgb), 0.92), rgba(var(--background-rgb), 0.96));
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.24);
+}
+
+.hud-shell-label {
+    margin: 0 0 12px;
+    color: rgba(var(--primary-rgb), 0.9);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    text-align: left;
+}
+
 .main.shift {
     margin-left: 250px;
 }
@@ -598,38 +635,31 @@ input[type="file"] {
 
 /* ================= HUD DESKTOP ================= */
 #relogio {
-    position: fixed;
-    bottom: 10px;
-    right: 10px;
-
+    position: relative;
     background: var(--surface);
     border: 2px solid var(--primary);
     border-radius: 10px;
-
     padding: 12px 12px 10px;
-
     font-size: 12px;
     line-height: 1.45;
-
     box-shadow: 0 0 12px rgba(var(--primary-rgb), 0.28);
-
-    width: 276px;
-    max-width: min(88vw, 276px);
-
+    width: 100%;
+    max-width: none;
+    margin: 0;
     text-align: left;
-    z-index: 9999;
+    z-index: 1;
 }
 
 #relogio.hud-compact {
-    width: 230px;
-    max-width: min(80vw, 230px);
+    width: 100%;
+    max-width: none;
     padding: 12px 11px 10px;
     line-height: 1.35;
 }
 
 #relogio.hud-expanded {
-    width: 276px;
-    max-width: min(88vw, 276px);
+    width: 100%;
+    max-width: none;
 }
 
 .hud-toggle-button {
@@ -745,34 +775,40 @@ input[type="file"] {
         padding: 84px 16px 36px;
     }
 
+    .home-layout {
+        grid-template-columns: 1fr;
+        gap: 18px;
+    }
+
+    .home-status-column {
+        position: static;
+        width: min(100%, 320px);
+        margin: 0 auto;
+    }
+
     .main h1 {
         padding-right: 72px;
     }
 
     #relogio {
-        position: relative;
-        width: min(100%, 272px);
-        max-width: 100%;
-        margin: 16px auto 0;
+        width: 100%;
+        max-width: none;
+        margin: 0;
         padding: 12px 11px 10px;
-        text-align: center;
+        text-align: left;
         line-height: 1.45;
         font-size: 12px;
-        z-index: 1200;
+        z-index: 1;
     }
 
     #relogio.hud-compact {
-        width: min(100%, 238px);
-        max-width: 100%;
+        width: 100%;
+        max-width: none;
     }
 
     #relogio.hud-expanded {
-        width: min(100%, 272px);
-        max-width: 100%;
-    }
-
-    body.sidebar-open #relogio {
-        z-index: 1200;
+        width: 100%;
+        max-width: none;
     }
 
     #dropdown-notificacoes {
@@ -1185,9 +1221,6 @@ input[type="file"] {
         width: 100%;
     }
 
-    #relogio {
-        margin-bottom: 172px;
-    }
 }
 
 </style>
@@ -1265,6 +1298,9 @@ input[type="file"] {
 <button onclick="toggleSidebar()" class="menu-btn">
 ☰
 </button>
+
+<div class="home-layout">
+<div class="home-primary">
 
 <h1>🚗 {{ brand_name }}</h1>
 
@@ -1592,7 +1628,16 @@ Hidro vidros {{ "Sim" if s.hidro_vidros == "Sim" else "Nao" }}
  </div>
 {% endif %}
 
-<div id="relogio"></div>
+</div>
+
+<aside class="home-status-column">
+    <div class="hud-shell">
+        <p class="hud-shell-label">Central do dia</p>
+        <div id="relogio"></div>
+    </div>
+</aside>
+
+</div>
 
 </div>
 
