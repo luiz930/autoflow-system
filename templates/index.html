@@ -2161,7 +2161,7 @@ garantirAgendaRetornoUI();
 
 <script>
 const APP_VERSION = "{{ app_version }}";
-const HOME_SNAPSHOT_REFRESH_MS = 45000;
+const HOME_SNAPSHOT_REFRESH_MS = 60000;
 let climaTexto = "🌤️ Carregando...";
 let sugestaoTexto = "";
 
@@ -2597,11 +2597,11 @@ function atualizarRelogio() {
 } // FECHAMENTO CORRETO DA FUNCAO
 function agendarPrimeiroSnapshotHome() {
     const disparar = () => {
-        setTimeout(atualizarHomeSnapshot, 1800);
+        setTimeout(atualizarHomeSnapshot, 350);
     };
 
     if ("requestIdleCallback" in window) {
-        requestIdleCallback(disparar, { timeout: 2000 });
+        requestIdleCallback(disparar, { timeout: 800 });
         return;
     }
 

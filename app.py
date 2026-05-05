@@ -3783,31 +3783,31 @@ CLIENTES_CONTEXT_CACHE = {
     "chave": "",
     "resultado": None,
 }
-CLIENTES_CONTEXT_CACHE_TTL = 20
+CLIENTES_CONTEXT_CACHE_TTL = 45
 HISTORICO_CONTEXT_CACHE = {
     "testado_em": 0.0,
     "chave": "",
     "resultado": None,
 }
-HISTORICO_CONTEXT_CACHE_TTL = 25
+HISTORICO_CONTEXT_CACHE_TTL = 45
 PAINEL_CONTEXT_CACHE = {
     "testado_em": 0.0,
     "chave": "",
     "resultado": None,
 }
-PAINEL_CONTEXT_CACHE_TTL = 12
+PAINEL_CONTEXT_CACHE_TTL = 20
 RELATORIOS_CONTEXT_CACHE = {
     "testado_em": 0.0,
     "chave": "",
     "resultado": None,
 }
-RELATORIOS_CONTEXT_CACHE_TTL = 20
+RELATORIOS_CONTEXT_CACHE_TTL = 45
 AUDITORIA_CONTEXT_CACHE = {
     "testado_em": 0.0,
     "chave": "",
     "resultado": None,
 }
-AUDITORIA_CONTEXT_CACHE_TTL = 20
+AUDITORIA_CONTEXT_CACHE_TTL = 45
 PRODUTOS_PNEU_CACHE = {
     "testado_em": 0.0,
     "resultado": None,
