@@ -1228,28 +1228,62 @@ input[type="file"] {
 
 <div class="sidebar-group">
 <p class="sidebar-group-label">Operacao</p>
+{% if pagina_menu_habilitada('painel') %}
 <a href="/painel"><button><span>&#128202;</span> Painel</button></a>
+{% endif %}
+{% if pagina_menu_habilitada('clientes') %}
 <a href="/clientes"><button><span>&#128100;</span> Clientes</button></a>
+{% endif %}
+{% if pagina_menu_habilitada('historico') %}
 <a href="/historico"><button><span>&#128340;</span> Historico</button></a>
+{% endif %}
+{% if pagina_menu_habilitada('retornos') %}
 <a href="/retornos"><button><span>&#128197;</span> Retornos</button></a>
+{% endif %}
+{% if pagina_menu_habilitada('servicos') %}
 <a href="/cadastrar_servico"><button><span>&#129532;</span> Servicos</button></a>
+{% endif %}
+{% if pagina_menu_habilitada('checklist') %}
 <a href="/itens"><button><span>&#9745;</span> Itens Checklist</button></a>
+{% endif %}
+{% if pagina_menu_habilitada('pneus') %}
 <a href="/pneu"><button><span>&#128736;</span> Pneus</button></a>
+{% endif %}
 </div>
 
 <div class="sidebar-group">
 <p class="sidebar-group-label">Gestao</p>
+{% if pagina_menu_habilitada('relatorios') %}
       <a href="/relatorios"><button><span>&#128176;</span> Relatorios</button></a>
+{% endif %}
+{% if pagina_menu_habilitada('orcamentos') %}
 <a href="/orcamento"><button><span>&#128196;</span> Orçamentos</button></a>
+{% endif %}
+{% if pagina_menu_habilitada('nota_fiscal') %}
 <a href="/nota_fiscal"><button><span>&#128220;</span> Emissao de nota fiscal</button></a>
+{% endif %}
 </div>
 
 <div class="sidebar-group">
 <p class="sidebar-group-label">Apoio / Administracao</p>
+{% if pagina_menu_habilitada('clima') %}
 <a href="/clima"><button><span>&#9729;</span> Clima</button></a>
+{% endif %}
+{% if pagina_menu_habilitada('auditoria') %}
 <a href="/auditoria"><button><span>&#128269;</span> Auditoria</button></a>
+{% endif %}
+{% if pagina_menu_habilitada('changelog') %}
 <a href="/changelog"><button><span>&#128221;</span> Changelog</button></a>
+{% endif %}
+{% if pode_gerenciar_empresas and pagina_menu_habilitada('empresas') %}
+<a href="/empresas"><button><span>&#127970;</span> Empresas</button></a>
+{% endif %}
+{% if pagina_menu_habilitada('diagnostico') %}
+<a href="/diagnostico"><button><span>&#128736;</span> Diagnostico</button></a>
+{% endif %}
+{% if pagina_menu_habilitada('configuracoes_site') %}
 <a href="/configuracoes/site"><button><span>&#127912;</span> Configuracoes do site</button></a>
+{% endif %}
 <a href="/configuracoes"><button><span>&#9881;</span> Configurações</button></a>
 </div>
 <a href="/logout">
@@ -1266,6 +1300,7 @@ input[type="file"] {
 
 </div>
 
+{% if 'cabecalho' in hud_usuario_config.itens_habilitados %}
 <div id="sino-container">
     <button id="btn-sino">
         🔔 <span id="badge">0</span>
@@ -1273,6 +1308,7 @@ input[type="file"] {
 
     <div id="dropdown-notificacoes" class="hidden"></div>
 </div>
+{% endif %}
 
 <!-- MAIN -->
 <div class="main full">
@@ -1294,10 +1330,12 @@ input[type="file"] {
 </form>
 </div>
 
+{% if hud_usuario_config.hud_ativo %}
 <div class="hud-shell">
     <p class="hud-shell-label">Central do dia</p>
     <div id="relogio"></div>
 </div>
+{% endif %}
 
 <!-- ESTADO INICIAL -->
 {% if not buscou %}
@@ -2051,6 +2089,7 @@ function renderizarAgendaRetorno() {
 
 async function carregarNotificacoes(force = false) {
     const dropdown = document.getElementById("dropdown-notificacoes");
+    if (!dropdown) return;
     const agora = Date.now();
     if (
         !force &&
@@ -2095,7 +2134,9 @@ async function carregarNotificacoes(force = false) {
         dropdown.appendChild(vazio);
     }
 
-    badge.innerText = naoLidas;
+    if (badge) {
+        badge.innerText = naoLidas;
+    }
 }
 
 async function carregarAgendaRetorno(force = false) {
@@ -2141,15 +2182,19 @@ async function toggleAgendaRetornoDropdown(event) {
     }
 }
 
-document.getElementById("btn-sino").onclick = async (event) => {
-    event.stopPropagation();
-    fecharDropdownsCabecalho("dropdown-notificacoes");
-    const drop = document.getElementById("dropdown-notificacoes");
-    drop.classList.toggle("hidden");
-    if (!drop.classList.contains("hidden")) {
-        await carregarNotificacoes();
-    }
-};
+const btnSino = document.getElementById("btn-sino");
+if (btnSino) {
+    btnSino.onclick = async (event) => {
+        event.stopPropagation();
+        fecharDropdownsCabecalho("dropdown-notificacoes");
+        const drop = document.getElementById("dropdown-notificacoes");
+        if (!drop) return;
+        drop.classList.toggle("hidden");
+        if (!drop.classList.contains("hidden")) {
+            await carregarNotificacoes();
+        }
+    };
+}
 
 document.addEventListener("click", (event) => {
     const container = document.getElementById("sino-container");
@@ -2166,6 +2211,7 @@ garantirAgendaRetornoUI();
 <script>
 const APP_VERSION = "{{ app_version }}";
 const HOME_SNAPSHOT_REFRESH_MS = 60000;
+const HUD_CONFIG = {{ hud_usuario_config|tojson }};
 let climaTexto = "🌤️ Carregando...";
 let sugestaoTexto = "";
 
@@ -2204,6 +2250,13 @@ let hudAutoCollapseTimer = null;
 let ultimoSyncToken = "";
 let ultimoAvisoSyncToken = "";
 let hudExecutando = false;
+
+function hudItemAtivo(item) {
+    const itens = Array.isArray(HUD_CONFIG.itens_habilitados)
+        ? HUD_CONFIG.itens_habilitados
+        : [];
+    return itens.includes(item);
+}
 
 function obterIniciaisUsuario(nome) {
     const texto = String(nome || "").trim();
@@ -2362,7 +2415,10 @@ function montarResumoEntregaCompacto() {
 }
 
 function montarResumoOperacionalCompacto() {
-    const partes = [montarResumoRetornosCompacto(), montarResumoEntregaCompacto()].filter(Boolean);
+    const partes = [
+        hudItemAtivo("retornos") ? montarResumoRetornosCompacto() : "",
+        hudItemAtivo("entregas") ? montarResumoEntregaCompacto() : "",
+    ].filter(Boolean);
     return partes.length ? partes.join(" | ") : "Painel em dia";
 }
 
@@ -2432,40 +2488,43 @@ function montarLinhasHud(agora) {
 
     if (!hudExpandido) {
         return [
-            { texto: `📅 ${dataAtual} • ${horaAtual}`, compacta: true },
-            {
+            hudItemAtivo("data_hora") ? { texto: `📅 ${dataAtual} • ${horaAtual}`, compacta: true } : null,
+            hudItemAtivo("banco_online") ? {
                 texto: `🗄️ ${statusBanco.resumo}`,
                 status: true,
                 statusOk: statusBanco.ativo,
-            },
-            {
-                texto: `⚙️ ${hudData.andamento} • 🚨 ${hudData.atrasados} • 💰 R$ ${hudData.total}`,
+            } : null,
+            (hudItemAtivo("operacional") || hudItemAtivo("financeiro")) ? {
+                texto: [
+                    hudItemAtivo("operacional") ? `⚙️ ${hudData.andamento} • 🚨 ${hudData.atrasados}` : "",
+                    hudItemAtivo("financeiro") ? `💰 R$ ${hudData.total}` : "",
+                ].filter(Boolean).join(" • "),
                 compacta: true,
-            },
-            { texto: `📌 ${montarResumoOperacionalCompacto()}`, compacta: true },
-            { texto: montarTextoClimaHud(), multilinha: true },
-        ];
+            } : null,
+            (hudItemAtivo("retornos") || hudItemAtivo("entregas")) ? { texto: `📌 ${montarResumoOperacionalCompacto()}`, compacta: true } : null,
+            hudItemAtivo("clima") ? { texto: montarTextoClimaHud(), multilinha: true } : null,
+        ].filter(Boolean);
     }
 
     return [
-        { texto: `📅 ${dataAtual} ⏰ ${horaAtual}` },
-        {
+        hudItemAtivo("data_hora") ? { texto: `📅 ${dataAtual} ⏰ ${horaAtual}` } : null,
+        hudItemAtivo("banco_online") ? {
             texto: statusBanco.detalhe,
             status: true,
             statusOk: statusBanco.ativo,
-        },
-        { texto: montarTextoClimaHud(), multilinha: true },
-        { texto: `💰 Hoje: R$ ${hudData.total}` },
-        { texto: `⚙️ Em andamento: ${hudData.andamento}` },
-        { texto: `🚨 Atrasados: ${hudData.atrasados}` },
-        { texto: `💵 Ticket: R$ ${hudData.ticket}` },
-        { texto: `📅 ${hudData.retornos_mensagem || "Painel retornos em dia"}` },
-        ...(Number(hudData.entregas_ativas || 0) > 0
+        } : null,
+        hudItemAtivo("clima") ? { texto: montarTextoClimaHud(), multilinha: true } : null,
+        hudItemAtivo("financeiro") ? { texto: `💰 Hoje: R$ ${hudData.total}` } : null,
+        hudItemAtivo("operacional") ? { texto: `⚙️ Em andamento: ${hudData.andamento}` } : null,
+        hudItemAtivo("operacional") ? { texto: `🚨 Atrasados: ${hudData.atrasados}` } : null,
+        hudItemAtivo("financeiro") ? { texto: `💵 Ticket: R$ ${hudData.ticket}` } : null,
+        hudItemAtivo("retornos") ? { texto: `📅 ${hudData.retornos_mensagem || "Painel retornos em dia"}` } : null,
+        ...(hudItemAtivo("entregas") && Number(hudData.entregas_ativas || 0) > 0
             ? [{ texto: `📦 ${hudData.entrega_mensagem || "Entrega combinada em dia"}` }]
             : []),
-        { texto: `👤 Usuario: ${hudData.usuario_nome || "-"}` },
-        { texto: `🧠 ${hudData.versao || APP_VERSION}` },
-    ];
+        hudItemAtivo("usuario") ? { texto: `👤 Usuario: ${hudData.usuario_nome || "-"}` } : null,
+        hudItemAtivo("versao") ? { texto: `🧠 ${hudData.versao || APP_VERSION}` } : null,
+    ].filter(Boolean);
 }
 
 async function atualizarHomeSnapshot() {
@@ -2551,6 +2610,9 @@ function atualizarRelogio() {
     const simbolo = hudExpandido ? "-" : "+";
     const label = hudExpandido ? "Ocultar detalhes do HUD" : "Mostrar HUD completo";
     const linhas = montarLinhasHud(agora);
+    if (!linhas.length) {
+        linhas.push({ texto: "HUD sem itens ativos" });
+    }
 
         el.innerHTML =
             `<button type="button" class="hud-toggle-button" onclick="toggleHudModo()" aria-label="${escaparHudHtml(label)}" title="${escaparHudHtml(label)}">${simbolo}</button>` +

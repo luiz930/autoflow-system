@@ -3796,6 +3796,8 @@ def inject_global_template_context():
         "csrf_token": lambda: issue_csrf_token(session),
         "licenca_atual": licenca_atual,
         "pode_gerenciar_empresas": usuario_gerencia_empresas() if session.get("usuario") else False,
+        "pagina_menu_habilitada": pagina_menu_habilitada,
+        "hud_usuario_config": obter_configuracao_hud_usuario() if session.get("usuario") else configuracao_hud_usuario_padrao(),
         **produto,
     }
 
@@ -3937,6 +3939,18 @@ TEMPLATE_LICENCA_CACHE = {
     "resultado": None,
 }
 TEMPLATE_LICENCA_CACHE_TTL = 45
+CONFIG_HUD_USUARIO_CACHE = {
+    "testado_em": 0.0,
+    "usuario_id": 0,
+    "resultado": None,
+}
+CONFIG_HUD_USUARIO_CACHE_TTL = 60
+PAGINAS_MENU_CACHE = {
+    "testado_em": 0.0,
+    "empresa_id": 0,
+    "resultado": set(),
+}
+PAGINAS_MENU_CACHE_TTL = 60
 BACKUP_VALIDACAO_CACHE = {
     "testado_em": 0.0,
     "chave": "",
@@ -4002,6 +4016,12 @@ def limpar_caches_interface():
     TEMPLATE_LICENCA_CACHE["testado_em"] = 0.0
     TEMPLATE_LICENCA_CACHE["empresa_id"] = 0
     TEMPLATE_LICENCA_CACHE["resultado"] = None
+    CONFIG_HUD_USUARIO_CACHE["testado_em"] = 0.0
+    CONFIG_HUD_USUARIO_CACHE["usuario_id"] = 0
+    CONFIG_HUD_USUARIO_CACHE["resultado"] = None
+    PAGINAS_MENU_CACHE["testado_em"] = 0.0
+    PAGINAS_MENU_CACHE["empresa_id"] = 0
+    PAGINAS_MENU_CACHE["resultado"] = set()
 
 
 def limpar_cache_banco_online():
@@ -5230,6 +5250,7 @@ def garantir_schema_sqlite_local_minima(force=False):
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "licenca_plano TEXT")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "licenca_status TEXT")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "onboarding_concluido INTEGER DEFAULT 0")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "paginas_menu_desabilitadas_json TEXT")
             adicionar_coluna_se_preciso(c, "clientes", "empresa_id INTEGER DEFAULT 1")
             adicionar_coluna_se_preciso(c, "veiculos", "empresa_id INTEGER DEFAULT 1")
             adicionar_coluna_se_preciso(c, "servicos", "empresa_id INTEGER DEFAULT 1")
@@ -6106,6 +6127,7 @@ def atualizar_banco():
     adicionar_coluna_se_preciso(c, "usuarios", "foto_perfil_blob BLOB")
     adicionar_coluna_se_preciso(c, "usuarios", "foto_perfil_mime_type TEXT")
     adicionar_coluna_se_preciso(c, "usuarios", "foto_perfil_arquivo_nome TEXT")
+    adicionar_coluna_se_preciso(c, "usuarios", "hud_config_json TEXT")
     adicionar_coluna_se_preciso(c, "clientes", "placa_principal TEXT")
     adicionar_coluna_se_preciso(c, "clientes", "data_nascimento TEXT")
     adicionar_coluna_se_preciso(c, "clientes", "empresa_id INTEGER DEFAULT 1")
@@ -6157,6 +6179,7 @@ def atualizar_banco():
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "licenca_plano TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "licenca_status TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "onboarding_concluido INTEGER DEFAULT 0")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "paginas_menu_desabilitadas_json TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_backup", "frequencia TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_backup", "tipo_backup TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_backup", "retencao_arquivos INTEGER")
@@ -6632,7 +6655,8 @@ def criar_todas_tabelas():
         foto_perfil TEXT,
         foto_perfil_blob BLOB,
         foto_perfil_mime_type TEXT,
-        foto_perfil_arquivo_nome TEXT
+        foto_perfil_arquivo_nome TEXT,
+        hud_config_json TEXT
     )
     """)
 
@@ -7314,6 +7338,10 @@ def preencher_sessao_usuario(usuario_row, limpar=True):
         usuario_row["foto_perfil"],
         usuario_row["id"],
     )
+    try:
+        session["usuario_hud_config_json"] = str(usuario_row["hud_config_json"] or "").strip()
+    except Exception:
+        session["usuario_hud_config_json"] = ""
     empresa_sessao_atual = session.get("empresa_id") if not limpar else None
     if empresa_sessao_atual and perfil_usuario in {"admin", "desenvolvedor"}:
         try:
@@ -7432,6 +7460,370 @@ def bloquear_recurso_plano(recurso, mensagem, feedback_func=definir_feedback_con
         return None
     feedback_func("erro", mensagem)
     return redirect(destino)
+
+
+PAGINAS_MENU_CONFIGURAVEIS = [
+    {
+        "id": "painel",
+        "grupo": "Operacao",
+        "titulo": "Painel",
+        "descricao": "Quadro operacional dos atendimentos em andamento.",
+        "endpoints": {"painel", "servico", "editar_servico", "editar_servico_inline", "excluir_servico", "atualizar_status_servico_legado", "salvar_operacional_painel", "trocar_etapa_servico_painel", "adicionar_cobranca_extra_painel", "checklist_servico", "finalizar", "detalhe", "prioridade"},
+    },
+    {
+        "id": "clientes",
+        "grupo": "Operacao",
+        "titulo": "Clientes",
+        "descricao": "Cadastro, importacao e sincronizacao de clientes e veiculos.",
+        "endpoints": {"clientes", "importar_local", "preview_sincronizacao_clientes", "cancelar_preview_sincronizacao_clientes", "adicionar_sincronizacao_clientes", "salvar_sincronizacao_clientes", "executar_sync_clientes", "alternar_sync_clientes", "excluir_sync_clientes", "cadastrar", "editar_cliente", "buscar_cliente_api"},
+    },
+    {
+        "id": "historico",
+        "grupo": "Operacao",
+        "titulo": "Historico",
+        "descricao": "Historico de servicos finalizados, fotos, reabertura e exclusao.",
+        "endpoints": {"pagina_historico", "editar_atendimento_historico", "enviar_fotos_historico", "excluir_foto_historico", "reabrir_atendimento_historico", "excluir_atendimento_historico"},
+    },
+    {
+        "id": "retornos",
+        "grupo": "Operacao",
+        "titulo": "Retornos",
+        "descricao": "Agenda e acompanhamento de retornos dos clientes.",
+        "endpoints": {"pagina_retornos", "atualizar_retorno"},
+    },
+    {
+        "id": "servicos",
+        "grupo": "Operacao",
+        "titulo": "Servicos",
+        "descricao": "Cadastro dos tipos de servico usados nos atendimentos.",
+        "endpoints": {"cadastrar_servico"},
+    },
+    {
+        "id": "checklist",
+        "grupo": "Operacao",
+        "titulo": "Itens Checklist",
+        "descricao": "Itens do checklist de finalizacao dos servicos.",
+        "endpoints": {"itens_checklist", "alternar_item_checklist", "excluir_item_checklist"},
+    },
+    {
+        "id": "pneus",
+        "grupo": "Operacao",
+        "titulo": "Pneus",
+        "descricao": "Cadastro de medidas e opcoes de pneus.",
+        "endpoints": {"cadastrar_pneu"},
+    },
+    {
+        "id": "relatorios",
+        "grupo": "Gestao",
+        "titulo": "Relatorios",
+        "descricao": "Financeiro, ranking, indicadores e exportacao CSV.",
+        "endpoints": {"financeiro", "exportar_relatorios_csv"},
+    },
+    {
+        "id": "orcamentos",
+        "grupo": "Gestao",
+        "titulo": "Orcamentos",
+        "descricao": "Criacao, consulta e PDF de orcamentos.",
+        "endpoints": {"pagina_orcamento", "gerar_orcamento", "baixar_orcamento_pdf"},
+    },
+    {
+        "id": "nota_fiscal",
+        "grupo": "Gestao",
+        "titulo": "Emissao de nota fiscal",
+        "descricao": "Dados fiscais, integracao, emissao e registro de notas.",
+        "endpoints": {"pagina_nota_fiscal", "salvar_emitente_nota_fiscal", "salvar_integracao_nota_fiscal", "gerar_nota_fiscal", "baixar_nota_fiscal_pdf", "registrar_emissao_nota_fiscal"},
+    },
+    {
+        "id": "clima",
+        "grupo": "Apoio / Administracao",
+        "titulo": "Clima",
+        "descricao": "Tela de clima e recomendacao para operacao.",
+        "endpoints": {"clima"},
+    },
+    {
+        "id": "auditoria",
+        "grupo": "Apoio / Administracao",
+        "titulo": "Auditoria",
+        "descricao": "Consulta de logs e rastreio de alteracoes.",
+        "endpoints": {"pagina_auditoria"},
+    },
+    {
+        "id": "changelog",
+        "grupo": "Apoio / Administracao",
+        "titulo": "Changelog",
+        "descricao": "Historico de versoes e mudancas publicadas.",
+        "endpoints": {"pagina_changelog"},
+    },
+    {
+        "id": "empresas",
+        "grupo": "Apoio / Administracao",
+        "titulo": "Empresas",
+        "descricao": "Cadastro de empresas, licencas e troca de empresa ativa.",
+        "endpoints": {"pagina_empresas", "salvar_empresa_admin", "gerar_licenca_empresa_admin", "renovar_licenca_empresa_admin", "trocar_empresa_ativa"},
+    },
+    {
+        "id": "diagnostico",
+        "grupo": "Apoio / Administracao",
+        "titulo": "Diagnostico",
+        "descricao": "Validacao do ambiente, checklist e backup de suporte.",
+        "endpoints": {"pagina_diagnostico", "validar_diagnostico", "exportar_diagnostico_json", "gerar_backup_suporte"},
+    },
+    {
+        "id": "configuracoes_site",
+        "grupo": "Apoio / Administracao",
+        "titulo": "Configuracoes do site",
+        "descricao": "Marca, logo, cores, titulo publico e white-label.",
+        "endpoints": {"configuracoes_site"},
+    },
+]
+PAGINAS_MENU_IDS = {item["id"] for item in PAGINAS_MENU_CONFIGURAVEIS}
+ENDPOINTS_PAGINAS_MENU = {
+    endpoint: item["id"]
+    for item in PAGINAS_MENU_CONFIGURAVEIS
+    for endpoint in item["endpoints"]
+}
+
+
+def normalizar_paginas_menu_desabilitadas(valor):
+    if not valor:
+        return set()
+    dados = valor
+    if isinstance(valor, str):
+        try:
+            dados = json.loads(valor)
+        except Exception:
+            dados = [parte.strip() for parte in valor.split(",")]
+    if isinstance(dados, dict):
+        dados = dados.keys()
+    if not isinstance(dados, (list, tuple, set)):
+        return set()
+    return {
+        str(item or "").strip().lower()
+        for item in dados
+        if str(item or "").strip().lower() in PAGINAS_MENU_IDS
+    }
+
+
+def obter_paginas_menu_desabilitadas(force=False):
+    empresa_id_cache = empresa_atual_id() if has_request_context() and session.get("usuario") else 1
+    agora_cache_ts = time.time()
+    if (
+        not force
+        and PAGINAS_MENU_CACHE.get("empresa_id") == empresa_id_cache
+        and agora_cache_ts - float(PAGINAS_MENU_CACHE.get("testado_em") or 0.0) < PAGINAS_MENU_CACHE_TTL
+    ):
+        return set(PAGINAS_MENU_CACHE.get("resultado") or set())
+
+    try:
+        config = obter_configuracao_empresa()
+        resultado = normalizar_paginas_menu_desabilitadas(config.get("paginas_menu_desabilitadas_json"))
+    except Exception:
+        resultado = set()
+
+    PAGINAS_MENU_CACHE["testado_em"] = agora_cache_ts
+    PAGINAS_MENU_CACHE["empresa_id"] = empresa_id_cache
+    PAGINAS_MENU_CACHE["resultado"] = set(resultado)
+    return resultado
+
+
+def pagina_menu_habilitada(pagina_id):
+    pagina_id = str(pagina_id or "").strip().lower()
+    if not pagina_id:
+        return True
+    return pagina_id not in obter_paginas_menu_desabilitadas()
+
+
+def montar_paginas_menu_configuracao():
+    desabilitadas = obter_paginas_menu_desabilitadas(force=True)
+    return [
+        {
+            **item,
+            "habilitada": item["id"] not in desabilitadas,
+        }
+        for item in PAGINAS_MENU_CONFIGURAVEIS
+    ]
+
+
+def salvar_paginas_menu_configuracao_form(form):
+    habilitadas = {
+        str(item or "").strip().lower()
+        for item in form.getlist("paginas_habilitadas")
+        if str(item or "").strip().lower() in PAGINAS_MENU_IDS
+    }
+    desabilitadas = sorted(PAGINAS_MENU_IDS - habilitadas)
+    salvar_campos_configuracao_empresa({
+        "paginas_menu_desabilitadas_json": json.dumps(desabilitadas, ensure_ascii=False),
+    })
+    limpar_caches_interface()
+    return desabilitadas
+
+
+HUD_USUARIO_ITENS_CONFIGURAVEIS = [
+    {
+        "id": "cabecalho",
+        "titulo": "Avatar, notificacoes e agenda",
+        "descricao": "Mostra foto do usuario, sino de notificacoes e agenda de retornos no topo.",
+    },
+    {
+        "id": "data_hora",
+        "titulo": "Data e hora",
+        "descricao": "Mostra data e relogio no HUD.",
+    },
+    {
+        "id": "banco_online",
+        "titulo": "Banco online",
+        "descricao": "Mostra status do Supabase/PostgreSQL.",
+    },
+    {
+        "id": "financeiro",
+        "titulo": "Resumo financeiro",
+        "descricao": "Mostra faturamento, ticket e valores do dia.",
+    },
+    {
+        "id": "operacional",
+        "titulo": "Operacao",
+        "descricao": "Mostra atendimentos em andamento e atrasados.",
+    },
+    {
+        "id": "retornos",
+        "titulo": "Retornos",
+        "descricao": "Mostra resumo comercial de retornos.",
+    },
+    {
+        "id": "entregas",
+        "titulo": "Entregas combinadas",
+        "descricao": "Mostra avisos de entrega prevista e atraso.",
+    },
+    {
+        "id": "clima",
+        "titulo": "Clima",
+        "descricao": "Mostra clima e sugestao de lavagem.",
+    },
+    {
+        "id": "usuario",
+        "titulo": "Usuario",
+        "descricao": "Mostra o nome do usuario logado no HUD expandido.",
+    },
+    {
+        "id": "versao",
+        "titulo": "Versao",
+        "descricao": "Mostra a versao atual do sistema.",
+    },
+]
+HUD_USUARIO_ITEM_IDS = {item["id"] for item in HUD_USUARIO_ITENS_CONFIGURAVEIS}
+
+
+def configuracao_hud_usuario_padrao():
+    return {
+        "hud_ativo": True,
+        "itens_habilitados": sorted(HUD_USUARIO_ITEM_IDS),
+    }
+
+
+def normalizar_configuracao_hud_usuario(valor):
+    config = configuracao_hud_usuario_padrao()
+    if not valor:
+        return config
+    dados = valor
+    if isinstance(valor, str):
+        try:
+            dados = json.loads(valor)
+        except Exception:
+            return config
+    if not isinstance(dados, dict):
+        return config
+
+    if "hud_ativo" in dados:
+        config["hud_ativo"] = bool_config_ativo(dados.get("hud_ativo"))
+
+    itens = dados.get("itens_habilitados")
+    if isinstance(itens, dict):
+        itens = [chave for chave, ativo in itens.items() if bool_config_ativo(ativo)]
+    if isinstance(itens, (list, tuple, set)):
+        itens_normalizados = {
+            str(item or "").strip().lower()
+            for item in itens
+            if str(item or "").strip().lower() in HUD_USUARIO_ITEM_IDS
+        }
+        config["itens_habilitados"] = sorted(itens_normalizados)
+
+    return config
+
+
+def obter_configuracao_hud_usuario(usuario_id=None, force=False):
+    usuario_id = int(usuario_id or session.get("usuario_id") or 0)
+    if not usuario_id:
+        return configuracao_hud_usuario_padrao()
+
+    agora_cache_ts = time.time()
+    if (
+        not force
+        and CONFIG_HUD_USUARIO_CACHE.get("resultado") is not None
+        and CONFIG_HUD_USUARIO_CACHE.get("usuario_id") == usuario_id
+        and agora_cache_ts - float(CONFIG_HUD_USUARIO_CACHE.get("testado_em") or 0.0) < CONFIG_HUD_USUARIO_CACHE_TTL
+    ):
+        return deepcopy(CONFIG_HUD_USUARIO_CACHE["resultado"])
+
+    valor = session.get("usuario_hud_config_json") if int(session.get("usuario_id") or 0) == usuario_id else ""
+    if not valor:
+        try:
+            conn = conectar()
+            c = conn.cursor()
+            c.execute("SELECT hud_config_json FROM usuarios WHERE id=?", (usuario_id,))
+            row = c.fetchone()
+            conn.close()
+            if row:
+                try:
+                    valor = row["hud_config_json"]
+                except Exception:
+                    valor = row[0]
+        except Exception:
+            valor = ""
+
+    config = normalizar_configuracao_hud_usuario(valor)
+    CONFIG_HUD_USUARIO_CACHE["testado_em"] = agora_cache_ts
+    CONFIG_HUD_USUARIO_CACHE["usuario_id"] = usuario_id
+    CONFIG_HUD_USUARIO_CACHE["resultado"] = deepcopy(config)
+    return config
+
+
+def montar_itens_hud_configuracao_usuario():
+    config = obter_configuracao_hud_usuario(force=True)
+    habilitados = set(config.get("itens_habilitados") or [])
+    return [
+        {
+            **item,
+            "habilitado": item["id"] in habilitados,
+        }
+        for item in HUD_USUARIO_ITENS_CONFIGURAVEIS
+    ]
+
+
+def salvar_configuracao_hud_usuario_form(form):
+    usuario_id = int(session.get("usuario_id") or 0)
+    if not usuario_id:
+        raise ValueError("Usuario logado nao identificado.")
+
+    itens_habilitados = {
+        str(item or "").strip().lower()
+        for item in form.getlist("hud_itens_habilitados")
+        if str(item or "").strip().lower() in HUD_USUARIO_ITEM_IDS
+    }
+    config = {
+        "hud_ativo": bool_config_ativo(form.get("hud_ativo")),
+        "itens_habilitados": sorted(itens_habilitados),
+    }
+    payload_json = json.dumps(config, ensure_ascii=False)
+
+    conn = conectar()
+    c = conn.cursor()
+    c.execute("UPDATE usuarios SET hud_config_json=? WHERE id=?", (payload_json, usuario_id))
+    conn.commit()
+    conn.close()
+
+    session["usuario_hud_config_json"] = payload_json
+    limpar_caches_interface()
+    return config
 
 
 def montar_dados_licenca_form(form):
@@ -8787,6 +9179,7 @@ def empresa_snapshot_padrao():
         "home_busca_placeholder": "Digite a placa",
         "home_busca_botao_texto": "Buscar",
         "home_estado_inicial_titulo": "Digite uma placa para comecar",
+        "paginas_menu_desabilitadas_json": "[]",
     }
 
 def obter_configuracao_empresa():
@@ -8834,6 +9227,7 @@ def obter_configuracao_empresa():
     dados["home_busca_placeholder"] = normalizar_texto_campo(dados.get("home_busca_placeholder")) or "Digite a placa"
     dados["home_busca_botao_texto"] = normalizar_texto_campo(dados.get("home_busca_botao_texto")) or "Buscar"
     dados["home_estado_inicial_titulo"] = normalizar_texto_campo(dados.get("home_estado_inicial_titulo")) or "Digite uma placa para comecar"
+    dados["paginas_menu_desabilitadas_json"] = normalizar_texto_campo(dados.get("paginas_menu_desabilitadas_json")) or "[]"
     return dados
 
 def salvar_configuracao_versao_form(form):
@@ -13413,6 +13807,25 @@ def exigir_troca_senha_obrigatoria():
 
 
 @app.before_request
+def bloquear_paginas_menu_desabilitadas():
+    endpoint = request.endpoint or ""
+    if endpoint == "static" or not session.get("usuario") or usuario_desenvolvedor():
+        return
+
+    pagina_id = ENDPOINTS_PAGINAS_MENU.get(endpoint)
+    if not pagina_id or pagina_menu_habilitada(pagina_id):
+        return
+
+    definir_feedback_configuracoes(
+        "erro",
+        "Esta pagina foi desabilitada pelo desenvolvedor do sistema.",
+    )
+    if (endpoint or "").startswith("api_"):
+        return jsonify({"erro": "pagina_desabilitada"}), 403
+    return redirect("/configuracoes")
+
+
+@app.before_request
 def exigir_licenca_operacional():
     endpoint = request.endpoint or ""
     if endpoint_liberado_com_licenca_bloqueada(endpoint):
@@ -15170,6 +15583,7 @@ def configuracoes():
     pode_gerenciar_banco_online = usuario_gerencia_banco_online()
     pode_gerenciar_config_sistema = usuario_gerencia_configuracao_sistema() and not senha_pendente
     pode_gerenciar_base = usuario_desenvolvedor() and not senha_pendente
+    pode_configurar_hud_usuario = usuario_gerencia_configuracao_sistema() and not senha_pendente
     usuarios = []
     configuracao_empresa = {}
     banco_status = {}
@@ -15279,6 +15693,9 @@ def configuracoes():
         configuracao_sistema_logado=pode_gerenciar_config_sistema,
         desenvolvedor_logado=pode_gerenciar_base,
         banco_online_logado=pode_gerenciar_banco_online,
+        hud_usuario_logado=pode_configurar_hud_usuario,
+        hud_usuario_config=obter_configuracao_hud_usuario(force=True) if pode_configurar_hud_usuario else configuracao_hud_usuario_padrao(),
+        hud_usuario_itens=montar_itens_hud_configuracao_usuario() if pode_configurar_hud_usuario else [],
         configuracao_empresa=configuracao_empresa,
         banco_status=banco_status,
         banco_config=banco_config,
@@ -15291,6 +15708,7 @@ def configuracoes():
         arquivos_status=arquivos_status,
         pastas_sync_sugeridas=pastas_sync_sugeridas,
         banco_online_tabelas=banco_online_tabelas,
+        paginas_menu_configuracao=montar_paginas_menu_configuracao() if pode_gerenciar_base else [],
     )
 
 @app.route("/configuracoes/versao", methods=["POST"])
@@ -15360,6 +15778,68 @@ def salvar_configuracao_clima():
             f"Configuracao do clima salva para {clima.get('clima_local_label')}. "
             "O HUD atualiza automaticamente em ate 60 segundos."
         ),
+    )
+    return redirect("/configuracoes")
+
+
+@app.route("/configuracoes/paginas", methods=["POST"])
+def salvar_configuracao_paginas():
+    if not session.get("usuario"):
+        return redirect("/login")
+
+    sincronizar_sessao_usuario()
+    if not usuario_desenvolvedor():
+        definir_feedback_configuracoes("erro", "Somente desenvolvedores podem habilitar ou desabilitar paginas.")
+        return redirect("/configuracoes")
+
+    try:
+        desabilitadas = salvar_paginas_menu_configuracao_form(request.form)
+    except Exception as erro:
+        definir_feedback_configuracoes("erro", f"Nao foi possivel salvar as paginas do menu: {erro}")
+        return redirect("/configuracoes")
+
+    registrar_auditoria(
+        "atualizou_paginas_menu",
+        "configuracao_empresa",
+        detalhes={
+            "paginas_desabilitadas": desabilitadas,
+        },
+    )
+    definir_feedback_configuracoes(
+        "sucesso",
+        "Paginas do menu atualizadas. O que foi desabilitado some da sidebar e fica bloqueado para acessos comuns.",
+    )
+    return redirect("/configuracoes")
+
+
+@app.route("/configuracoes/hud", methods=["POST"])
+def salvar_configuracao_hud_usuario():
+    if not session.get("usuario"):
+        return redirect("/login")
+
+    sincronizar_sessao_usuario()
+    if not usuario_gerencia_configuracao_sistema() or session.get("senha_alteracao_obrigatoria"):
+        definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem alterar o HUD do proprio acesso.")
+        return redirect("/configuracoes")
+
+    try:
+        config = salvar_configuracao_hud_usuario_form(request.form)
+    except Exception as erro:
+        definir_feedback_configuracoes("erro", f"Nao foi possivel salvar o HUD do usuario: {erro}")
+        return redirect("/configuracoes")
+
+    registrar_auditoria(
+        "atualizou_hud_usuario",
+        "usuario",
+        entidade_id=session.get("usuario_id"),
+        detalhes={
+            "hud_ativo": config.get("hud_ativo"),
+            "itens_habilitados": config.get("itens_habilitados"),
+        },
+    )
+    definir_feedback_configuracoes(
+        "sucesso",
+        "Preferencias do HUD salvas para o seu usuario. Isso nao altera o HUD de outros acessos.",
     )
     return redirect("/configuracoes")
 

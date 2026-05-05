@@ -378,32 +378,62 @@ body.responsive-page.sidebar-open {
 
         <div class="sidebar-group">
             <p class="sidebar-group-label">Operacao</p>
+            {% if pagina_menu_habilitada('painel') %}
             <a href="{{ url_for('painel') }}"><button><span>&#128202;</span> Painel</button></a>
+            {% endif %}
+            {% if pagina_menu_habilitada('clientes') %}
             <a href="{{ url_for('clientes') }}"><button><span>&#128100;</span> Clientes</button></a>
+            {% endif %}
+            {% if pagina_menu_habilitada('historico') %}
             <a href="{{ url_for('pagina_historico') }}"><button><span>&#128340;</span> Historico</button></a>
+            {% endif %}
+            {% if pagina_menu_habilitada('retornos') %}
             <a href="{{ url_for('pagina_retornos') }}"><button><span>&#128197;</span> Retornos</button></a>
+            {% endif %}
+            {% if pagina_menu_habilitada('servicos') %}
             <a href="{{ url_for('cadastrar_servico') }}"><button><span>&#129532;</span> Servicos</button></a>
+            {% endif %}
+            {% if pagina_menu_habilitada('checklist') %}
             <a href="{{ url_for('itens_checklist') }}"><button><span>&#9745;</span> Itens Checklist</button></a>
+            {% endif %}
+            {% if pagina_menu_habilitada('pneus') %}
             <a href="{{ url_for('cadastrar_pneu') }}"><button><span>&#128736;</span> Pneus</button></a>
+            {% endif %}
         </div>
 
         <div class="sidebar-group">
             <p class="sidebar-group-label">Gestao</p>
+            {% if pagina_menu_habilitada('relatorios') %}
             <a href="{{ url_for('financeiro') }}"><button><span>&#128176;</span> Relatorios</button></a>
+            {% endif %}
+            {% if pagina_menu_habilitada('orcamentos') %}
             <a href="{{ url_for('pagina_orcamento') }}"><button><span>&#128196;</span> Orcamentos</button></a>
+            {% endif %}
+            {% if pagina_menu_habilitada('nota_fiscal') %}
             <a href="{{ url_for('pagina_nota_fiscal') }}"><button><span>&#128220;</span> Emissao de nota fiscal</button></a>
+            {% endif %}
         </div>
 
         <div class="sidebar-group">
             <p class="sidebar-group-label">Apoio / Administracao</p>
+            {% if pagina_menu_habilitada('clima') %}
             <a href="{{ url_for('clima') }}"><button><span>&#9729;</span> Clima</button></a>
+            {% endif %}
+            {% if pagina_menu_habilitada('auditoria') %}
             <a href="{{ url_for('pagina_auditoria') }}"><button><span>&#128269;</span> Auditoria</button></a>
+            {% endif %}
+            {% if pagina_menu_habilitada('changelog') %}
             <a href="{{ url_for('pagina_changelog') }}"><button><span>&#128221;</span> Changelog</button></a>
-            {% if pode_gerenciar_empresas %}
+            {% endif %}
+            {% if pode_gerenciar_empresas and pagina_menu_habilitada('empresas') %}
             <a href="{{ url_for('pagina_empresas') }}"><button><span>&#127970;</span> Empresas</button></a>
             {% endif %}
+            {% if pagina_menu_habilitada('diagnostico') %}
             <a href="{{ url_for('pagina_diagnostico') }}"><button><span>&#128736;</span> Diagnostico</button></a>
+            {% endif %}
+            {% if pagina_menu_habilitada('configuracoes_site') %}
             <a href="{{ url_for('configuracoes_site') }}"><button><span>&#127912;</span> Configuracoes do site</button></a>
+            {% endif %}
             <a href="{{ url_for('configuracoes') }}"><button><span>&#9881;</span> Configuracoes</button></a>
         </div>
 

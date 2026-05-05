@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from flask import session
+from flask import request, session
 
 import app as app_module
 
@@ -260,6 +260,75 @@ class AppRegressionTests(unittest.TestCase):
 
         self.assertEqual(response, "ok")
         render_mock.assert_called_once()
+
+    def test_paginas_menu_desabilitadas_bloqueiam_acesso_comum(self):
+        with patch.object(app_module, "INIT_DB_EXECUTADO", True), \
+             patch.object(app_module, "obter_paginas_menu_desabilitadas", return_value={"painel"}):
+            with self.client.session_transaction() as sess:
+                sess["usuario"] = "operador"
+                sess["usuario_perfil"] = "funcionario"
+                sess["usuario_id"] = 2
+
+            response = self.client.get("/painel")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/configuracoes", response.headers.get("Location", ""))
+
+    def test_salvar_paginas_menu_configuracao_form_persiste_desabilitadas(self):
+        with app_module.app.test_request_context(
+            "/configuracoes/paginas",
+            method="POST",
+            data={"paginas_habilitadas": ["painel", "clientes"]},
+        ):
+            with patch.object(app_module, "salvar_campos_configuracao_empresa") as salvar, \
+                 patch.object(app_module, "limpar_caches_interface"):
+                desabilitadas = app_module.salvar_paginas_menu_configuracao_form(request.form)
+
+        self.assertNotIn("painel", desabilitadas)
+        self.assertNotIn("clientes", desabilitadas)
+        self.assertIn("nota_fiscal", desabilitadas)
+        payload = salvar.call_args.args[0]
+        self.assertIn("paginas_menu_desabilitadas_json", payload)
+        self.assertIn("nota_fiscal", json.loads(payload["paginas_menu_desabilitadas_json"]))
+
+    def test_salvar_configuracao_hud_usuario_isola_por_usuario(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            """
+            CREATE TABLE usuarios (
+                id INTEGER PRIMARY KEY,
+                usuario TEXT,
+                hud_config_json TEXT
+            )
+            """
+        )
+        conn.execute("INSERT INTO usuarios (id, usuario, hud_config_json) VALUES (1, 'admin', NULL)")
+        conn.execute("INSERT INTO usuarios (id, usuario, hud_config_json) VALUES (2, 'dev', NULL)")
+        conn.commit()
+        wrapper = PersistentCompatConnection(conn)
+
+        with app_module.app.test_request_context(
+            "/configuracoes/hud",
+            method="POST",
+            data={
+                "hud_ativo": "1",
+                "hud_itens_habilitados": ["data_hora", "financeiro"],
+            },
+        ):
+            session["usuario_id"] = 1
+            with patch.object(app_module, "conectar", return_value=wrapper), \
+                 patch.object(app_module, "limpar_caches_interface"):
+                config = app_module.salvar_configuracao_hud_usuario_form(request.form)
+
+        row_admin = conn.execute("SELECT hud_config_json FROM usuarios WHERE id=1").fetchone()
+        row_dev = conn.execute("SELECT hud_config_json FROM usuarios WHERE id=2").fetchone()
+        payload = json.loads(row_admin["hud_config_json"])
+
+        self.assertTrue(config["hud_ativo"])
+        self.assertEqual(payload["itens_habilitados"], ["data_hora", "financeiro"])
+        self.assertIsNone(row_dev["hud_config_json"])
+        conn.close()
 
     def test_manifesto_site_renderiza_com_branding_dinamico(self):
         with app_module.app.test_request_context("/site.webmanifest", method="GET"):
