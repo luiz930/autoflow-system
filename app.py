@@ -12830,8 +12830,8 @@ def loop_importacao():
 
 def carregar_contexto_clientes(busca="", limpar=False):
     busca_aplicada = "" if limpar else busca
-    usuario_cache = f"{session.get('usuario') or ''}|{empresa_id}"
     empresa_id = empresa_atual_id()
+    usuario_cache = f"{session.get('usuario') or ''}|{empresa_id}"
     chave_cache = f"{usuario_cache}|{empresa_id}|{busca_aplicada}"
     contexto_cache = obter_cache_consulta(
         CLIENTES_CONTEXT_CACHE,

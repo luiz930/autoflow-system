@@ -775,6 +775,22 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(resumo["novos"], 2)
         self.assertEqual(resumo["retornos"], 1)
 
+    def test_carregar_contexto_clientes_respeita_empresa_da_sessao(self):
+        with app_module.app.test_request_context("/clientes", method="GET"):
+            session["usuario"] = "admin"
+            session["empresa_id"] = 2
+
+            with patch.object(app_module, "obter_cache_consulta", return_value=None), \
+                 patch.object(
+                     app_module,
+                     "executar_leitura_resiliente",
+                     return_value={"clientes": [], "sincronizacoes_raw": []},
+                 ):
+                clientes, sincronizacoes = app_module.carregar_contexto_clientes(busca="ABC1234")
+
+        self.assertEqual(clientes, [])
+        self.assertEqual(sincronizacoes, [])
+
 
 if __name__ == "__main__":
     unittest.main()
