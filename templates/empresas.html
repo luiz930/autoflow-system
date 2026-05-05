@@ -94,12 +94,35 @@
             <p><b>Usuarios:</b> {{ empresa.licenca.usuarios_ativos }}/{{ empresa.licenca.limite_usuarios }}</p>
             <p><b>Atendimentos do mes:</b> {{ empresa.licenca.atendimentos_mes }}/{{ empresa.licenca.limite_atendimentos_mes }}</p>
             <p><b>Validade:</b> {{ empresa.licenca.validade_em or "Sem vencimento definido" }}</p>
+            <p><b>Codigo da licenca:</b> {{ empresa.licenca.codigo_licenca or "Nao gerada" }}</p>
+            <p><b>Assinatura:</b> {% if empresa.licenca_validacao.ok %}Valida{% else %}{{ empresa.licenca_validacao.mensagem }}{% endif %}</p>
 
             <div class="actions-row actions-row--left top-spacing">
                 <form action="/empresas/trocar" method="POST">
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="empresa_id" value="{{ empresa.id }}">
                     <button type="submit">Usar esta empresa</button>
+                </form>
+                <form action="/empresas/{{ empresa.id }}/licenca/gerar" method="POST">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="plano_codigo" value="{{ empresa.licenca.codigo_plano }}">
+                    <input type="hidden" name="licenca_status" value="{{ empresa.licenca.status }}">
+                    <input type="hidden" name="validade_em" value="{{ empresa.licenca.validade_em[:10] if empresa.licenca.validade_em else '' }}">
+                    <input type="hidden" name="limite_usuarios" value="{{ empresa.licenca.limite_usuarios }}">
+                    <input type="hidden" name="limite_atendimentos_mes" value="{{ empresa.licenca.limite_atendimentos_mes }}">
+                    <input type="hidden" name="limite_unidades" value="{{ empresa.licenca.limite_unidades }}">
+                    <input type="hidden" name="limite_storage_mb" value="{{ empresa.licenca.limite_storage_mb }}">
+                    <button type="submit">Gerar licenca</button>
+                </form>
+                <form action="/empresas/{{ empresa.id }}/licenca/renovar" method="POST">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="plano_codigo" value="{{ empresa.licenca.codigo_plano }}">
+                    <input type="hidden" name="licenca_status" value="ativa">
+                    <input type="hidden" name="limite_usuarios" value="{{ empresa.licenca.limite_usuarios }}">
+                    <input type="hidden" name="limite_atendimentos_mes" value="{{ empresa.licenca.limite_atendimentos_mes }}">
+                    <input type="hidden" name="limite_unidades" value="{{ empresa.licenca.limite_unidades }}">
+                    <input type="hidden" name="limite_storage_mb" value="{{ empresa.licenca.limite_storage_mb }}">
+                    <button type="submit">Renovar licenca</button>
                 </form>
             </div>
 

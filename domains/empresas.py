@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
+import secrets
 from datetime import date, datetime
 
 from .tenant import normalize_empresa_id, row_to_dict, rows_to_dicts
@@ -73,6 +76,96 @@ def plano_padrao(codigo):
     return dict(PLANOS_LICENCA[normalizar_plano(codigo)])
 
 
+def _json_canonico(payload):
+    return json.dumps(payload or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def assinar_payload_licenca(payload, segredo):
+    segredo = str(segredo or "").strip()
+    if not segredo:
+        raise ValueError("LICENSE_SIGNING_SECRET nao configurado.")
+    corpo = _json_canonico(payload).encode("utf-8")
+    return hmac.new(segredo.encode("utf-8"), corpo, hashlib.sha256).hexdigest()
+
+
+def gerar_codigo_licenca(empresa_id):
+    empresa_id = normalize_empresa_id(empresa_id)
+    return f"LIC-{empresa_id:04d}-{secrets.token_hex(4).upper()}"
+
+
+def montar_payload_licenca(empresa_id, dados, emitida_em):
+    empresa_id = normalize_empresa_id(empresa_id)
+    payload = dict(dados or {})
+    plano = normalizar_plano(payload.get("codigo_plano"))
+    plano_base = plano_padrao(plano)
+    recursos = payload.get("recursos")
+    if not isinstance(recursos, dict):
+        recursos = plano_base["recursos"]
+    return {
+        "empresa_id": empresa_id,
+        "codigo_plano": plano,
+        "status": normalizar_status_licenca(payload.get("status")),
+        "limite_usuarios": int(payload.get("limite_usuarios") or plano_base["limite_usuarios"]),
+        "limite_atendimentos_mes": int(payload.get("limite_atendimentos_mes") or plano_base["limite_atendimentos_mes"]),
+        "limite_unidades": int(payload.get("limite_unidades") or plano_base["limite_unidades"]),
+        "limite_storage_mb": int(payload.get("limite_storage_mb") or plano_base["limite_storage_mb"]),
+        "validade_em": payload.get("validade_em") or "",
+        "recursos": recursos,
+        "emitida_em": emitida_em,
+    }
+
+
+def gerar_licenca_assinada(empresa_id, dados, segredo, agora_iso, renovar=False, codigo_licenca=None):
+    payload = montar_payload_licenca(empresa_id, dados, agora_iso)
+    codigo = codigo_licenca or gerar_codigo_licenca(empresa_id)
+    payload["codigo_licenca"] = codigo
+    assinatura = assinar_payload_licenca(payload, segredo)
+    retorno = {
+        "codigo_licenca": codigo,
+        "assinatura": assinatura,
+        "payload_json": _json_canonico(payload),
+        "emitida_em": payload["emitida_em"],
+        "ultimo_status_validacao": "assinatura_valida",
+    }
+    if renovar:
+        retorno["renovada_em"] = agora_iso
+    return retorno
+
+
+def validar_licenca_assinada(licenca, segredo):
+    licenca = dict(licenca or {})
+    payload_texto = str(licenca.get("payload_json") or "").strip()
+    assinatura = str(licenca.get("assinatura") or "").strip()
+    if not payload_texto or not assinatura:
+        return {"ok": False, "status": "ausente", "mensagem": "Licenca ainda nao foi assinada."}
+    try:
+        payload = json.loads(payload_texto)
+        esperada = assinar_payload_licenca(payload, segredo)
+    except Exception as erro:
+        return {"ok": False, "status": "erro", "mensagem": f"Falha ao validar assinatura: {erro}"}
+    if not hmac.compare_digest(assinatura, esperada):
+        return {"ok": False, "status": "invalida", "mensagem": "Assinatura HMAC invalida para o payload salvo."}
+    campos_licenca = (
+        "codigo_plano",
+        "status",
+        "limite_usuarios",
+        "limite_atendimentos_mes",
+        "limite_unidades",
+        "limite_storage_mb",
+        "validade_em",
+    )
+    for campo in campos_licenca:
+        atual = "" if licenca.get(campo) is None else str(licenca.get(campo))
+        salvo = "" if payload.get(campo) is None else str(payload.get(campo))
+        if atual != salvo:
+            return {
+                "ok": False,
+                "status": "desatualizada",
+                "mensagem": "Licenca foi alterada depois da assinatura. Gere uma nova assinatura.",
+            }
+    return {"ok": True, "status": "valida", "mensagem": "Assinatura HMAC-SHA256 valida."}
+
+
 def _parse_data(valor):
     texto = str(valor or "").strip()
     if not texto:
@@ -98,7 +191,13 @@ def listar_empresas(cursor):
             licencas.limite_unidades,
             licencas.limite_storage_mb,
             licencas.validade_em,
-            licencas.recursos_json
+            licencas.recursos_json,
+            licencas.codigo_licenca,
+            licencas.assinatura,
+            licencas.payload_json,
+            licencas.emitida_em,
+            licencas.renovada_em,
+            licencas.ultimo_status_validacao
         FROM empresas
         LEFT JOIN licencas ON licencas.empresa_id = empresas.id
         ORDER BY empresas.ativa DESC, LOWER(COALESCE(empresas.nome_fantasia, empresas.razao_social, empresas.slug, '')) ASC, empresas.id ASC
@@ -232,6 +331,12 @@ def salvar_licenca(cursor, empresa_id, dados, agora_iso):
         int(payload.get("limite_storage_mb") or plano["limite_storage_mb"]),
         payload.get("validade_em") or None,
         json.dumps(recursos, ensure_ascii=False),
+        payload.get("codigo_licenca"),
+        payload.get("assinatura"),
+        payload.get("payload_json"),
+        payload.get("emitida_em"),
+        payload.get("renovada_em"),
+        payload.get("ultimo_status_validacao"),
         agora_iso,
     )
 
@@ -241,6 +346,12 @@ def salvar_licenca(cursor, empresa_id, dados, agora_iso):
             UPDATE licencas
             SET codigo_plano=?, status=?, limite_usuarios=?, limite_atendimentos_mes=?,
                 limite_unidades=?, limite_storage_mb=?, validade_em=?, recursos_json=?,
+                codigo_licenca=COALESCE(?, codigo_licenca),
+                assinatura=COALESCE(?, assinatura),
+                payload_json=COALESCE(?, payload_json),
+                emitida_em=COALESCE(?, emitida_em),
+                renovada_em=COALESCE(?, renovada_em),
+                ultimo_status_validacao=COALESCE(?, ultimo_status_validacao),
                 atualizado_em=?
             WHERE empresa_id=?
             """,
@@ -252,9 +363,10 @@ def salvar_licenca(cursor, empresa_id, dados, agora_iso):
             INSERT INTO licencas (
                 codigo_plano, status, limite_usuarios, limite_atendimentos_mes,
                 limite_unidades, limite_storage_mb, validade_em, recursos_json,
-                atualizado_em, empresa_id, criado_em
+                codigo_licenca, assinatura, payload_json, emitida_em, renovada_em,
+                ultimo_status_validacao, atualizado_em, empresa_id, criado_em
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             valores + (empresa_id, agora_iso),
         )
@@ -319,4 +431,11 @@ def montar_contexto_licenca(licenca, uso=None, hoje=None):
         "aviso": validade is not None and 0 <= dias_restantes <= 7,
         "excedeu_usuarios": usuarios_ativos > limite_usuarios,
         "excedeu_atendimentos": atendimentos_mes >= limite_atendimentos,
+        "codigo_licenca": licenca.get("codigo_licenca") or "",
+        "assinatura": licenca.get("assinatura") or "",
+        "assinatura_resumo": str(licenca.get("assinatura") or "")[:12],
+        "emitida_em": licenca.get("emitida_em") or "",
+        "renovada_em": licenca.get("renovada_em") or "",
+        "ultimo_status_validacao": licenca.get("ultimo_status_validacao") or "",
+        "recursos": PLANOS_LICENCA[plano]["recursos"],
     }

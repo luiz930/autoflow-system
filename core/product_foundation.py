@@ -17,6 +17,7 @@ FOUNDATION_MIGRATIONS = (
     "foundation_empresa_indexes",
     "foundation_legacy_plate_uniqueness",
     "foundation_licensing_limits",
+    "foundation_signed_licenses",
 )
 
 
@@ -117,6 +118,12 @@ def create_licencas_table(cursor):
             limite_storage_mb INTEGER DEFAULT 512,
             validade_em TEXT,
             recursos_json TEXT,
+            codigo_licenca TEXT,
+            assinatura TEXT,
+            payload_json TEXT,
+            emitida_em TEXT,
+            renovada_em TEXT,
+            ultimo_status_validacao TEXT,
             criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
             atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(empresa_id) REFERENCES empresas(id)
@@ -822,6 +829,15 @@ def apply_licensing_limits(cursor, add_column):
     )
 
 
+def apply_signed_licenses(cursor, add_column):
+    add_column(cursor, "licencas", "codigo_licenca TEXT")
+    add_column(cursor, "licencas", "assinatura TEXT")
+    add_column(cursor, "licencas", "payload_json TEXT")
+    add_column(cursor, "licencas", "emitida_em TEXT")
+    add_column(cursor, "licencas", "renovada_em TEXT")
+    add_column(cursor, "licencas", "ultimo_status_validacao TEXT")
+
+
 def run_product_foundation_migrations(conn, add_column, now_iso, print_func=print):
     cursor = conn.cursor()
     ensure_schema_migrations(cursor)
@@ -877,6 +893,10 @@ def run_product_foundation_migrations(conn, add_column, now_iso, print_func=prin
     if "foundation_licensing_limits" not in applied:
         apply_licensing_limits(cursor, add_column)
         mark_migration_applied(cursor, "foundation_licensing_limits", now_iso())
+
+    if "foundation_signed_licenses" not in applied:
+        apply_signed_licenses(cursor, add_column)
+        mark_migration_applied(cursor, "foundation_signed_licenses", now_iso())
 
     conn.commit()
     print_func("FOUNDATION: migrations de produto aplicadas/verificadas.")

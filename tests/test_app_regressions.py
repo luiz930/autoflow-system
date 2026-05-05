@@ -253,6 +253,7 @@ class AppRegressionTests(unittest.TestCase):
             with patch.object(app_module, "preparar_rotinas_interface_logada"), \
                  patch.object(app_module, "sincronizar_sessao_usuario"), \
                  patch.object(app_module, "usuario_gerencia_configuracao_sistema", return_value=True), \
+                 patch.object(app_module, "recurso_liberado_por_plano", return_value=True), \
                  patch.object(app_module, "obter_configuracao_empresa", return_value=app_module.empresa_snapshot_padrao()), \
                  patch.object(app_module, "render_template", return_value="ok") as render_mock:
                 response = app_module.configuracoes_site()
@@ -502,6 +503,7 @@ class AppRegressionTests(unittest.TestCase):
                  patch.object(app_module, "obter_configuracao_empresa", return_value=app_module.empresa_snapshot_padrao()), \
                  patch.object(app_module, "obter_configuracao_integracao_fiscal", return_value=app_module.integracao_fiscal_padrao()), \
                  patch.object(app_module, "conectar", return_value=wrapper), \
+                 patch.object(app_module, "recurso_liberado_por_plano", return_value=True), \
                  patch.object(app_module, "avaliar_prontidao_integracao_fiscal", return_value={"pronta": False}), \
                  patch.object(app_module, "montar_payload_exemplo_integracao", return_value={}), \
                  patch.object(app_module, "listar_notas_fiscais_recentes", return_value=[]), \

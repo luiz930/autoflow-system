@@ -2,11 +2,13 @@ import sqlite3
 import unittest
 
 from domains.empresas import (
+    gerar_licenca_assinada,
     garantir_licenca,
     montar_contexto_licenca,
     obter_uso_licenca,
     salvar_empresa,
     salvar_licenca,
+    validar_licenca_assinada,
 )
 
 
@@ -48,6 +50,12 @@ class EmpresasDomainTests(unittest.TestCase):
                 limite_storage_mb INTEGER,
                 validade_em TEXT,
                 recursos_json TEXT,
+                codigo_licenca TEXT,
+                assinatura TEXT,
+                payload_json TEXT,
+                emitida_em TEXT,
+                renovada_em TEXT,
+                ultimo_status_validacao TEXT,
                 criado_em TEXT,
                 atualizado_em TEXT
             )
@@ -95,6 +103,41 @@ class EmpresasDomainTests(unittest.TestCase):
         self.assertEqual(contexto["usuarios_ativos"], 1)
         self.assertEqual(contexto["atendimentos_mes"], 2)
         self.assertTrue(contexto["excedeu_atendimentos"])
+
+    def test_gerar_e_validar_licenca_hmac(self):
+        c = self.conn.cursor()
+        empresa_id = salvar_empresa(
+            c,
+            {
+                "slug": "beta",
+                "nome_fantasia": "Beta",
+                "plano_codigo": "pro",
+                "licenca_status": "ativa",
+                "ativa": 1,
+            },
+            "2026-05-05T10:00:00",
+        )
+        dados = {
+            "codigo_plano": "pro",
+            "status": "ativa",
+            "limite_usuarios": 10,
+            "limite_atendimentos_mes": 800,
+            "validade_em": "2026-06-05",
+        }
+        assinatura = gerar_licenca_assinada(
+            empresa_id,
+            dados,
+            "segredo-testes",
+            "2026-05-05T10:00:00",
+        )
+        dados.update(assinatura)
+        salvar_licenca(c, empresa_id, dados, "2026-05-05T10:00:00")
+        licenca = garantir_licenca(c, empresa_id, "2026-05-05T10:00:00")
+
+        validacao = validar_licenca_assinada(licenca, "segredo-testes")
+
+        self.assertTrue(validacao["ok"])
+        self.assertTrue(licenca["codigo_licenca"].startswith("LIC-"))
 
 
 if __name__ == "__main__":

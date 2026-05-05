@@ -9,6 +9,11 @@
     <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
     <button type="submit">Validar ambiente</button>
 </form>
+<form action="/diagnostico/backup-suporte" method="POST">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">Backup suporte</button>
+</form>
+<a href="/diagnostico/exportar.json" class="button-link"><button type="button">Exportar JSON</button></a>
 <a href="/empresas" class="button-link"><button type="button">Empresas</button></a>
 {% endblock %}
 
@@ -38,6 +43,7 @@
         <p><b>Atendimentos do mes:</b> {{ diagnostico.licenca.atendimentos_mes }}/{{ diagnostico.licenca.limite_atendimentos_mes }}</p>
         <p><b>Validade:</b> {{ diagnostico.licenca.validade_em or "Sem vencimento definido" }}</p>
         <p><b>Bloqueio:</b> {% if diagnostico.licenca.bloqueada %}Sim{% else %}Nao{% endif %}</p>
+        <p><b>Licenca assinada:</b> {{ diagnostico.licenca.codigo_licenca or "Nao gerada" }}</p>
     </div>
 </div>
 
@@ -61,6 +67,7 @@
         <p><b>Modo de banco:</b> {{ diagnostico.modo_banco }}</p>
         <p><b>Uploads:</b> {{ diagnostico.arquivos_status.armazenamento.uploads.tamanho_fmt }}</p>
         <p><b>Backups:</b> {{ diagnostico.arquivos_status.armazenamento.backups.tamanho_fmt }}</p>
+        <p><b>Ultima validacao:</b> {{ diagnostico.ultima_validacao or "Ainda nao validado nesta sessao" }}</p>
     </div>
 </div>
 
@@ -71,6 +78,7 @@
         <div class="page-card {% if item.ok %}success-banner{% else %}error-banner{% endif %}">
             <p><b>{{ item.nome }}</b></p>
             <p>{{ item.detalhe }}</p>
+            <p class="muted-text">Acao recomendada: {{ item.acao }}</p>
         </div>
         {% endfor %}
     </div>

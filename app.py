@@ -61,6 +61,7 @@ from domains.changelog import carregar_contexto_changelog as carregar_contexto_c
 from domains.empresas import (
     PLANOS_LICENCA,
     STATUS_LICENCA,
+    gerar_licenca_assinada as gerar_licenca_assinada_domain,
     garantir_licenca as garantir_licenca_domain,
     listar_empresas as listar_empresas_domain,
     montar_contexto_licenca as montar_contexto_licenca_domain,
@@ -72,6 +73,7 @@ from domains.empresas import (
     plano_padrao as plano_padrao_licenca_domain,
     salvar_empresa as salvar_empresa_domain,
     salvar_licenca as salvar_licenca_domain,
+    validar_licenca_assinada as validar_licenca_assinada_domain,
 )
 from domains.historico import (
     carregar_recursos_edicao_historico as carregar_recursos_edicao_historico_domain,
@@ -5150,6 +5152,14 @@ def garantir_schema_sqlite_local_minima(force=False):
             adicionar_coluna_se_preciso(c, "servicos", "empresa_id INTEGER DEFAULT 1")
             adicionar_coluna_se_preciso(c, "fotos", "empresa_id INTEGER DEFAULT 1")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "empresa_id INTEGER DEFAULT 1")
+            adicionar_coluna_se_preciso(c, "orcamentos", "empresa_id INTEGER DEFAULT 1")
+            adicionar_coluna_se_preciso(c, "notas_fiscais", "empresa_id INTEGER DEFAULT 1")
+            adicionar_coluna_se_preciso(c, "licencas", "codigo_licenca TEXT")
+            adicionar_coluna_se_preciso(c, "licencas", "assinatura TEXT")
+            adicionar_coluna_se_preciso(c, "licencas", "payload_json TEXT")
+            adicionar_coluna_se_preciso(c, "licencas", "emitida_em TEXT")
+            adicionar_coluna_se_preciso(c, "licencas", "renovada_em TEXT")
+            adicionar_coluna_se_preciso(c, "licencas", "ultimo_status_validacao TEXT")
             adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "empresa_id INTEGER DEFAULT 1")
             adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "ultimo_hash TEXT")
             adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "colunas_ultima_sync TEXT")
@@ -5160,6 +5170,8 @@ def garantir_schema_sqlite_local_minima(force=False):
             c.execute("UPDATE servicos SET empresa_id=1 WHERE empresa_id IS NULL")
             c.execute("UPDATE fotos SET empresa_id=1 WHERE empresa_id IS NULL")
             c.execute("UPDATE configuracao_empresa SET empresa_id=1 WHERE empresa_id IS NULL")
+            c.execute("UPDATE orcamentos SET empresa_id=1 WHERE empresa_id IS NULL")
+            c.execute("UPDATE notas_fiscais SET empresa_id=1 WHERE empresa_id IS NULL")
             c.execute("UPDATE sincronizacoes_clientes SET empresa_id=1 WHERE empresa_id IS NULL")
             c.execute("UPDATE notificacoes SET empresa_id=1 WHERE empresa_id IS NULL")
             conn.commit()
@@ -6071,6 +6083,14 @@ def atualizar_banco():
     adicionar_coluna_se_preciso(c, "manutencao_arquivos", "ultima_mensagem TEXT")
     adicionar_coluna_se_preciso(c, "manutencao_arquivos", "ultimo_resultado_json TEXT")
     adicionar_coluna_se_preciso(c, "integracao_fiscal", "token_api TEXT")
+    adicionar_coluna_se_preciso(c, "orcamentos", "empresa_id INTEGER DEFAULT 1")
+    adicionar_coluna_se_preciso(c, "notas_fiscais", "empresa_id INTEGER DEFAULT 1")
+    adicionar_coluna_se_preciso(c, "licencas", "codigo_licenca TEXT")
+    adicionar_coluna_se_preciso(c, "licencas", "assinatura TEXT")
+    adicionar_coluna_se_preciso(c, "licencas", "payload_json TEXT")
+    adicionar_coluna_se_preciso(c, "licencas", "emitida_em TEXT")
+    adicionar_coluna_se_preciso(c, "licencas", "renovada_em TEXT")
+    adicionar_coluna_se_preciso(c, "licencas", "ultimo_status_validacao TEXT")
     c.execute("UPDATE clientes SET empresa_id=1 WHERE empresa_id IS NULL")
     c.execute("UPDATE veiculos SET empresa_id=1 WHERE empresa_id IS NULL")
     c.execute("UPDATE servicos SET empresa_id=1 WHERE empresa_id IS NULL")
@@ -6078,6 +6098,8 @@ def atualizar_banco():
     c.execute("UPDATE configuracao_empresa SET empresa_id=1 WHERE empresa_id IS NULL")
     c.execute("UPDATE sincronizacoes_clientes SET empresa_id=1 WHERE empresa_id IS NULL")
     c.execute("UPDATE notificacoes SET empresa_id=1 WHERE empresa_id IS NULL")
+    c.execute("UPDATE orcamentos SET empresa_id=1 WHERE empresa_id IS NULL")
+    c.execute("UPDATE notas_fiscais SET empresa_id=1 WHERE empresa_id IS NULL")
 
     c.execute("""
         UPDATE usuarios
@@ -6322,6 +6344,7 @@ def atualizar_banco():
     c.execute("""
     CREATE TABLE IF NOT EXISTS orcamentos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        empresa_id INTEGER DEFAULT 1,
         numero INTEGER UNIQUE,
         cliente_nome TEXT NOT NULL,
         cliente_documento TEXT,
@@ -6357,6 +6380,7 @@ def atualizar_banco():
     c.execute("""
     CREATE TABLE IF NOT EXISTS notas_fiscais (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        empresa_id INTEGER DEFAULT 1,
         rps_numero INTEGER UNIQUE,
         numero_nota TEXT,
         serie TEXT,
@@ -6804,6 +6828,7 @@ def criar_todas_tabelas():
     c.execute("""
     CREATE TABLE IF NOT EXISTS orcamentos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        empresa_id INTEGER DEFAULT 1,
         numero INTEGER UNIQUE,
         cliente_nome TEXT NOT NULL,
         cliente_documento TEXT,
@@ -6839,6 +6864,7 @@ def criar_todas_tabelas():
     c.execute("""
     CREATE TABLE IF NOT EXISTS notas_fiscais (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        empresa_id INTEGER DEFAULT 1,
         rps_numero INTEGER UNIQUE,
         numero_nota TEXT,
         serie TEXT,
@@ -7302,6 +7328,41 @@ def carregar_contexto_licenca_empresa(empresa_id=None):
     return montar_contexto_licenca_domain(licenca, uso, hoje=agora().date())
 
 
+def segredo_assinatura_licenca():
+    segredo = os.getenv("LICENSE_SIGNING_SECRET")
+    if segredo:
+        return segredo
+    return os.getenv("SECRET_KEY") or os.getenv("FLASK_SECRET_KEY") or app.secret_key or ""
+
+
+def recurso_liberado_por_plano(recurso, empresa_id=None):
+    licenca = carregar_contexto_licenca_empresa_seguro(empresa_id)
+    recursos = (PLANOS_LICENCA.get(licenca.get("codigo_plano")) or {}).get("recursos") or {}
+    return bool(recursos.get(recurso))
+
+
+def bloquear_recurso_plano(recurso, mensagem, feedback_func=definir_feedback_configuracoes, destino="/configuracoes"):
+    if recurso_liberado_por_plano(recurso):
+        return None
+    feedback_func("erro", mensagem)
+    return redirect(destino)
+
+
+def montar_dados_licenca_form(form):
+    plano_codigo = normalizar_plano_licenca_domain(form.get("plano_codigo"))
+    plano = plano_padrao_licenca_domain(plano_codigo)
+    return {
+        "codigo_plano": plano_codigo,
+        "status": normalizar_status_licenca_domain(form.get("licenca_status") or form.get("status")),
+        "limite_usuarios": converter_inteiro(form.get("limite_usuarios"), plano["limite_usuarios"]),
+        "limite_atendimentos_mes": converter_inteiro(form.get("limite_atendimentos_mes"), plano["limite_atendimentos_mes"]),
+        "limite_unidades": converter_inteiro(form.get("limite_unidades"), plano["limite_unidades"]),
+        "limite_storage_mb": converter_inteiro(form.get("limite_storage_mb"), plano["limite_storage_mb"]),
+        "validade_em": normalizar_texto_campo(form.get("validade_em")),
+        "recursos": plano["recursos"],
+    }
+
+
 def carregar_contexto_licenca_empresa_seguro(empresa_id=None):
     try:
         return carregar_contexto_licenca_empresa(empresa_id)
@@ -7322,6 +7383,13 @@ def carregar_contexto_licenca_empresa_seguro(empresa_id=None):
             "aviso": False,
             "excedeu_usuarios": False,
             "excedeu_atendimentos": False,
+            "codigo_licenca": "",
+            "assinatura": "",
+            "assinatura_resumo": "",
+            "emitida_em": "",
+            "renovada_em": "",
+            "ultimo_status_validacao": "",
+            "recursos": plano["recursos"],
         }
 
 
@@ -7347,9 +7415,13 @@ def endpoint_liberado_com_licenca_bloqueada(endpoint):
         "configuracoes",
         "pagina_empresas",
         "salvar_empresa_admin",
+        "gerar_licenca_empresa_admin",
+        "renovar_licenca_empresa_admin",
         "trocar_empresa_ativa",
         "pagina_diagnostico",
         "validar_diagnostico",
+        "exportar_diagnostico_json",
+        "gerar_backup_suporte",
         "atualizar_minha_senha",
         "salvar_configuracao_banco",
         "testar_configuracao_banco",
@@ -9565,14 +9637,16 @@ def enriquecer_itens_documento(itens):
     return resultado
 
 def listar_orcamentos_recentes(limit=8):
+    empresa_id = empresa_atual_id()
     conn = conectar()
     c = conn.cursor()
     c.execute("""
         SELECT id, numero, cliente_nome, placa, modelo, total, status, criado_em
         FROM orcamentos
+        WHERE empresa_id=?
         ORDER BY numero DESC
         LIMIT ?
-    """, (limit,))
+    """, (empresa_id, limit))
     registros = [dict(item) for item in c.fetchall()]
     conn.close()
 
@@ -9584,9 +9658,10 @@ def listar_orcamentos_recentes(limit=8):
     return registros
 
 def buscar_orcamento_completo(orcamento_id):
+    empresa_id = empresa_atual_id()
     conn = conectar()
     c = conn.cursor()
-    c.execute("SELECT * FROM orcamentos WHERE id=?", (orcamento_id,))
+    c.execute("SELECT * FROM orcamentos WHERE empresa_id=? AND id=?", (empresa_id, orcamento_id))
     orcamento = c.fetchone()
 
     if not orcamento:
@@ -9614,6 +9689,7 @@ def buscar_orcamento_completo(orcamento_id):
     return dados
 
 def salvar_orcamento(dados, itens, empresa):
+    empresa_id = empresa_atual_id()
     conn = conectar()
     c = conn.cursor()
     numero = proximo_numero_documento_sql(c, "orcamentos", "numero")
@@ -9625,12 +9701,13 @@ def salvar_orcamento(dados, itens, empresa):
 
     c.execute("""
         INSERT INTO orcamentos (
-            numero, cliente_nome, cliente_documento, email, telefone, placa, modelo,
+            empresa_id, numero, cliente_nome, cliente_documento, email, telefone, placa, modelo,
             validade_dias, forma_pagamento, observacoes, subtotal, desconto, total,
             status, empresa_snapshot, criado_em, atualizado_em, usuario
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'GERADO', ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'GERADO', ?, ?, ?, ?)
     """, (
+        empresa_id,
         numero,
         normalizar_texto_campo(dados.get("cliente_nome")) or "Cliente sem nome",
         normalizar_documento_fiscal(dados.get("cliente_documento")),
@@ -9671,18 +9748,20 @@ def salvar_orcamento(dados, itens, empresa):
     return buscar_orcamento_completo(orcamento_id)
 
 def listar_notas_fiscais_recentes(limit=8, somente_emitidas=False, somente_pendentes=False):
+    empresa_id = empresa_atual_id()
     conn = conectar()
     c = conn.cursor()
     query = """
         SELECT id, rps_numero, numero_nota, serie, ambiente, status, cliente_nome, valor_total, criado_em
         FROM notas_fiscais
+        WHERE empresa_id=?
     """
-    params = []
+    params = [empresa_id]
 
     if somente_emitidas:
-        query += " WHERE COALESCE(NULLIF(numero_nota, ''), '') <> ''"
+        query += " AND COALESCE(NULLIF(numero_nota, ''), '') <> ''"
     elif somente_pendentes:
-        query += " WHERE COALESCE(NULLIF(numero_nota, ''), '') = ''"
+        query += " AND COALESCE(NULLIF(numero_nota, ''), '') = ''"
 
     query += """
         ORDER BY rps_numero DESC
@@ -9701,9 +9780,10 @@ def listar_notas_fiscais_recentes(limit=8, somente_emitidas=False, somente_pende
     return registros
 
 def buscar_nota_fiscal_completa(nota_id):
+    empresa_id = empresa_atual_id()
     conn = conectar()
     c = conn.cursor()
-    c.execute("SELECT * FROM notas_fiscais WHERE id=?", (nota_id,))
+    c.execute("SELECT * FROM notas_fiscais WHERE empresa_id=? AND id=?", (empresa_id, nota_id))
     nota = c.fetchone()
 
     if not nota:
@@ -9732,6 +9812,7 @@ def buscar_nota_fiscal_completa(nota_id):
     return dados
 
 def salvar_nota_fiscal(dados, itens, empresa):
+    empresa_id = empresa_atual_id()
     conn = conectar()
     c = conn.cursor()
     rps_numero = proximo_numero_documento_sql(c, "notas_fiscais", "rps_numero")
@@ -9747,15 +9828,16 @@ def salvar_nota_fiscal(dados, itens, empresa):
 
     c.execute("""
         INSERT INTO notas_fiscais (
-            rps_numero, numero_nota, serie, ambiente, tipo_documento, status,
+            empresa_id, rps_numero, numero_nota, serie, ambiente, tipo_documento, status,
             cliente_nome, cliente_documento, email, telefone, placa, modelo,
             endereco, numero_endereco, complemento, bairro, cidade, uf, cep,
             codigo_servico, discriminacao, observacoes, aliquota_iss, valor_servicos,
             desconto, valor_iss, valor_total, empresa_snapshot, criado_em, atualizado_em,
             usuario, origem_orcamento_id
         )
-        VALUES (?, ?, ?, ?, 'NFS-e', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, 'NFS-e', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
+        empresa_id,
         rps_numero,
         numero_nota,
         normalizar_texto_campo(dados.get("serie")),
@@ -13333,6 +13415,14 @@ def baixar_orcamento_pdf(id):
 def pagina_nota_fiscal():
     if not session.get("usuario"):
         return redirect("/login")
+    bloqueio = bloquear_recurso_plano(
+        "notas",
+        "Nota fiscal exige plano Pro ou Business.",
+        feedback_func=definir_feedback_nota_fiscal,
+        destino="/configuracoes",
+    )
+    if bloqueio:
+        return bloqueio
 
     preparar_rotinas_interface_logada()
     empresa = obter_configuracao_empresa()
@@ -13383,6 +13473,14 @@ def pagina_nota_fiscal():
 def salvar_emitente_nota_fiscal():
     if not session.get("usuario"):
         return redirect("/login")
+    bloqueio = bloquear_recurso_plano(
+        "notas",
+        "Nota fiscal exige plano Pro ou Business.",
+        feedback_func=definir_feedback_nota_fiscal,
+        destino="/configuracoes",
+    )
+    if bloqueio:
+        return bloqueio
 
     salvar_configuracao_empresa_form(request.form)
     registrar_auditoria(
@@ -13405,6 +13503,14 @@ def salvar_emitente_nota_fiscal():
 def salvar_integracao_nota_fiscal():
     if not session.get("usuario"):
         return redirect("/login")
+    bloqueio = bloquear_recurso_plano(
+        "notas",
+        "Nota fiscal exige plano Pro ou Business.",
+        feedback_func=definir_feedback_nota_fiscal,
+        destino="/configuracoes",
+    )
+    if bloqueio:
+        return bloqueio
 
     salvar_configuracao_integracao_fiscal_form(request.form)
     integracao = obter_configuracao_integracao_fiscal()
@@ -13451,6 +13557,14 @@ def salvar_integracao_nota_fiscal():
 def gerar_nota_fiscal():
     if not session.get("usuario"):
         return redirect("/login")
+    bloqueio = bloquear_recurso_plano(
+        "notas",
+        "Nota fiscal exige plano Pro ou Business.",
+        feedback_func=definir_feedback_nota_fiscal,
+        destino="/configuracoes",
+    )
+    if bloqueio:
+        return bloqueio
 
     empresa = obter_configuracao_empresa()
 
@@ -13516,6 +13630,14 @@ def gerar_nota_fiscal():
 def baixar_nota_fiscal_pdf(id):
     if not session.get("usuario"):
         return redirect("/login")
+    bloqueio = bloquear_recurso_plano(
+        "notas",
+        "Nota fiscal exige plano Pro ou Business.",
+        feedback_func=definir_feedback_nota_fiscal,
+        destino="/configuracoes",
+    )
+    if bloqueio:
+        return bloqueio
 
     nota = buscar_nota_fiscal_completa(id)
 
@@ -14577,6 +14699,7 @@ def pagina_empresas():
         licenca = obter_licenca_domain(c, empresa["id"])
         uso = obter_uso_licenca_domain(c, empresa["id"], agora().strftime("%Y-%m"))
         empresa["licenca"] = montar_contexto_licenca_domain(licenca, uso, hoje=agora().date())
+        empresa["licenca_validacao"] = validar_licenca_assinada_domain(licenca, segredo_assinatura_licenca())
     conn.close()
 
     return render_template(
@@ -14606,10 +14729,8 @@ def salvar_empresa_admin():
 
     plano_codigo = normalizar_plano_licenca_domain(request.form.get("plano_codigo"))
     status = normalizar_status_licenca_domain(request.form.get("licenca_status"))
-    plano = plano_padrao_licenca_domain(plano_codigo)
     slug = normalizar_slug_empresa(request.form.get("slug") or nome_fantasia or razao_social, fallback=f"empresa-{empresa_id or 'nova'}")
     ativa = 1 if request.form.get("ativa") else 0
-    validade = normalizar_texto_campo(request.form.get("validade_em"))
 
     dados_empresa = {
         "slug": slug,
@@ -14624,16 +14745,7 @@ def salvar_empresa_admin():
         "plano_codigo": plano_codigo,
         "licenca_status": status,
     }
-    dados_licenca = {
-        "codigo_plano": plano_codigo,
-        "status": status,
-        "limite_usuarios": converter_inteiro(request.form.get("limite_usuarios"), plano["limite_usuarios"]),
-        "limite_atendimentos_mes": converter_inteiro(request.form.get("limite_atendimentos_mes"), plano["limite_atendimentos_mes"]),
-        "limite_unidades": converter_inteiro(request.form.get("limite_unidades"), plano["limite_unidades"]),
-        "limite_storage_mb": converter_inteiro(request.form.get("limite_storage_mb"), plano["limite_storage_mb"]),
-        "validade_em": validade,
-        "recursos": plano["recursos"],
-    }
+    dados_licenca = montar_dados_licenca_form(request.form)
 
     try:
         conn = conectar()
@@ -14669,6 +14781,76 @@ def salvar_empresa_admin():
     return redirect("/empresas")
 
 
+def salvar_licenca_assinada_empresa(empresa_id, dados_licenca, renovar=False):
+    segredo = segredo_assinatura_licenca()
+    agora_atual = agora_iso()
+    conn = conectar()
+    c = conn.cursor()
+    existente = obter_licenca_domain(c, empresa_id)
+    codigo_atual = (existente or {}).get("codigo_licenca") if renovar else None
+    assinatura = gerar_licenca_assinada_domain(
+        empresa_id,
+        dados_licenca,
+        segredo,
+        agora_atual,
+        renovar=renovar,
+        codigo_licenca=codigo_atual,
+    )
+    payload = dict(dados_licenca)
+    payload.update(assinatura)
+    salvar_licenca_domain(c, empresa_id, payload, agora_atual)
+    conn.commit()
+    conn.close()
+    return assinatura
+
+
+@app.route("/empresas/<int:empresa_id>/licenca/gerar", methods=["POST"])
+def gerar_licenca_empresa_admin(empresa_id):
+    if not session.get("usuario"):
+        return redirect("/login")
+    if not usuario_gerencia_empresas():
+        definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem gerar licencas.")
+        return redirect("/configuracoes")
+
+    try:
+        assinatura = salvar_licenca_assinada_empresa(empresa_id, montar_dados_licenca_form(request.form), renovar=False)
+        registrar_auditoria(
+            "gerou_licenca_assinada",
+            "licencas",
+            entidade_id=empresa_id,
+            detalhes={"codigo_licenca": assinatura.get("codigo_licenca")},
+        )
+        session["empresas_feedback"] = {"tipo": "sucesso", "mensagem": "Licenca assinada gerada com HMAC-SHA256."}
+    except Exception as erro:
+        session["empresas_feedback"] = {"tipo": "erro", "mensagem": f"Nao foi possivel gerar a licenca: {erro}"}
+    return redirect("/empresas")
+
+
+@app.route("/empresas/<int:empresa_id>/licenca/renovar", methods=["POST"])
+def renovar_licenca_empresa_admin(empresa_id):
+    if not session.get("usuario"):
+        return redirect("/login")
+    if not usuario_gerencia_empresas():
+        definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem renovar licencas.")
+        return redirect("/configuracoes")
+
+    try:
+        dados = montar_dados_licenca_form(request.form)
+        if not dados.get("validade_em"):
+            dados["validade_em"] = (agora().date() + timedelta(days=30)).isoformat()
+        assinatura = salvar_licenca_assinada_empresa(empresa_id, dados, renovar=True)
+        registrar_auditoria(
+            "renovou_licenca_assinada",
+            "licencas",
+            entidade_id=empresa_id,
+            detalhes={"codigo_licenca": assinatura.get("codigo_licenca"), "validade_em": dados.get("validade_em")},
+        )
+        session["empresas_feedback"] = {"tipo": "sucesso", "mensagem": "Licenca renovada e assinada novamente."}
+    except Exception as erro:
+        session["empresas_feedback"] = {"tipo": "erro", "mensagem": f"Nao foi possivel renovar a licenca: {erro}"}
+    return redirect("/empresas")
+
+
 @app.route("/empresas/trocar", methods=["POST"])
 def trocar_empresa_ativa():
     if not session.get("usuario"):
@@ -14684,6 +14866,12 @@ def trocar_empresa_ativa():
     conn.close()
     if not empresa:
         session["empresas_feedback"] = {"tipo": "erro", "mensagem": "Empresa selecionada nao foi encontrada."}
+        return redirect("/empresas")
+    if normalize_empresa_id(empresa_id) != empresa_atual_id() and not recurso_liberado_por_plano("multiempresa"):
+        session["empresas_feedback"] = {
+            "tipo": "erro",
+            "mensagem": "Troca entre empresas exige plano Business com multiempresa liberado.",
+        }
         return redirect("/empresas")
 
     session["empresa_id"] = normalize_empresa_id(empresa_id)
@@ -14703,26 +14891,31 @@ def montar_checklist_producao():
             "nome": "CSRF ativo",
             "ok": csrf_protection_ativa(),
             "detalhe": "CSRF_PROTECTION=1" if csrf_protection_ativa() else "Defina CSRF_PROTECTION=1 antes de vender.",
+            "acao": "Manter ativo no deploy." if csrf_protection_ativa() else "Ativar CSRF_PROTECTION=1 no ambiente.",
         },
         {
             "nome": "Cookie seguro",
             "ok": SESSION_COOKIE_SECURE_RAW in {"1", "true", "yes", "on"},
             "detalhe": "SESSION_COOKIE_SECURE=1 em HTTPS." if SESSION_COOKIE_SECURE_RAW in {"1", "true", "yes", "on"} else "Ative SESSION_COOKIE_SECURE=1 no deploy HTTPS.",
+            "acao": "Confirmar HTTPS do dominio." if SESSION_COOKIE_SECURE_RAW in {"1", "true", "yes", "on"} else "Ativar SESSION_COOKIE_SECURE=1 no deploy HTTPS.",
         },
         {
             "nome": "Banco online",
             "ok": bool(banco_status.get("conectado")),
             "detalhe": banco_status.get("mensagem") or "Banco online nao validado.",
+            "acao": "Rodar migrations no Supabase." if banco_status.get("conectado") else "Validar DATABASE_URL/SUPABASE_DATABASE_URL.",
         },
         {
             "nome": "Backup ativo",
             "ok": bool(backup_status.get("quantidade", 0) >= 0),
             "detalhe": f"Modo {backup_status.get('tipo_backup_label', '-')}, frequencia {backup_status.get('frequencia_label', '-')}.",
+            "acao": "Gerar backup antes de suporte remoto.",
         },
         {
             "nome": "Google Drive",
             "ok": bool(credenciais_drive and google_drive_disponivel_para_backup()),
             "detalhe": "Credencial pronta." if credenciais_drive else (erro_drive or "Credencial nao configurada."),
+            "acao": "Testar copia externa." if credenciais_drive else "Configurar service account e pasta do Drive.",
         },
     ]
     return itens
@@ -14751,6 +14944,7 @@ def pagina_diagnostico():
         "versao": obter_versao_sistema(),
         "storage_provider": carregar_contexto_produto().get("storage_provider"),
         "checklist": montar_checklist_producao(),
+        "ultima_validacao": session.get("ultima_validacao_diagnostico") or "",
     }
     return render_template(
         "diagnostico.html",
@@ -14768,11 +14962,57 @@ def validar_diagnostico():
         return redirect("/configuracoes")
 
     itens = montar_checklist_producao()
+    session["ultima_validacao_diagnostico"] = agora_iso()
     falhas = [item["nome"] for item in itens if not item["ok"]]
     if falhas:
         session["diagnostico_feedback"] = {"tipo": "erro", "mensagem": "Pendencias de producao: " + ", ".join(falhas)}
     else:
         session["diagnostico_feedback"] = {"tipo": "sucesso", "mensagem": "Ambiente validado para producao."}
+    return redirect("/diagnostico")
+
+
+@app.route("/diagnostico/exportar.json")
+def exportar_diagnostico_json():
+    if not session.get("usuario"):
+        return redirect("/login")
+    if not usuario_gerencia_configuracao_sistema():
+        return jsonify({"erro": "nao_autorizado"}), 403
+    banco_status = obter_status_banco_online()
+    payload = {
+        "gerado_em": agora_iso(),
+        "banco_status": banco_status,
+        "banco_online_tabelas": listar_tabelas_banco_online(banco_status),
+        "backup_status": obter_status_backup_banco(),
+        "arquivos_status": obter_status_arquivos(),
+        "licenca": carregar_contexto_licenca_empresa_seguro(),
+        "google_drive_pronto": google_drive_pronto_para_backup(),
+        "csrf_ativo": csrf_protection_ativa(),
+        "session_cookie_secure": SESSION_COOKIE_SECURE_RAW in {"1", "true", "yes", "on"},
+        "modo_banco": modo_banco_preferido(),
+        "versao": obter_versao_sistema(),
+        "checklist": montar_checklist_producao(),
+        "ultima_validacao": session.get("ultima_validacao_diagnostico") or "",
+    }
+    return jsonify(json.loads(json.dumps(payload, ensure_ascii=False, default=str)))
+
+
+@app.route("/diagnostico/backup-suporte", methods=["POST"])
+def gerar_backup_suporte():
+    if not session.get("usuario"):
+        return redirect("/login")
+    if not usuario_gerencia_configuracao_sistema():
+        definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem gerar backup de suporte.")
+        return redirect("/configuracoes")
+    sucesso, mensagem, destino = criar_backup_banco(force=True, tipo_backup="completo")
+    registrar_auditoria(
+        "gerou_backup_suporte",
+        "backup",
+        detalhes={"sucesso": bool(sucesso), "destino": destino or "", "mensagem": mensagem},
+    )
+    session["diagnostico_feedback"] = {
+        "tipo": "sucesso" if sucesso else "erro",
+        "mensagem": mensagem or ("Backup de suporte gerado." if sucesso else "Nao foi possivel gerar backup de suporte."),
+    }
     return redirect("/diagnostico")
 
 
@@ -14995,6 +15235,13 @@ def configuracoes_site():
             "Somente administradores ou desenvolvedores com senha regularizada podem alterar a identidade visual do sistema.",
         )
         return redirect("/configuracoes")
+    bloqueio = bloquear_recurso_plano(
+        "whitelabel",
+        "White-label e identidade visual personalizada exigem plano Pro ou Business.",
+        destino="/configuracoes",
+    )
+    if bloqueio:
+        return bloqueio
 
     if request.method == "POST":
         try:
@@ -15184,6 +15431,13 @@ def salvar_configuracao_backup():
     )
 
     if destino_externo_ativo:
+        bloqueio = bloquear_recurso_plano(
+            "backup_online",
+            "Backup online exige plano Pro ou Business.",
+            destino="/configuracoes",
+        )
+        if bloqueio:
+            return bloqueio
         if destino_externo_tipo == "google_drive":
             if not destino_externo_drive_folder_id:
                 definir_feedback_configuracoes(
