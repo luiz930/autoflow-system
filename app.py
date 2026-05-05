@@ -3758,13 +3758,38 @@ def obter_versao_sistema():
 
 @app.context_processor
 def inject_global_template_context():
-    produto = carregar_contexto_produto()
+    empresa_id_cache = empresa_atual_id() if session.get("usuario") else 0
+    agora_cache_ts = time.time()
+    produto = None
+    if (
+        TEMPLATE_PRODUTO_CACHE.get("resultado") is not None
+        and TEMPLATE_PRODUTO_CACHE.get("empresa_id") == empresa_id_cache
+        and agora_cache_ts - float(TEMPLATE_PRODUTO_CACHE.get("testado_em") or 0.0) < TEMPLATE_PRODUTO_CACHE_TTL
+    ):
+        produto = deepcopy(TEMPLATE_PRODUTO_CACHE["resultado"])
+    if produto is None:
+        produto = carregar_contexto_produto()
+        TEMPLATE_PRODUTO_CACHE["testado_em"] = agora_cache_ts
+        TEMPLATE_PRODUTO_CACHE["empresa_id"] = empresa_id_cache
+        TEMPLATE_PRODUTO_CACHE["resultado"] = deepcopy(produto)
     produto["brand_primary_rgb"] = cor_hex_para_rgb_css(produto.get("brand_primary_color"), "#facc15")
     produto["brand_secondary_rgb"] = cor_hex_para_rgb_css(produto.get("brand_secondary_color"), "#111827")
     produto["brand_background_rgb"] = cor_hex_para_rgb_css(produto.get("brand_background_color"), "#0b0b0b")
     produto["brand_surface_rgb"] = cor_hex_para_rgb_css(produto.get("brand_surface_color"), "#111827")
     produto["brand_text_rgb"] = cor_hex_para_rgb_css(produto.get("brand_text_color"), "#f9fafb")
-    licenca_atual = carregar_contexto_licenca_empresa_seguro() if session.get("usuario") else {}
+    licenca_atual = {}
+    if session.get("usuario"):
+        if (
+            TEMPLATE_LICENCA_CACHE.get("resultado") is not None
+            and TEMPLATE_LICENCA_CACHE.get("empresa_id") == empresa_id_cache
+            and agora_cache_ts - float(TEMPLATE_LICENCA_CACHE.get("testado_em") or 0.0) < TEMPLATE_LICENCA_CACHE_TTL
+        ):
+            licenca_atual = deepcopy(TEMPLATE_LICENCA_CACHE["resultado"])
+        else:
+            licenca_atual = carregar_contexto_licenca_empresa_seguro()
+            TEMPLATE_LICENCA_CACHE["testado_em"] = agora_cache_ts
+            TEMPLATE_LICENCA_CACHE["empresa_id"] = empresa_id_cache
+            TEMPLATE_LICENCA_CACHE["resultado"] = deepcopy(licenca_atual)
     return {
         "app_version": obter_versao_sistema(),
         "csrf_token": lambda: issue_csrf_token(session),
@@ -3892,13 +3917,25 @@ BANCO_ONLINE_STATUS_CACHE = {
     "testado_em": 0.0,
     "resultado": {},
 }
-BANCO_ONLINE_STATUS_CACHE_TTL = 30
+BANCO_ONLINE_STATUS_CACHE_TTL = 90
 BANCO_ONLINE_TABELAS_CACHE = {
     "testado_em": 0.0,
     "dsn": "",
     "resultado": None,
 }
-BANCO_ONLINE_TABELAS_CACHE_TTL = 45
+BANCO_ONLINE_TABELAS_CACHE_TTL = 180
+TEMPLATE_PRODUTO_CACHE = {
+    "testado_em": 0.0,
+    "empresa_id": 0,
+    "resultado": None,
+}
+TEMPLATE_PRODUTO_CACHE_TTL = 60
+TEMPLATE_LICENCA_CACHE = {
+    "testado_em": 0.0,
+    "empresa_id": 0,
+    "resultado": None,
+}
+TEMPLATE_LICENCA_CACHE_TTL = 45
 BACKUP_VALIDACAO_CACHE = {
     "testado_em": 0.0,
     "chave": "",
@@ -3907,6 +3944,10 @@ BACKUP_VALIDACAO_CACHE = {
 SCHEMA_BANCO_ONLINE_GARANTIDO = False
 SCHEMA_SQLITE_LOCAL_GARANTIDO = False
 BANCO_ONLINE_BLOQUEADO_ATE_TS = 0.0
+
+
+class BancoOnlineObrigatorioErro(RuntimeError):
+    pass
 
 
 def limpar_caches_interface():
@@ -3954,6 +3995,12 @@ def limpar_caches_interface():
     BACKUP_VALIDACAO_CACHE["testado_em"] = 0.0
     BACKUP_VALIDACAO_CACHE["chave"] = ""
     BACKUP_VALIDACAO_CACHE["resultado"] = None
+    TEMPLATE_PRODUTO_CACHE["testado_em"] = 0.0
+    TEMPLATE_PRODUTO_CACHE["empresa_id"] = 0
+    TEMPLATE_PRODUTO_CACHE["resultado"] = None
+    TEMPLATE_LICENCA_CACHE["testado_em"] = 0.0
+    TEMPLATE_LICENCA_CACHE["empresa_id"] = 0
+    TEMPLATE_LICENCA_CACHE["resultado"] = None
 
 
 def limpar_cache_banco_online():
@@ -4110,7 +4157,7 @@ def url_postgres_ajustada():
 
     if "connect_timeout=" not in url:
         separador = "&" if "?" in url else "?"
-        url = f"{url}{separador}connect_timeout=10"
+        url = f"{url}{separador}connect_timeout=5"
 
     return url
 
@@ -4670,7 +4717,7 @@ def conectar():
         dsn = url_postgres_ajustada()
         if not dsn:
             if banco_online_estritamente_obrigatorio():
-                raise RuntimeError(
+                raise BancoOnlineObrigatorioErro(
                     "Banco online obrigatorio neste ambiente, mas a connection string nao foi carregada."
                 )
             garantir_schema_sqlite_local_minima()
@@ -4712,7 +4759,7 @@ def conectar():
                 intervalo_segundos=120 if erro_limite_conexoes_banco_online(e) else 60,
             )
             if banco_online_estritamente_obrigatorio():
-                raise RuntimeError(
+                raise BancoOnlineObrigatorioErro(
                     "Banco online obrigatorio neste ambiente e a conexao falhou: "
                     f"{BANCO_ONLINE_STATUS_CACHE['resultado']['mensagem']}"
                 ) from e
@@ -6455,7 +6502,7 @@ def init_db():
         status_boot = diagnosticar_banco_online(force=True)
         if not status_boot.get("conectado"):
             if banco_online_estritamente_obrigatorio():
-                raise RuntimeError(
+                raise BancoOnlineObrigatorioErro(
                     "Banco online obrigatorio no boot, mas a conexao nao foi estabelecida. "
                     f"Detalhe: {status_boot.get('mensagem') or 'sem detalhes'}"
                 )
@@ -13210,6 +13257,41 @@ def healthz():
 def aplicar_headers_resposta(response):
     return append_security_headers(response)
 
+
+@app.errorhandler(BancoOnlineObrigatorioErro)
+def tratar_banco_online_obrigatorio(erro):
+    mensagem = xml_escape(str(erro or "Banco online indisponivel."))
+    if (request.endpoint or "").startswith("api_"):
+        return jsonify({"erro": "banco_online_indisponivel", "mensagem": mensagem}), 503
+    html = f"""
+    <!doctype html>
+    <html lang="pt-br">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Banco indisponivel</title>
+        <style>
+            body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b0f19; color: #f9fafb; font-family: Arial, sans-serif; }}
+            main {{ width: min(92vw, 680px); border: 1px solid #334155; border-radius: 8px; padding: 28px; background: #111827; }}
+            h1 {{ margin: 0 0 12px; font-size: 1.6rem; }}
+            p {{ color: #cbd5e1; line-height: 1.5; }}
+            a {{ color: #facc15; font-weight: 700; }}
+        </style>
+    </head>
+    <body>
+        <main>
+            <h1>Banco online indisponivel</h1>
+            <p>O sistema nao conseguiu conectar no banco configurado. A pagina foi interrompida para evitar dados incompletos.</p>
+            <p>{mensagem}</p>
+            <p>Confira a conexao do Supabase, o limite de conexoes e a variavel DATABASE_URL. Depois recarregue a pagina.</p>
+            <p><a href="/configuracoes">Abrir configuracoes</a></p>
+        </main>
+    </body>
+    </html>
+    """
+    return html, 503
+
+
 @app.before_request
 def validar_csrf_basico():
     if request.endpoint == "static":
@@ -14775,6 +14857,7 @@ def salvar_empresa_admin():
             )
         conn.commit()
         conn.close()
+        limpar_caches_interface()
         session["empresas_feedback"] = {"tipo": "sucesso", "mensagem": "Empresa e licenca salvas com sucesso."}
     except Exception as erro:
         session["empresas_feedback"] = {"tipo": "erro", "mensagem": f"Nao foi possivel salvar a empresa: {erro}"}
@@ -14802,6 +14885,7 @@ def salvar_licenca_assinada_empresa(empresa_id, dados_licenca, renovar=False):
     salvar_licenca_domain(c, empresa_id, payload, agora_atual)
     conn.commit()
     conn.close()
+    limpar_caches_interface()
     return assinatura
 
 
