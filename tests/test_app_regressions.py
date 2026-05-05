@@ -319,6 +319,46 @@ class AppRegressionTests(unittest.TestCase):
         self.assertIn("Orcamento", corpo)
         self.assertIn("Nota fiscal", corpo)
 
+    def test_carregar_contexto_relatorios_faz_fallback_em_erro_de_leitura(self):
+        with app_module.app.test_request_context("/relatorios?periodo=mes", method="GET"):
+            session["empresa_id"] = 1
+            with patch.object(app_module, "conectar_somente_leitura", side_effect=RuntimeError("falha banco")), \
+                 patch.object(app_module, "banco_online_estritamente_obrigatorio", return_value=False), \
+                 patch.object(app_module, "garantir_schema_sqlite_local_minima", side_effect=RuntimeError("falha local")), \
+                 patch.object(app_module, "agora", return_value=app_module.datetime(2026, 5, 4, 10, 0)):
+                contexto = app_module.carregar_contexto_relatorios("mes")
+
+        self.assertEqual(contexto["quantidade_periodo"], 0)
+        self.assertEqual(contexto["resumo_comercial"]["novos_total"], 0)
+        self.assertEqual(contexto["ranking_faturamento"], [])
+
+    def test_carregar_contexto_auditoria_faz_fallback_em_erro_de_leitura(self):
+        with app_module.app.test_request_context("/auditoria?periodo=7dias", method="GET"):
+            session["usuario"] = "admin"
+            with patch.object(app_module, "conectar_somente_leitura", side_effect=RuntimeError("falha banco")), \
+                 patch.object(app_module, "banco_online_estritamente_obrigatorio", return_value=False), \
+                 patch.object(app_module, "garantir_schema_sqlite_local_minima", side_effect=RuntimeError("falha local")):
+                contexto = app_module.carregar_contexto_auditoria({"periodo": "7dias"})
+
+        self.assertEqual(contexto["registros"], [])
+        self.assertEqual(contexto["usuarios"], [])
+        self.assertEqual(contexto["resumo"]["total_eventos"], 0)
+
+    def test_salvar_configuracao_banco_retorna_feedback_em_erro_inesperado(self):
+        with app_module.app.test_request_context("/configuracoes/banco", method="POST", data={}):
+            session["usuario"] = "admin"
+            with patch.object(app_module, "sincronizar_sessao_usuario"), \
+                 patch.object(app_module, "usuario_gerencia_banco_online", return_value=True), \
+                 patch.object(app_module, "salvar_configuracao_banco_form", side_effect=RuntimeError("falha inesperada")):
+                response = app_module.salvar_configuracao_banco()
+
+            feedback = session.get("configuracoes_feedback") or {}
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/configuracoes", response.location)
+        self.assertEqual(feedback.get("tipo"), "erro")
+        self.assertIn("Nao foi possivel salvar a configuracao do banco online", feedback.get("mensagem", ""))
+
     def test_salvar_configuracao_backup_form_isola_por_empresa(self):
         conn = self._criar_banco_admin_memoria()
         wrapper = PersistentCompatConnection(conn)

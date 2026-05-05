@@ -2901,55 +2901,77 @@ def carregar_contexto_auditoria(args):
     acao = normalizar_texto_campo(args.get("acao"))
     busca = normalizar_texto_campo(args.get("busca"))
     inicio_periodo = filtrar_inicio_periodo_auditoria(periodo)
+    usuario_cache = str(session.get("usuario") or "")
+    chave_cache = f"{usuario_cache}|{periodo}|{usuario}|{placa}|{acao}|{busca}"
+    contexto_cache = obter_cache_consulta(
+        AUDITORIA_CONTEXT_CACHE,
+        chave_cache,
+        AUDITORIA_CONTEXT_CACHE_TTL,
+    )
+    if contexto_cache is not None:
+        return contexto_cache
 
-    conn = conectar()
-    c = conn.cursor()
-    filtros_sql = []
-    params = []
+    def carregar_auditoria_raw(conn):
+        c = conn.cursor()
+        filtros_sql = []
+        params = []
 
-    if usuario:
-        filtros_sql.append("usuario = ?")
-        params.append(usuario)
-    if placa:
-        filtros_sql.append("placa LIKE ?")
-        params.append(f"%{placa}%")
-    if acao:
-        filtros_sql.append("acao = ?")
-        params.append(acao)
-    if inicio_periodo:
-        filtros_sql.append("criado_em >= ?")
-        params.append(inicio_periodo.isoformat(timespec='seconds'))
-    if busca:
-        filtros_sql.append("(detalhes_json LIKE ? OR usuario_nome LIKE ? OR entidade LIKE ?)")
-        termo = f"%{busca}%"
-        params.extend([termo, termo, termo])
+        if usuario:
+            filtros_sql.append("usuario = ?")
+            params.append(usuario)
+        if placa:
+            filtros_sql.append("placa LIKE ?")
+            params.append(f"%{placa}%")
+        if acao:
+            filtros_sql.append("acao = ?")
+            params.append(acao)
+        if inicio_periodo:
+            filtros_sql.append("criado_em >= ?")
+            params.append(inicio_periodo.isoformat(timespec='seconds'))
+        if busca:
+            filtros_sql.append("(detalhes_json LIKE ? OR usuario_nome LIKE ? OR entidade LIKE ?)")
+            termo = f"%{busca}%"
+            params.extend([termo, termo, termo])
 
-    where = f"WHERE {' AND '.join(filtros_sql)}" if filtros_sql else ""
-    c.execute(f"""
-        SELECT *
-        FROM auditoria
-        {where}
-        ORDER BY criado_em DESC, id DESC
-        LIMIT 250
-    """, params)
-    registros = [dict(item) for item in c.fetchall()]
+        where = f"WHERE {' AND '.join(filtros_sql)}" if filtros_sql else ""
+        c.execute(f"""
+            SELECT *
+            FROM auditoria
+            {where}
+            ORDER BY criado_em DESC, id DESC
+            LIMIT 250
+        """, params)
+        registros = [dict(item) for item in c.fetchall()]
 
-    c.execute("""
-        SELECT DISTINCT usuario
-        FROM auditoria
-        WHERE COALESCE(NULLIF(usuario, ''), '') <> ''
-        ORDER BY usuario
-    """)
-    usuarios = [row["usuario"] for row in c.fetchall()]
+        c.execute("""
+            SELECT DISTINCT usuario
+            FROM auditoria
+            WHERE COALESCE(NULLIF(usuario, ''), '') <> ''
+            ORDER BY usuario
+        """)
+        usuarios = [row["usuario"] for row in c.fetchall()]
 
-    c.execute("""
-        SELECT DISTINCT acao
-        FROM auditoria
-        WHERE COALESCE(NULLIF(acao, ''), '') <> ''
-        ORDER BY acao
-    """)
-    acoes = [row["acao"] for row in c.fetchall()]
-    conn.close()
+        c.execute("""
+            SELECT DISTINCT acao
+            FROM auditoria
+            WHERE COALESCE(NULLIF(acao, ''), '') <> ''
+            ORDER BY acao
+        """)
+        acoes = [row["acao"] for row in c.fetchall()]
+        return {
+            "registros": registros,
+            "usuarios": usuarios,
+            "acoes": acoes,
+        }
+
+    contexto_lido = executar_leitura_resiliente(
+        carregar_auditoria_raw,
+        descricao="AUDITORIA",
+        padrao={"registros": [], "usuarios": [], "acoes": []},
+    ) or {"registros": [], "usuarios": [], "acoes": []}
+    registros = contexto_lido.get("registros", []) or []
+    usuarios = contexto_lido.get("usuarios", []) or []
+    acoes = contexto_lido.get("acoes", []) or []
 
     usuarios_unicos = set()
     placas_unicas = set()
@@ -2982,7 +3004,7 @@ def carregar_contexto_auditoria(args):
         "ultimo_evento_em_fmt": registros[0]["criado_em_fmt"] if registros else "Nenhum evento",
     }
 
-    return {
+    contexto = {
         "registros": registros,
         "usuarios": usuarios,
         "acoes": [
@@ -2999,6 +3021,8 @@ def carregar_contexto_auditoria(args):
         "periodos": PERIODOS_AUDITORIA,
         "resumo": resumo,
     }
+    salvar_cache_consulta(AUDITORIA_CONTEXT_CACHE, chave_cache, contexto)
+    return contexto
 
 def loop_worker_backup_banco():
     primeira_execucao = True
@@ -3772,6 +3796,18 @@ PAINEL_CONTEXT_CACHE = {
     "resultado": None,
 }
 PAINEL_CONTEXT_CACHE_TTL = 12
+RELATORIOS_CONTEXT_CACHE = {
+    "testado_em": 0.0,
+    "chave": "",
+    "resultado": None,
+}
+RELATORIOS_CONTEXT_CACHE_TTL = 20
+AUDITORIA_CONTEXT_CACHE = {
+    "testado_em": 0.0,
+    "chave": "",
+    "resultado": None,
+}
+AUDITORIA_CONTEXT_CACHE_TTL = 20
 PRODUTOS_PNEU_CACHE = {
     "testado_em": 0.0,
     "resultado": None,
@@ -3842,6 +3878,12 @@ def limpar_caches_interface():
     PAINEL_CONTEXT_CACHE["testado_em"] = 0.0
     PAINEL_CONTEXT_CACHE["chave"] = ""
     PAINEL_CONTEXT_CACHE["resultado"] = None
+    RELATORIOS_CONTEXT_CACHE["testado_em"] = 0.0
+    RELATORIOS_CONTEXT_CACHE["chave"] = ""
+    RELATORIOS_CONTEXT_CACHE["resultado"] = None
+    AUDITORIA_CONTEXT_CACHE["testado_em"] = 0.0
+    AUDITORIA_CONTEXT_CACHE["chave"] = ""
+    AUDITORIA_CONTEXT_CACHE["resultado"] = None
     PRODUTOS_PNEU_CACHE["testado_em"] = 0.0
     PRODUTOS_PNEU_CACHE["resultado"] = None
     BACKUP_VALIDACAO_CACHE["testado_em"] = 0.0
@@ -7432,34 +7474,56 @@ def montar_csv_resposta(nome_arquivo, linhas):
 def carregar_contexto_relatorios(periodo_atual=None):
     periodo_atual = normalizar_periodo_financeiro(periodo_atual)
     empresa_id = empresa_atual_id()
+    usuario_cache = str(session.get("usuario") or "")
+    chave_cache = f"{usuario_cache}|{empresa_id}|{periodo_atual}"
+    contexto_cache = obter_cache_consulta(
+        RELATORIOS_CONTEXT_CACHE,
+        chave_cache,
+        RELATORIOS_CONTEXT_CACHE_TTL,
+    )
+    if contexto_cache is not None:
+        return contexto_cache
     agora_atual = agora()
     hoje = agora_atual.date()
     ano_atual = hoje.year
     mes_atual = hoje.month
 
-    conn = conectar()
-    c = conn.cursor()
-    c.execute(
-        """
-        SELECT
-            servicos.*,
-            tipos_servico.nome AS tipo_nome,
-            veiculos.placa,
-            veiculos.modelo,
-            clientes.nome AS cliente_nome
-        FROM servicos
-        LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
-        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id AND veiculos.empresa_id=?
-        LEFT JOIN clientes ON veiculos.cliente_id = clientes.id AND clientes.empresa_id=?
-        WHERE servicos.empresa_id=?
-        ORDER BY servicos.id DESC
-        """,
-        (empresa_id, empresa_id, empresa_id),
-    )
-    servicos_raw = [dict(row) for row in c.fetchall()]
-    enriquecer_perfil_cliente_atendimento(servicos_raw)
-    orcamentos_raw, notas_raw = consultar_documentos_relatorios_cursor(c, empresa_id)
-    conn.close()
+    def carregar_relatorios_raw(conn):
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT
+                servicos.*,
+                tipos_servico.nome AS tipo_nome,
+                veiculos.placa,
+                veiculos.modelo,
+                clientes.nome AS cliente_nome
+            FROM servicos
+            LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
+            LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id AND veiculos.empresa_id=?
+            LEFT JOIN clientes ON veiculos.cliente_id = clientes.id AND clientes.empresa_id=?
+            WHERE servicos.empresa_id=?
+            ORDER BY servicos.id DESC
+            """,
+            (empresa_id, empresa_id, empresa_id),
+        )
+        servicos = [dict(row) for row in c.fetchall()]
+        enriquecer_perfil_cliente_atendimento(servicos)
+        orcamentos, notas = consultar_documentos_relatorios_cursor(c, empresa_id)
+        return {
+            "servicos_raw": servicos,
+            "orcamentos_raw": orcamentos,
+            "notas_raw": notas,
+        }
+
+    contexto_lido = executar_leitura_resiliente(
+        carregar_relatorios_raw,
+        descricao="RELATORIOS",
+        padrao={"servicos_raw": [], "orcamentos_raw": [], "notas_raw": []},
+    ) or {"servicos_raw": [], "orcamentos_raw": [], "notas_raw": []}
+    servicos_raw = contexto_lido.get("servicos_raw", []) or []
+    orcamentos_raw = contexto_lido.get("orcamentos_raw", []) or []
+    notas_raw = contexto_lido.get("notas_raw", []) or []
 
     periodo_label = MAPA_PERIODOS_FINANCEIRO[periodo_atual]
     finalizados = []
@@ -7689,7 +7753,7 @@ def carregar_contexto_relatorios(periodo_atual=None):
         "mes": "Fechamentos acumulados no mes atual com visao completa da operacao.",
     }[periodo_atual]
 
-    return {
+    contexto = {
         "periodo_atual": periodo_atual,
         "periodo_label": periodo_label,
         "periodo_descricao": periodo_descricao,
@@ -7722,6 +7786,8 @@ def carregar_contexto_relatorios(periodo_atual=None):
         "orcamentos_periodo_raw": orcamentos_periodo,
         "notas_periodo_raw": notas_periodo,
     }
+    salvar_cache_consulta(RELATORIOS_CONTEXT_CACHE, chave_cache, contexto)
+    return contexto
 
 def obter_label_intervalo_sincronizacao(minutos):
     return MAPA_INTERVALOS_SINCRONIZACAO.get(minutos, f"{minutos} min")
@@ -10039,6 +10105,9 @@ def registrar_auditoria(acao, entidade, entidade_id=None, placa=None, detalhes=N
     ))
     conn.commit()
     conn.close()
+    AUDITORIA_CONTEXT_CACHE["testado_em"] = 0.0
+    AUDITORIA_CONTEXT_CACHE["chave"] = ""
+    AUDITORIA_CONTEXT_CACHE["resultado"] = None
 
 def obter_resample_lanczos():
     if not PILLOW_DISPONIVEL:
@@ -14523,6 +14592,12 @@ def salvar_configuracao_banco():
         status = salvar_configuracao_banco_form(request.form)
     except ValueError as e:
         definir_feedback_configuracoes("erro", str(e))
+        return redirect("/configuracoes")
+    except Exception as e:
+        definir_feedback_configuracoes(
+            "erro",
+            f"Nao foi possivel salvar a configuracao do banco online: {e}",
+        )
         return redirect("/configuracoes")
 
     registrar_auditoria(
