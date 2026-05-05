@@ -44,6 +44,26 @@ def consultar_servico_operacional(cursor, empresa_id, servico_id):
     return row_to_dict(cursor.fetchone(), columns=[item[0] for item in cursor.description or []])
 
 
+def atualizar_status_servico(cursor, empresa_id, servico_id, status, entrega, finalizado_por_usuario=None, finalizado_por_nome=None):
+    empresa_id = normalize_empresa_id(empresa_id)
+    cursor.execute(
+        """
+        UPDATE servicos
+        SET status=?, entrega=?, finalizado_por_usuario=?, finalizado_por_nome=?
+        WHERE empresa_id=? AND id=?
+        """,
+        (
+            str(status or "").strip().upper(),
+            entrega,
+            finalizado_por_usuario,
+            finalizado_por_nome,
+            empresa_id,
+            int(servico_id),
+        ),
+    )
+    return getattr(cursor, "rowcount", 0)
+
+
 def consultar_servicos_em_andamento(cursor, empresa_id):
     empresa_id = normalize_empresa_id(empresa_id)
     cursor.execute(

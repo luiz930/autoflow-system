@@ -1288,6 +1288,7 @@ input[type="file"] {
 <!-- BUSCA -->
 <div class="search-panel">
 <form method="POST" class="busca-form">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 <input name="placa" placeholder="{{ home_search_placeholder }}" required>
 <button>{{ home_search_button_text }}</button>
 </form>
@@ -1421,6 +1422,7 @@ input[type="file"] {
 <button onclick="abrirServico()">+ Novo Atendimento</button>
 
 <form id="formServico" class="hidden" action="/servico" method="POST" enctype="multipart/form-data">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 
 <p>📸 Fotos de entrada</p>
 <input type="file" name="foto_entrada" multiple accept="image/*" required>
@@ -1491,11 +1493,13 @@ input[type="file"] {
     </a>
     {% if s.status == "FINALIZADO" %}
     <form action="/historico/servico/{{ s.id }}/reabrir" method="POST" onsubmit="return confirm('Voltar este atendimento para EM ANDAMENTO?');">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="redirect_to" value="/?placa={{ placa }}">
         <button type="submit">Reabrir</button>
     </form>
     {% endif %}
     <form action="/historico/servico/{{ s.id }}/excluir" method="POST" onsubmit="return confirm('Excluir este atendimento e tudo o que foi salvo nele?');">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="redirect_to" value="/?placa={{ placa }}">
         <button type="submit" class="button-danger">Excluir</button>
     </form>

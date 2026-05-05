@@ -42,6 +42,7 @@ if ("serviceWorker" in navigator) {
 
     <div class="page-card">
         <form method="POST" class="stack-form">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <input name="nome" value="{{servico[1]}}" required>
             <input name="valor" value="{{servico[2]}}" required>
             <button>Salvar Alteracoes</button>

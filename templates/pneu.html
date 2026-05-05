@@ -14,6 +14,7 @@
 
 <div class="page-card">
     <form method="POST" class="stack-form">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <input name="nome" placeholder="Ex: Selante, Pretinho">
         <button>Salvar</button>
     </form>

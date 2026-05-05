@@ -41,6 +41,25 @@ class AppRegressionTests(unittest.TestCase):
     def tearDown(self):
         app_module.app.config["TESTING"] = self.testing_anterior
 
+    def test_adicionar_coluna_se_preciso_nao_desfaz_colunas_anteriores_no_sqlite(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        compat = app_module.CursorCompat(conn.cursor(), "sqlite")
+        compat.execute("CREATE TABLE usuarios (id INTEGER PRIMARY KEY AUTOINCREMENT)")
+        compat.execute("CREATE TABLE clientes (id INTEGER PRIMARY KEY AUTOINCREMENT, empresa_id INTEGER)")
+
+        app_module.adicionar_coluna_se_preciso(compat, "usuarios", "empresa_id INTEGER DEFAULT 1")
+        app_module.adicionar_coluna_se_preciso(compat, "clientes", "empresa_id INTEGER DEFAULT 1")
+
+        compat.execute("PRAGMA table_info(usuarios)")
+        colunas_usuarios = {row["name"] for row in compat.fetchall()}
+        compat.execute("PRAGMA table_info(clientes)")
+        colunas_clientes = {row["name"] for row in compat.fetchall()}
+        conn.close()
+
+        self.assertIn("empresa_id", colunas_usuarios)
+        self.assertIn("empresa_id", colunas_clientes)
+
     def _criar_banco_admin_memoria(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row

@@ -63,6 +63,7 @@ label {
         <h2 class="section-title">Mapeamento das colunas</h2>
 
         <form method="POST" action="/confirmar_importacao" class="stack-form stack-form--wide">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <div class="mapping-grid">
                 <div class="mapping-item">
                     <label for="placa">Placa</label>

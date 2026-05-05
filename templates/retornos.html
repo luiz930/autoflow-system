@@ -134,6 +134,7 @@
             </div>
 
             <form method="POST" action="/retornos/atualizar" class="top-spacing">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="placa" value="{{ item.placa }}">
                 <input type="hidden" name="retorno_url" value="{{ retorno_url_atual }}">
 

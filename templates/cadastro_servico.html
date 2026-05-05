@@ -16,6 +16,7 @@
     <h2 class="section-title">Novo serviço</h2>
 
     <form method="POST" class="stack-form">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <input name="nome" placeholder="Nome do serviço">
         <input name="valor" placeholder="Valor">
         <button>Salvar</button>
@@ -36,6 +37,7 @@
                     <button type="button">Editar</button>
                 </a>
                 <form method="POST" action="/excluir_servico/{{s[0]}}" onsubmit="return confirm('Excluir este servico?');">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="button-danger">Excluir</button>
                 </form>
             </div>

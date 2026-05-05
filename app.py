@@ -73,6 +73,7 @@ from domains.servicos import (
     consultar_ultima_lavagem_local_por_placa as consultar_ultima_lavagem_local_por_placa_domain,
     consultar_ultimas_lavagens_locais as consultar_ultimas_lavagens_locais_domain,
     consultar_veiculo_por_placa as consultar_veiculo_por_placa_domain,
+    atualizar_status_servico as atualizar_status_servico_domain,
 )
 from domains.sync_clientes import (
     alternar_sincronizacao_cliente as alternar_sincronizacao_cliente_domain,
@@ -3129,6 +3130,48 @@ def arquivo_planilha_permitido(filename):
 
 def adicionar_coluna_se_preciso(cursor, tabela, definicao_coluna):
     backend = getattr(cursor, "backend", None)
+    nome_coluna = str(definicao_coluna or "").strip().split()[0].strip('"')
+    if not nome_coluna:
+        return
+
+    try:
+        if backend == "postgres":
+            cursor.execute(
+                """
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = ?
+                LIMIT 1
+                """,
+                (tabela,),
+            )
+            if not cursor.fetchone():
+                return
+            cursor.execute(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = ?
+                  AND column_name = ?
+                LIMIT 1
+                """,
+                (tabela, nome_coluna),
+            )
+            if cursor.fetchone():
+                return
+        else:
+            cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1", (tabela,))
+            if not cursor.fetchone():
+                return
+            cursor.execute(f"PRAGMA table_info({tabela})")
+            colunas = {str(row["name"] if hasattr(row, "keys") else row[1]) for row in cursor.fetchall()}
+            if nome_coluna in colunas:
+                return
+    except Exception:
+        pass
+
     sql = f"ALTER TABLE {tabela} ADD COLUMN {definicao_coluna}"
     if backend == "postgres":
         sql = f"ALTER TABLE {tabela} ADD COLUMN IF NOT EXISTS {definicao_coluna}"
@@ -3136,6 +3179,8 @@ def adicionar_coluna_se_preciso(cursor, tabela, definicao_coluna):
     try:
         cursor.execute(sql)
     except Exception:
+        if backend != "postgres":
+            return
         conn = getattr(cursor, "_cursor", None)
         conn = getattr(conn, "connection", None) or getattr(cursor, "connection", None)
         if conn and hasattr(conn, "rollback"):
@@ -14009,6 +14054,74 @@ def excluir_servico(id):
     return redirect("/cadastrar_servico")
 
 
+@app.route("/servico/<int:id>/status", methods=["POST"])
+def atualizar_status_servico_legado(id):
+    if not session.get("usuario"):
+        return redirect("/login")
+
+    redirect_to = normalizar_texto_campo(request.form.get("redirect_to")) or "/historico"
+    status_destino = normalizar_texto_campo(request.form.get("status")).upper() or "EM ANDAMENTO"
+    if status_destino not in {"EM ANDAMENTO", "FINALIZADO"}:
+        definir_feedback_por_destino(redirect_to, "erro", "Status de atendimento invalido.")
+        return redirect(redirect_to)
+
+    usuario_info = resumo_usuario_logado()
+    conn = conectar()
+    c = conn.cursor()
+    servico = consultar_servico_operacional_domain(c, empresa_atual_id(), id)
+    if not servico:
+        conn.close()
+        definir_feedback_por_destino(redirect_to, "erro", "Atendimento nao encontrado.")
+        return redirect(redirect_to)
+
+    entrega_iso = servico.get("entrega")
+    finalizado_por_usuario = servico.get("finalizado_por_usuario")
+    finalizado_por_nome = servico.get("finalizado_por_nome")
+    if status_destino == "FINALIZADO":
+        entrega_iso = entrega_iso or agora_iso()
+        finalizado_por_usuario = finalizado_por_usuario or normalizar_texto_campo(usuario_info.get("usuario"))
+        finalizado_por_nome = finalizado_por_nome or normalizar_texto_campo(usuario_info.get("nome"))
+    else:
+        entrega_iso = None
+        finalizado_por_usuario = None
+        finalizado_por_nome = None
+
+    servico_fluxo = aplicar_fluxo_etapa_atendimento_em_edicao(
+        c,
+        servico,
+        status_destino,
+        servico.get("etapa_atual") or "LAVAGEM",
+    )
+    fotos_saida = salvar_fotos_servico(c, id, request.files.getlist("fotos_depois"), "saida")
+    atualizar_status_servico_domain(
+        c,
+        empresa_atual_id(),
+        id,
+        status_destino,
+        entrega_iso,
+        finalizado_por_usuario,
+        finalizado_por_nome,
+    )
+    if servico_fluxo and servico_fluxo.get("veiculo_id"):
+        recalcular_resumo_veiculo_por_servicos(c, servico_fluxo["veiculo_id"])
+    conn.commit()
+    conn.close()
+
+    registrar_auditoria(
+        "atualizou_status_atendimento",
+        "servico",
+        entidade_id=id,
+        placa=servico.get("placa"),
+        detalhes={"status": status_destino, "fotos_saida_adicionadas": fotos_saida},
+        usuario=usuario_info,
+    )
+    mensagem = f"Status da placa {servico.get('placa') or '-'} atualizado para {status_destino}."
+    if fotos_saida:
+        mensagem += f" {fotos_saida} foto(s) de saida adicionada(s)."
+    definir_feedback_por_destino(redirect_to, "sucesso", mensagem)
+    return redirect(redirect_to)
+
+
 @app.route("/editar_servico/<int:id>", methods=["GET", "POST"])
 def editar_servico(id):
     if not session.get("usuario"):
@@ -16826,6 +16939,19 @@ def base_dados_upload():
         definir_feedback_base_dados("erro", f"Erro ao importar planilha: {e}")
 
     return redirect("/base_dados")
+
+
+@app.route("/confirmar_importacao", methods=["POST"])
+def confirmar_importacao_legado():
+    if not session.get("usuario"):
+        return redirect("/login")
+
+    definir_feedback_base_dados(
+        "erro",
+        "Fluxo antigo de pre-visualizacao desativado. Envie a planilha novamente pela tela Base de Dados.",
+    )
+    return redirect("/base_dados")
+
 
 @app.route("/api/base_dados")
 def api_base_dados():

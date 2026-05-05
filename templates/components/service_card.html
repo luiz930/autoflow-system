@@ -40,6 +40,7 @@
     {% if mostrar_acoes_status %}
     <div class="service-actions-stack">
         <form action="/servico/{{ servico.id }}/status" method="POST" enctype="multipart/form-data" class="stack-form stack-form--wide">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="redirect_to" value="{{ request.full_path if request.query_string else request.path }}">
             <div class="field-grid">
                 <div>
@@ -68,16 +69,18 @@
 
     {% if mostrar_uploads %}
     <div class="service-upload-grid">
-        <form action="/servico/{{ servico.id }}/fotos" method="POST" enctype="multipart/form-data" class="stack-form stack-form--wide">
-            <input type="hidden" name="tipo" value="antes">
+        <form action="/historico/servico/{{ servico.id }}/fotos" method="POST" enctype="multipart/form-data" class="stack-form stack-form--wide">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="tipo_foto" value="entrada">
             <input type="hidden" name="redirect_to" value="{{ request.full_path if request.query_string else request.path }}">
             <label for="antes-{{ servico.id }}">Adicionar fotos de antes</label>
             <input id="antes-{{ servico.id }}" type="file" name="fotos" accept="image/*" capture="environment" multiple>
             <button type="submit">Enviar antes</button>
         </form>
 
-        <form action="/servico/{{ servico.id }}/fotos" method="POST" enctype="multipart/form-data" class="stack-form stack-form--wide">
-            <input type="hidden" name="tipo" value="depois">
+        <form action="/historico/servico/{{ servico.id }}/fotos" method="POST" enctype="multipart/form-data" class="stack-form stack-form--wide">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="tipo_foto" value="saida">
             <input type="hidden" name="redirect_to" value="{{ request.full_path if request.query_string else request.path }}">
             <label for="depois-{{ servico.id }}">Adicionar fotos de depois</label>
             <input id="depois-{{ servico.id }}" type="file" name="fotos" accept="image/*" capture="environment" multiple>

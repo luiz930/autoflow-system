@@ -46,6 +46,7 @@
     <p class="muted-text">Envie um arquivo CSV, TSV, XLS ou XLSX. O sistema tenta mapear automaticamente os campos placa, nome, telefone, modelo e cor.</p>
 
     <form action="/base_dados/upload" method="POST" enctype="multipart/form-data" class="stack-form stack-form--wide">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="field-grid">
             <input type="file" name="arquivo" accept=".csv,.tsv,.xls,.xlsx" required>
         </div>

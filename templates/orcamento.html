@@ -24,6 +24,7 @@
         <h2 class="section-title top-spacing">Dados do cliente e itens</h2>
 
         <form action="/gerar_orcamento" method="POST" class="stack-form stack-form--wide stack-form--spacious" id="orcamento-form">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <div class="field-grid field-grid--budget-search">
                 <div>
                     <label for="placa">Placa</label>

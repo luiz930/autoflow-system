@@ -22,6 +22,7 @@
     <h2 class="section-title">Novo item</h2>
 
     <form method="POST" class="stack-form stack-form--wide">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <input name="nome" placeholder="Ex: Aspiracao do interior concluida">
         <div class="actions-row actions-row--left">
             <button>Adicionar item</button>
@@ -45,10 +46,12 @@
 
             <div class="actions-row actions-row--left">
                 <form action="/itens/{{ item.id }}/alternar" method="POST">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <button type="submit">{% if item.ativo %}Pausar{% else %}Ativar{% endif %}</button>
                 </form>
 
                 <form action="/itens/{{ item.id }}/excluir" method="POST">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="button-danger">Excluir</button>
                 </form>
             </div>

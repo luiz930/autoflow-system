@@ -15,6 +15,9 @@ static/*.xls
 
 *.log
 .env
+google_drive_service_account.json
+*service_account*.json
+*credentials*.json
 .venv/
 venv/
 env/

@@ -71,6 +71,7 @@
 
     {% if itens %}
     <form method="POST" enctype="multipart/form-data" class="stack-form stack-form--wide" id="checklist-form">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="checklist-list">
             {% for item in itens %}
             <label class="checklist-item">

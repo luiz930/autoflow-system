@@ -12,6 +12,7 @@
 {% block content %}
 <section class="page-card">
     <form method="POST" class="inline-form">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div>
             <label for="placa">Buscar placa</label>
             <input id="placa" name="placa" value="{{ placa }}" placeholder="Digite a placa" required>
@@ -31,6 +32,7 @@
 <section class="page-card top-spacing">
     <h2 class="section-title">Novo cliente</h2>
     <form action="/cadastrar" method="POST" class="stack-form stack-form--wide">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="field-grid">
             <input name="placa" value="{{ placa }}" placeholder="Placa" required>
             <input name="nome" placeholder="Nome do cliente">
@@ -69,6 +71,7 @@
         <details class="top-spacing">
             <summary>Editar cadastro</summary>
             <form action="/editar_cliente" method="POST" class="stack-form stack-form--wide top-spacing">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="placa_original" value="{{ dados.placa }}">
                 <input type="hidden" name="redirect_to" value="/?placa={{ dados.placa }}">
                 <div class="field-grid">
@@ -86,6 +89,7 @@
     <article class="page-card">
         <h2 class="section-title">Novo servico</h2>
         <form action="/servico" method="POST" enctype="multipart/form-data" class="stack-form stack-form--wide">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="placa" value="{{ dados.placa }}">
             <input type="hidden" name="redirect_to" value="/?placa={{ dados.placa }}">
 

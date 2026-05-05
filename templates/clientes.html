@@ -173,12 +173,15 @@
 
             <div class="actions-row top-spacing">
                 <form action="/clientes/sincronizacao/{{ sync.id }}/executar" method="POST">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <button type="submit">Executar agora</button>
                 </form>
                 <form action="/clientes/sincronizacao/{{ sync.id }}/alternar" method="POST">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <button type="submit">{% if sync.ativo %}Pausar{% else %}Ativar{% endif %}</button>
                 </form>
                 <form action="/clientes/sincronizacao/{{ sync.id }}/excluir" method="POST">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="button-danger">Excluir</button>
                 </form>
             </div>

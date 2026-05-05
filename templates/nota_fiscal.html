@@ -46,6 +46,7 @@
     <h2 class="section-title top-spacing">Dados da empresa</h2>
 
     <form action="/nota_fiscal/empresa" method="POST" class="stack-form stack-form--wide">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="origem_orcamento_id" value="{{ orcamento_origem.id if orcamento_origem else '' }}">
 
         <div class="field-grid">
@@ -192,6 +193,7 @@
     {% endif %}
 
     <form action="/nota_fiscal/integracao" method="POST" class="stack-form stack-form--wide top-spacing">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="origem_orcamento_id" value="{{ orcamento_origem.id if orcamento_origem else '' }}">
         <input type="hidden" name="ultimo_status" value="{{ integracao.ultimo_status }}">
         <input type="hidden" name="ultima_mensagem" value="{{ integracao.ultima_mensagem }}">
@@ -338,6 +340,7 @@
     <p class="muted-text">Esse fluxo organiza os dados fiscais, gera o PDF de apoio e permite registrar manualmente o numero oficial da nota emitida no portal fiscal.</p>
 
     <form action="/nota_fiscal/gerar" method="POST" class="stack-form stack-form--wide top-spacing" id="nota-form">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="origem_orcamento_id" value="{{ prefill.origem_orcamento_id if prefill else '' }}">
 
         <div class="field-grid">
@@ -522,6 +525,7 @@
 
             {% if not item.numero_nota %}
             <form action="/nota_fiscal/{{ item.id }}/registrar" method="POST" class="stack-form stack-form--wide top-spacing">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <div class="field-grid">
                     <div>
                         <label>Numero oficial da nota</label>

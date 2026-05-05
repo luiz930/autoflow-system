@@ -8,7 +8,7 @@ STRICT_ONLINE_DATABASE=true
 SUPABASE_DATABASE_URL=
 FLASK_SECRET_KEY=
 SESSION_COOKIE_SECURE=1
-CSRF_PROTECTION=0
+CSRF_PROTECTION=1
 TELEMETRIA_ATIVA=1
 ```
 
@@ -43,4 +43,3 @@ gunicorn app:app --bind 0.0.0.0:5000
 - o projeto espera banco online quando `STRICT_ONLINE_DATABASE=true`
 - o JSON do Google Drive nao deve ir para o Git
 - as migrations de fundacao rodam no boot via `init_db()`
-
