@@ -3719,6 +3719,11 @@ NOTIFICACOES_CACHE = {
     "resultado": None,
 }
 NOTIFICACOES_CACHE_TTL = 60
+ANIVERSARIO_NOTIFICACOES_CACHE = {
+    "testado_em": 0.0,
+    "chave": "",
+}
+ANIVERSARIO_NOTIFICACOES_CACHE_TTL = 900
 STATUS_SYNC_CACHE = {
     "testado_em": 0.0,
     "usuario": "",
@@ -4826,7 +4831,8 @@ def garantir_schema_sqlite_local_minima(force=False):
                 empresa_id INTEGER DEFAULT 1,
                 nome TEXT NOT NULL,
                 telefone TEXT,
-                placa_principal TEXT
+                placa_principal TEXT,
+                data_nascimento TEXT
             )
             """)
             c.execute("""
@@ -4875,7 +4881,8 @@ def garantir_schema_sqlite_local_minima(force=False):
                 operacional_por_usuario TEXT,
                 operacional_por_nome TEXT,
                 finalizado_por_usuario TEXT,
-                finalizado_por_nome TEXT
+                finalizado_por_nome TEXT,
+                perfil_cliente_atendimento TEXT DEFAULT 'NOVO'
             )
             """)
             c.execute("""
@@ -4966,6 +4973,7 @@ def garantir_schema_sqlite_local_minima(force=False):
             """)
 
             adicionar_coluna_se_preciso(c, "clientes", "placa_principal TEXT")
+            adicionar_coluna_se_preciso(c, "clientes", "data_nascimento TEXT")
             adicionar_coluna_se_preciso(c, "veiculos", "status_atendimento TEXT DEFAULT 'SEM_ATENDIMENTO'")
             adicionar_coluna_se_preciso(c, "veiculos", "atendimento_ativo INTEGER DEFAULT 0")
             adicionar_coluna_se_preciso(c, "veiculos", "ultima_entrada TEXT")
@@ -4990,9 +4998,13 @@ def garantir_schema_sqlite_local_minima(force=False):
             adicionar_coluna_se_preciso(c, "servicos", "operacional_por_nome TEXT")
             adicionar_coluna_se_preciso(c, "servicos", "finalizado_por_usuario TEXT")
             adicionar_coluna_se_preciso(c, "servicos", "finalizado_por_nome TEXT")
+            adicionar_coluna_se_preciso(c, "servicos", "perfil_cliente_atendimento TEXT DEFAULT 'NOVO'")
             adicionar_coluna_se_preciso(c, "fotos", "arquivo_blob BLOB")
             adicionar_coluna_se_preciso(c, "fotos", "mime_type TEXT")
             adicionar_coluna_se_preciso(c, "fotos", "arquivo_nome TEXT")
+            adicionar_coluna_se_preciso(c, "notificacoes", "empresa_id INTEGER DEFAULT 1")
+            adicionar_coluna_se_preciso(c, "notificacoes", "categoria TEXT")
+            adicionar_coluna_se_preciso(c, "notificacoes", "referencia TEXT")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "versao_sistema TEXT")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_ativo INTEGER DEFAULT 1")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_api_url TEXT")
@@ -5045,6 +5057,7 @@ def garantir_schema_sqlite_local_minima(force=False):
             c.execute("UPDATE fotos SET empresa_id=1 WHERE empresa_id IS NULL")
             c.execute("UPDATE configuracao_empresa SET empresa_id=1 WHERE empresa_id IS NULL")
             c.execute("UPDATE sincronizacoes_clientes SET empresa_id=1 WHERE empresa_id IS NULL")
+            c.execute("UPDATE notificacoes SET empresa_id=1 WHERE empresa_id IS NULL")
             conn.commit()
             SCHEMA_SQLITE_LOCAL_GARANTIDO = True
             return True
@@ -5708,17 +5721,19 @@ def sincronizar_bancos_incremental(force=False):
         except Exception:
             pass
 
-def salvar_notificacao(mensagem, tipo="info"):
+def salvar_notificacao(mensagem, tipo="info", empresa_id=None, categoria=None, referencia=None):
     global NOTIFICACOES_CACHE
     global HUD_CACHE
+    conn = None
     try:
+        empresa_id = normalize_empresa_id(empresa_id or empresa_atual_id())
         conn = conectar()
         c = conn.cursor()
 
         c.execute("""
-            INSERT INTO notificacoes (mensagem, tipo, criada_em)
-            VALUES (?, ?, ?)
-        """, (mensagem, tipo, agora_iso()))
+            INSERT INTO notificacoes (empresa_id, mensagem, tipo, categoria, referencia, criada_em)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (empresa_id, mensagem, tipo, categoria, referencia, agora_iso()))
 
         conn.commit()
         NOTIFICACOES_CACHE["testado_em"] = 0.0
@@ -5733,6 +5748,91 @@ def salvar_notificacao(mensagem, tipo="info"):
         try:
             conn.close()
         except:
+            pass
+
+def garantir_notificacoes_aniversario(empresa_id=None, force=False):
+    empresa_id = normalize_empresa_id(empresa_id or empresa_atual_id())
+    hoje = agora().date()
+    chave_cache = f"{empresa_id}|{hoje.isoformat()}"
+    agora_ts = time.time()
+    if (
+        not force
+        and ANIVERSARIO_NOTIFICACOES_CACHE.get("chave") == chave_cache
+        and agora_ts - float(ANIVERSARIO_NOTIFICACOES_CACHE.get("testado_em") or 0.0) < ANIVERSARIO_NOTIFICACOES_CACHE_TTL
+    ):
+        return 0
+
+    conn = None
+    inseridas = 0
+    try:
+        conn = conectar()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT id, nome, telefone, data_nascimento
+            FROM clientes
+            WHERE empresa_id=?
+              AND data_nascimento IS NOT NULL
+              AND TRIM(data_nascimento) <> ''
+            """,
+            (empresa_id,),
+        )
+        clientes = [dict(row) for row in c.fetchall()]
+        for cliente in clientes:
+            data_nascimento = interpretar_data_nascimento(cliente.get("data_nascimento"))
+            if not data_nascimento:
+                continue
+
+            aniversario_ano = construir_data_aniversario_ano(data_nascimento, hoje.year)
+            dias_restantes = (aniversario_ano - hoje).days
+            if dias_restantes not in {0, 1}:
+                continue
+
+            categoria = "aniversario_hoje" if dias_restantes == 0 else "aniversario_amanha"
+            referencia = f"{categoria}:{cliente.get('id')}:{aniversario_ano.isoformat()}"
+            c.execute(
+                """
+                SELECT 1
+                FROM notificacoes
+                WHERE empresa_id=? AND categoria=? AND referencia=?
+                LIMIT 1
+                """,
+                (empresa_id, categoria, referencia),
+            )
+            if c.fetchone():
+                continue
+
+            mensagem = montar_mensagem_notificacao_aniversario(
+                cliente.get("nome"),
+                data_nascimento,
+                dias_antecedencia=dias_restantes,
+            )
+            c.execute(
+                """
+                INSERT INTO notificacoes (empresa_id, mensagem, tipo, categoria, referencia, criada_em)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (empresa_id, mensagem, "info", categoria, referencia, agora_iso()),
+            )
+            inseridas += 1
+
+        conn.commit()
+        ANIVERSARIO_NOTIFICACOES_CACHE["chave"] = chave_cache
+        ANIVERSARIO_NOTIFICACOES_CACHE["testado_em"] = agora_ts
+        if inseridas:
+            NOTIFICACOES_CACHE["testado_em"] = 0.0
+            NOTIFICACOES_CACHE["resultado"] = None
+            HUD_CACHE["testado_em"] = 0.0
+            HUD_CACHE["resultado"] = None
+        return inseridas
+    except Exception as e:
+        print("AVISO ANIVERSARIOS:", e)
+        return 0
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
             pass
 
 def atualizar_banco():
@@ -5805,6 +5905,7 @@ def atualizar_banco():
     adicionar_coluna_se_preciso(c, "usuarios", "foto_perfil_mime_type TEXT")
     adicionar_coluna_se_preciso(c, "usuarios", "foto_perfil_arquivo_nome TEXT")
     adicionar_coluna_se_preciso(c, "clientes", "placa_principal TEXT")
+    adicionar_coluna_se_preciso(c, "clientes", "data_nascimento TEXT")
     adicionar_coluna_se_preciso(c, "clientes", "empresa_id INTEGER DEFAULT 1")
     adicionar_coluna_se_preciso(c, "veiculos", "empresa_id INTEGER DEFAULT 1")
     adicionar_coluna_se_preciso(c, "veiculos", "status_atendimento TEXT DEFAULT 'SEM_ATENDIMENTO'")
@@ -5812,7 +5913,11 @@ def atualizar_banco():
     adicionar_coluna_se_preciso(c, "veiculos", "ultima_entrada TEXT")
     adicionar_coluna_se_preciso(c, "veiculos", "ultima_entrega TEXT")
     adicionar_coluna_se_preciso(c, "servicos", "empresa_id INTEGER DEFAULT 1")
+    adicionar_coluna_se_preciso(c, "servicos", "perfil_cliente_atendimento TEXT DEFAULT 'NOVO'")
     adicionar_coluna_se_preciso(c, "fotos", "empresa_id INTEGER DEFAULT 1")
+    adicionar_coluna_se_preciso(c, "notificacoes", "empresa_id INTEGER DEFAULT 1")
+    adicionar_coluna_se_preciso(c, "notificacoes", "categoria TEXT")
+    adicionar_coluna_se_preciso(c, "notificacoes", "referencia TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "empresa_id INTEGER DEFAULT 1")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "versao_sistema TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_ativo INTEGER DEFAULT 1")
@@ -5868,6 +5973,7 @@ def atualizar_banco():
     c.execute("UPDATE fotos SET empresa_id=1 WHERE empresa_id IS NULL")
     c.execute("UPDATE configuracao_empresa SET empresa_id=1 WHERE empresa_id IS NULL")
     c.execute("UPDATE sincronizacoes_clientes SET empresa_id=1 WHERE empresa_id IS NULL")
+    c.execute("UPDATE notificacoes SET empresa_id=1 WHERE empresa_id IS NULL")
 
     c.execute("""
         UPDATE usuarios
@@ -6258,8 +6364,11 @@ def criar_todas_tabelas():
     c.execute("""
     CREATE TABLE IF NOT EXISTS notificacoes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        empresa_id INTEGER DEFAULT 1,
         mensagem TEXT,
         tipo TEXT,
+        categoria TEXT,
+        referencia TEXT,
         lida INTEGER DEFAULT 0,
         criada_em TEXT
     )
@@ -6319,7 +6428,8 @@ def criar_todas_tabelas():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nome TEXT NOT NULL,
         telefone TEXT,
-        placa_principal TEXT
+        placa_principal TEXT,
+        data_nascimento TEXT
     )
     """)
 
@@ -6343,8 +6453,11 @@ def criar_todas_tabelas():
     c.execute("""
     CREATE TABLE IF NOT EXISTS notificacoes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        empresa_id INTEGER DEFAULT 1,
         mensagem TEXT,
         tipo TEXT,
+        categoria TEXT,
+        referencia TEXT,
         lida INTEGER DEFAULT 0,
         criada_em TEXT
     )
@@ -6407,6 +6520,7 @@ def criar_todas_tabelas():
         valor_adicional REAL DEFAULT 0,
         criado_por_usuario TEXT,
         criado_por_nome TEXT,
+        perfil_cliente_atendimento TEXT DEFAULT 'NOVO',
         etapa_atual TEXT DEFAULT 'LAVAGEM',
         etapa_atual_iniciada_em TEXT,
         lavagem_iniciada_em TEXT,
@@ -7251,6 +7365,7 @@ def construir_linhas_csv_relatorio_servicos(servicos):
                 "Entrega prevista": entrega_prevista.strftime("%d/%m/%Y %H:%M") if entrega_prevista else "-",
                 "Status prazo": status_prazo or "-",
                 "Cliente": item.get("cliente_nome") or "Sem cliente",
+                "Perfil cliente": item.get("perfil_cliente_atendimento_exibicao") or perfil_cliente_atendimento_exibicao(item.get("perfil_cliente_atendimento")),
                 "Placa": item.get("placa") or "-",
                 "Modelo": item.get("modelo") or "",
                 "Servico": item.get("tipo_nome") or "Servico",
@@ -7342,6 +7457,7 @@ def carregar_contexto_relatorios(periodo_atual=None):
         (empresa_id, empresa_id, empresa_id),
     )
     servicos_raw = [dict(row) for row in c.fetchall()]
+    enriquecer_perfil_cliente_atendimento(servicos_raw)
     orcamentos_raw, notas_raw = consultar_documentos_relatorios_cursor(c, empresa_id)
     conn.close()
 
@@ -7521,6 +7637,14 @@ def carregar_contexto_relatorios(periodo_atual=None):
     notas_emitidas_periodo = [item for item in notas_periodo if item.get("emitida")]
     notas_pendentes_periodo = [item for item in notas_periodo if not item.get("emitida")]
     valor_fiscal_periodo = sum(item["valor_num"] for item in notas_emitidas_periodo)
+    novos_periodo = [
+        item for item in finalizados_periodo
+        if normalizar_perfil_cliente_atendimento(item.get("perfil_cliente_atendimento")) == "NOVO"
+    ]
+    retornos_periodo = [
+        item for item in finalizados_periodo
+        if normalizar_perfil_cliente_atendimento(item.get("perfil_cliente_atendimento")) == "RETORNO"
+    ]
 
     resumo_operacional = {
         "lavagem_media_exibicao": formatar_duracao_segundos(
@@ -7539,6 +7663,8 @@ def carregar_contexto_relatorios(periodo_atual=None):
         "abertos_total": resumo_fluxo_aberto["total"],
         "abertos_lavagem": resumo_fluxo_aberto["lavagem"],
         "abertos_finalizacao": resumo_fluxo_aberto["finalizacao"],
+        "abertos_novos": resumo_fluxo_aberto["novos"],
+        "abertos_retornos": resumo_fluxo_aberto["retornos"],
         "abertos_atrasados": resumo_fluxo_aberto["atrasados"],
         "proxima_entrega_exibicao": resumo_fluxo_aberto["proxima_entrega_exibicao"],
     }
@@ -7548,6 +7674,10 @@ def carregar_contexto_relatorios(periodo_atual=None):
         "notas_emitidas_total": len(notas_emitidas_periodo),
         "notas_pendentes_total": len(notas_pendentes_periodo),
         "notas_valor_exibicao": formatar_valor_monetario(valor_fiscal_periodo),
+        "novos_total": len(novos_periodo),
+        "retornos_total": len(retornos_periodo),
+        "novos_valor_exibicao": formatar_valor_monetario(sum(item["valor_num"] for item in novos_periodo)),
+        "retornos_valor_exibicao": formatar_valor_monetario(sum(item["valor_num"] for item in retornos_periodo)),
         "retornos_acao_agora": resumo_retornos["acao_agora"],
         "retornos_reagendados": resumo_retornos["reagendados_vencidos"],
         "retornos_contatados_hoje": resumo_retornos["contatados_hoje"],
@@ -7916,6 +8046,8 @@ def montar_resumo_fluxo_atendimento(servicos):
         "total": 0,
         "lavagem": 0,
         "finalizacao": 0,
+        "novos": 0,
+        "retornos": 0,
         "com_horario": 0,
         "sem_horario": 0,
         "atrasados": 0,
@@ -7930,6 +8062,15 @@ def montar_resumo_fluxo_atendimento(servicos):
             resumo["finalizacao"] += 1
         else:
             resumo["lavagem"] += 1
+
+        perfil = normalizar_perfil_cliente_atendimento(
+            servico.get("perfil_cliente_atendimento"),
+            fallback="NOVO",
+        )
+        if perfil == "RETORNO":
+            resumo["retornos"] += 1
+        else:
+            resumo["novos"] += 1
 
         if servico.get("entrega_prevista_dt"):
             resumo["com_horario"] += 1
@@ -8024,6 +8165,93 @@ def formatar_datahora_input(valor):
     if not datahora:
         return ""
     return datahora.strftime("%Y-%m-%dT%H:%M")
+
+def interpretar_data_nascimento(valor):
+    if not valor:
+        return None
+
+    if isinstance(valor, datetime):
+        return valor.date()
+
+    if isinstance(valor, date):
+        return valor
+
+    texto = str(valor).strip()
+    for formato in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(texto, formato).date()
+        except Exception:
+            continue
+    return None
+
+def normalizar_data_nascimento(valor):
+    data_nascimento = interpretar_data_nascimento(valor)
+    return data_nascimento.isoformat() if data_nascimento else None
+
+def formatar_data_nascimento_input(valor):
+    data_nascimento = interpretar_data_nascimento(valor)
+    return data_nascimento.isoformat() if data_nascimento else ""
+
+def formatar_data_nascimento_exibicao(valor):
+    data_nascimento = interpretar_data_nascimento(valor)
+    return data_nascimento.strftime("%d/%m/%Y") if data_nascimento else ""
+
+def normalizar_perfil_cliente_atendimento(valor, fallback="NOVO"):
+    texto = normalizar_texto_campo(valor).upper()
+    if texto in {"NOVO", "RETORNO"}:
+        return texto
+    texto_fallback = normalizar_texto_campo(fallback).upper()
+    return texto_fallback if texto_fallback in {"NOVO", "RETORNO"} else "NOVO"
+
+def perfil_cliente_atendimento_exibicao(valor):
+    return "Novo cadastro" if normalizar_perfil_cliente_atendimento(valor) == "NOVO" else "Cliente retornando"
+
+def enriquecer_perfil_cliente_atendimento(servicos):
+    primeiro_servico_por_veiculo = {}
+    for item in sorted(servicos or [], key=lambda row: converter_inteiro(row.get("id"), 0)):
+        veiculo_id = converter_inteiro(item.get("veiculo_id"), 0)
+        if veiculo_id and veiculo_id not in primeiro_servico_por_veiculo:
+            primeiro_servico_por_veiculo[veiculo_id] = converter_inteiro(item.get("id"), 0)
+
+    for item in servicos or []:
+        veiculo_id = converter_inteiro(item.get("veiculo_id"), 0)
+        servico_id = converter_inteiro(item.get("id"), 0)
+        fallback = "NOVO"
+        if veiculo_id and primeiro_servico_por_veiculo.get(veiculo_id) != servico_id:
+            fallback = "RETORNO"
+        perfil = normalizar_perfil_cliente_atendimento(
+            item.get("perfil_cliente_atendimento"),
+            fallback=fallback,
+        )
+        item["perfil_cliente_atendimento"] = perfil
+        item["perfil_cliente_atendimento_exibicao"] = perfil_cliente_atendimento_exibicao(perfil)
+    return servicos
+
+def construir_data_aniversario_ano(data_nascimento, ano):
+    try:
+        return date(ano, data_nascimento.month, data_nascimento.day)
+    except ValueError:
+        if data_nascimento.month == 2 and data_nascimento.day == 29:
+            return date(ano, 2, 28)
+        raise
+
+def montar_mensagem_notificacao_aniversario(cliente_nome, data_nascimento, dias_antecedencia=0):
+    nome = normalizar_texto_campo(cliente_nome) or "Cliente"
+    data_fmt = data_nascimento.strftime("%d/%m")
+    if dias_antecedencia == 1:
+        return (
+            f"Aniversario amanha: {nome} ({data_fmt}).\n"
+            f"Sugestao de mensagem:\n"
+            f"Oi {nome}, tudo bem? Passando para te desejar um feliz aniversario adiantado. "
+            f"Amanha queremos te presentear com uma condicao especial nos servicos da Wagen. "
+            f"Se quiser, ja deixamos seu horario reservado."
+        )
+    return (
+        f"Aniversario hoje: {nome} ({data_fmt}).\n"
+        f"Sugestao de mensagem:\n"
+        f"Oi {nome}, feliz aniversario! Preparamos uma condicao especial para voce comemorar com o carro em dia. "
+        f"Se quiser, te envio as opcoes com desconto e ja separo um horario."
+    )
 
 def formatar_valor_monetario(valor):
     numero = converter_valor_numerico(valor)
@@ -12063,6 +12291,8 @@ def _formatar_registros_clientes(registros_db):
     for item in registros_db:
         item["nome"] = item.get("nome") or ""
         item["telefone"] = item.get("telefone") or ""
+        item["data_nascimento"] = formatar_data_nascimento_input(item.get("data_nascimento"))
+        item["data_nascimento_exibicao"] = formatar_data_nascimento_exibicao(item.get("data_nascimento"))
         item["modelo"] = item.get("modelo") or ""
         item["cor"] = item.get("cor") or ""
         item["placa_original"] = item.get("placa") or ""
@@ -12145,11 +12375,12 @@ def ler_dataframe_arquivo_planilha(arquivo):
     df.columns = [str(coluna).strip().lower() for coluna in df.columns]
     return df, filename
 
-def salvar_cliente_veiculo(placa, nome="", telefone="", modelo="", cor="", placa_original=None):
+def salvar_cliente_veiculo(placa, nome="", telefone="", data_nascimento=None, modelo="", cor="", placa_original=None):
     placa_nova = limpar_valor_planilha(placa).upper()
     placa_referencia = limpar_valor_planilha(placa_original).upper() or placa_nova
     nome = limpar_valor_planilha(nome)
     telefone = limpar_valor_planilha(telefone)
+    data_nascimento = normalizar_data_nascimento(data_nascimento)
     modelo = limpar_valor_planilha(modelo)
     cor = limpar_valor_planilha(cor)
 
@@ -12167,6 +12398,7 @@ def salvar_cliente_veiculo(placa, nome="", telefone="", modelo="", cor="", placa
             placa_nova,
             nome=nome,
             telefone=telefone,
+            data_nascimento=data_nascimento,
             modelo=modelo,
             cor=cor,
             placa_referencia=placa_referencia,
@@ -12486,6 +12718,7 @@ def salvar_linhas_base_dados(linhas):
             placa=placa,
             nome=nome,
             telefone=telefone,
+            data_nascimento=linha.get("data_nascimento", ""),
             modelo=modelo,
             cor=cor,
             placa_original=placa_original,
@@ -12597,7 +12830,7 @@ def loop_importacao():
 
 def carregar_contexto_clientes(busca="", limpar=False):
     busca_aplicada = "" if limpar else busca
-    usuario_cache = str(session.get("usuario") or "")
+    usuario_cache = f"{session.get('usuario') or ''}|{empresa_id}"
     empresa_id = empresa_atual_id()
     chave_cache = f"{usuario_cache}|{empresa_id}|{busca_aplicada}"
     contexto_cache = obter_cache_consulta(
@@ -13116,6 +13349,8 @@ def api_notificacoes():
     if not session.get("usuario"):
         return jsonify([])
 
+    empresa_id = empresa_atual_id()
+    garantir_notificacoes_aniversario(empresa_id=empresa_id)
     usuario_cache = str(session.get("usuario") or "")
     agora_cache_ts = time.time()
     if (
@@ -13125,12 +13360,22 @@ def api_notificacoes():
     ):
         return jsonify(NOTIFICACOES_CACHE["resultado"])
 
-    dados = executar_leitura_resiliente(
-        lambda conn: conn.cursor().execute("""
-            SELECT * FROM notificacoes
+    def carregar_notificacoes(conn):
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT *
+            FROM notificacoes
+            WHERE empresa_id=?
             ORDER BY id DESC
             LIMIT 20
-        """).fetchall(),
+            """,
+            (empresa_id,),
+        )
+        return c.fetchall()
+
+    dados = executar_leitura_resiliente(
+        carregar_notificacoes,
         descricao="API NOTIFICACOES",
         padrao=[],
     ) or []
@@ -13145,10 +13390,11 @@ def marcar_notificacao_lida(id):
     if not session.get("usuario"):
         return jsonify({"status": "erro", "mensagem": "nao autorizado"}), 401
 
+    empresa_id = empresa_atual_id()
     conn = conectar()
     c = conn.cursor()
 
-    c.execute("UPDATE notificacoes SET lida=1 WHERE id=?", (id,))
+    c.execute("UPDATE notificacoes SET lida=1 WHERE empresa_id=? AND id=?", (empresa_id, id))
 
     conn.commit()
     conn.close()
@@ -13164,11 +13410,12 @@ def limpar_notificacoes():
     if not session.get("usuario"):
         return jsonify({"status": "erro", "mensagem": "nao autorizado"}), 401
 
+    empresa_id = empresa_atual_id()
     conn = conectar()
     c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM notificacoes")
+    c.execute("SELECT COUNT(*) FROM notificacoes WHERE empresa_id=?", (empresa_id,))
     total = c.fetchone()[0]
-    c.execute("DELETE FROM notificacoes")
+    c.execute("DELETE FROM notificacoes WHERE empresa_id=?", (empresa_id,))
     conn.commit()
     conn.close()
     NOTIFICACOES_CACHE["testado_em"] = 0.0
@@ -15305,7 +15552,8 @@ def index():
             veiculos.modelo,
             veiculos.cor,
             clientes.nome,
-            clientes.telefone
+            clientes.telefone,
+            clientes.data_nascimento
         FROM veiculos
         LEFT JOIN clientes ON veiculos.cliente_id = clientes.id AND clientes.empresa_id=?
         WHERE veiculos.empresa_id=? AND veiculos.placa=?
@@ -15314,6 +15562,9 @@ def index():
         dados = c.fetchone()
 
         if dados:
+            dados = dict(dados)
+            dados["data_nascimento"] = formatar_data_nascimento_input(dados.get("data_nascimento"))
+            dados["data_nascimento_exibicao"] = formatar_data_nascimento_exibicao(dados.get("data_nascimento"))
             historico = listar_historico_servicos(placa=placa)
 
     conn.close()
@@ -15693,6 +15944,7 @@ def cadastrar():
             placa=placa,
             nome=request.form.get("nome", ""),
             telefone=request.form.get("telefone", ""),
+            data_nascimento=request.form.get("data_nascimento", ""),
             modelo=request.form.get("modelo", ""),
             cor=request.form.get("cor", ""),
         )
@@ -15728,6 +15980,7 @@ def editar_cliente():
             placa=placa,
             nome=request.form.get("nome", ""),
             telefone=request.form.get("telefone", ""),
+            data_nascimento=request.form.get("data_nascimento", ""),
             modelo=request.form.get("modelo", ""),
             cor=request.form.get("cor", ""),
             placa_original=placa_original,
@@ -15812,16 +16065,29 @@ def servico():
     else:
         nova_prioridade = resultado + 1
 
+    c.execute(
+        """
+        SELECT COUNT(*)
+        FROM servicos
+        WHERE empresa_id=? AND veiculo_id=?
+        """,
+        (empresa_id, veiculo_id),
+    )
+    quantidade_atendimentos_anteriores = converter_inteiro(c.fetchone()[0], 0)
+    perfil_cliente_atendimento = (
+        "RETORNO" if quantidade_atendimentos_anteriores > 0 else "NOVO"
+    )
+
     # ðŸ”¥ INSERIR SERVIÃ‡O (NOVO MODELO)
     c.execute("""
         INSERT INTO servicos 
         (
             empresa_id, veiculo_id, tipo_id, valor, valor_adicional, entrada, entrega_prevista, status, prioridade,
             observacoes, origem, guarita, pneu, cera, hidro_lataria, hidro_vidros,
-            etapa_atual, etapa_atual_iniciada_em, lavagem_iniciada_em, lavagem_segundos, finalizacao_segundos,
+            perfil_cliente_atendimento, etapa_atual, etapa_atual_iniciada_em, lavagem_iniciada_em, lavagem_segundos, finalizacao_segundos,
             criado_por_usuario, criado_por_nome
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         empresa_id,
         veiculo_id,
@@ -15839,6 +16105,7 @@ def servico():
         normalizar_flag_sim_nao(data.get("cera")),
         normalizar_flag_sim_nao(data.get("hidro_lataria")),
         normalizar_flag_sim_nao(data.get("hidro_vidros")),
+        perfil_cliente_atendimento,
         "LAVAGEM",
         agora,
         agora,
@@ -15879,6 +16146,7 @@ def servico():
             "valor_base": valor_base,
             "valor_adicional": valor_adicional,
             "valor_total": valor_total,
+            "perfil_cliente_atendimento": perfil_cliente_atendimento,
             "entrega_prevista": entrega_prevista_iso,
             "fotos_entrada": entrada_salvas,
             "fotos_detalhe": detalhe_salvas,
@@ -16619,6 +16887,25 @@ def api_operacional_voz():
 def _carregar_dados_painel(conn):
     c = conn.cursor()
     servicos_db = [dict(row) for row in consultar_servicos_em_andamento_domain(c, empresa_atual_id())]
+    empresa_id = empresa_atual_id()
+    for servico in servicos_db:
+        if normalizar_texto_campo(servico.get("perfil_cliente_atendimento")):
+            continue
+        veiculo_id = converter_inteiro(servico.get("veiculo_id"), 0)
+        servico_id = converter_inteiro(servico.get("id"), 0)
+        if not veiculo_id or not servico_id:
+            servico["perfil_cliente_atendimento"] = "NOVO"
+            continue
+        c.execute(
+            """
+            SELECT COUNT(*)
+            FROM servicos
+            WHERE empresa_id=? AND veiculo_id=? AND id < ?
+            """,
+            (empresa_id, veiculo_id, servico_id),
+        )
+        anteriores = converter_inteiro(c.fetchone()[0], 0)
+        servico["perfil_cliente_atendimento"] = "RETORNO" if anteriores > 0 else "NOVO"
     agora_cache_ts = time.time()
     produtos_cache = PRODUTOS_PNEU_CACHE.get("resultado")
     if produtos_cache is not None and (
@@ -16715,6 +17002,13 @@ def painel():
         s_dict["valor_exibicao"] = formatar_valor_monetario(s_dict.get("valor"))
         s_dict["cliente_nome"] = s_dict.get("cliente_nome") or "Sem cliente"
         s_dict["cliente_telefone"] = s_dict.get("cliente_telefone") or ""
+        s_dict["perfil_cliente_atendimento"] = normalizar_perfil_cliente_atendimento(
+            s_dict.get("perfil_cliente_atendimento"),
+            fallback="NOVO",
+        )
+        s_dict["perfil_cliente_atendimento_exibicao"] = perfil_cliente_atendimento_exibicao(
+            s_dict["perfil_cliente_atendimento"]
+        )
         s_dict["placa"] = s_dict.get("placa") or "-"
         s_dict["modelo"] = s_dict.get("modelo") or ""
         s_dict["cor"] = s_dict.get("cor") or ""

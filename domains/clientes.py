@@ -15,7 +15,8 @@ def consultar_registros_clientes(cursor, empresa_id, busca=""):
             clientes.id AS cliente_id,
             clientes.nome,
             clientes.telefone,
-            clientes.placa_principal
+            clientes.placa_principal,
+            clientes.data_nascimento
         FROM veiculos
         LEFT JOIN clientes
             ON clientes.id = veiculos.cliente_id
@@ -45,6 +46,7 @@ def salvar_cliente_veiculo_cursor(
     placa_nova,
     nome="",
     telefone="",
+    data_nascimento=None,
     modelo="",
     cor="",
     placa_referencia="",
@@ -82,7 +84,7 @@ def salvar_cliente_veiculo_cursor(
     if veiculo_existente and veiculo_existente.get("cliente_id"):
         cursor.execute(
             """
-            SELECT id, nome, telefone
+            SELECT id, nome, telefone, data_nascimento
             FROM clientes
             WHERE empresa_id=? AND id=?
             """,
@@ -92,7 +94,7 @@ def salvar_cliente_veiculo_cursor(
     elif telefone:
         cursor.execute(
             """
-            SELECT id, nome, telefone
+            SELECT id, nome, telefone, data_nascimento
             FROM clientes
             WHERE empresa_id=? AND telefone=?
             """,
@@ -107,19 +109,19 @@ def salvar_cliente_veiculo_cursor(
         cursor.execute(
             """
             UPDATE clientes
-            SET nome=?, telefone=?
+            SET nome=?, telefone=?, data_nascimento=?
             WHERE empresa_id=? AND id=?
             """,
-            (nome or "Sem nome", telefone, empresa_id, cliente_id),
+            (nome or "Sem nome", telefone, data_nascimento, empresa_id, cliente_id),
         )
         cliente_acao = "atualizado"
     elif nome or telefone:
         cursor.execute(
             """
-            INSERT INTO clientes (empresa_id, nome, telefone)
-            VALUES (?, ?, ?)
+            INSERT INTO clientes (empresa_id, nome, telefone, data_nascimento)
+            VALUES (?, ?, ?, ?)
             """,
-            (empresa_id, nome or "Sem nome", telefone),
+            (empresa_id, nome or "Sem nome", telefone, data_nascimento),
         )
         cliente_id = cursor.lastrowid
         cliente_acao = "novo"

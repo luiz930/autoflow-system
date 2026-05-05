@@ -218,9 +218,17 @@
                 Valor fiscal
                 <strong>R$ {{ resumo_comercial.notas_valor_exibicao }}</strong>
             </div>
+            <div class="financial-mini-card">
+                Clientes novos
+                <strong>{{ resumo_comercial.novos_total }}</strong>
+            </div>
+            <div class="financial-mini-card">
+                Clientes retornando
+                <strong>{{ resumo_comercial.retornos_total }}</strong>
+            </div>
         </div>
         <p class="financial-note">
-            Retornos: {{ resumo_comercial.retornos_acao_agora }} em acao agora, {{ resumo_comercial.retornos_reagendados }} reagendado(s) vencido(s), {{ resumo_comercial.retornos_contatados_hoje }} contato(s) hoje.
+            Novos: R$ {{ resumo_comercial.novos_valor_exibicao }} | Retornos: R$ {{ resumo_comercial.retornos_valor_exibicao }}. Agenda de retornos: {{ resumo_comercial.retornos_acao_agora }} em acao agora, {{ resumo_comercial.retornos_reagendados }} reagendado(s) vencido(s), {{ resumo_comercial.retornos_contatados_hoje }} contato(s) hoje.
         </p>
     </div>
 </div>
@@ -327,6 +335,14 @@
             <div class="financial-mini-card">
                 Finalizacao
                 <strong>{{ resumo_operacional.abertos_finalizacao }}</strong>
+            </div>
+            <div class="financial-mini-card">
+                Novos
+                <strong>{{ resumo_operacional.abertos_novos }}</strong>
+            </div>
+            <div class="financial-mini-card">
+                Retornos
+                <strong>{{ resumo_operacional.abertos_retornos }}</strong>
             </div>
             <div class="financial-mini-card">
                 Atrasados
@@ -441,6 +457,7 @@
                 <tr>
                     <th>Entrega</th>
                     <th>Cliente</th>
+                    <th>Perfil</th>
                     <th>Placa</th>
                     <th>Servico</th>
                     <th>Valor</th>
@@ -451,13 +468,14 @@
                 <tr>
                     <td>{{ item.entrega_exibicao }}</td>
                     <td>{{ item.cliente_nome }}</td>
+                    <td>{{ item.perfil_cliente_atendimento_exibicao }}</td>
                     <td>{{ item.placa }}</td>
                     <td>{{ item.tipo_nome }}</td>
                     <td>R$ {{ item.valor_exibicao }}</td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="5" class="empty-state">Nenhum atendimento finalizado encontrado para {{ periodo_label }}.</td>
+                    <td colspan="6" class="empty-state">Nenhum atendimento finalizado encontrado para {{ periodo_label }}.</td>
                 </tr>
                 {% endfor %}
             </tbody>

@@ -1154,6 +1154,7 @@ input[type="file"] {
     padding: 8px;
     border-bottom: 1px solid #333;
     cursor: pointer;
+    white-space: pre-line;
 }
 
 .notificacao.nao-lida {
@@ -1333,6 +1334,9 @@ input[type="file"] {
 <h2>Cliente</h2>
 <p><strong>Nome:</strong> {{dados.nome}}</p>
 <p><strong>Telefone:</strong> {{dados.telefone}}</p>
+{% if dados.data_nascimento_exibicao %}
+<p><strong>Nascimento:</strong> {{dados.data_nascimento_exibicao}}</p>
+{% endif %}
 <p><strong>Carro:</strong> {{dados.modelo}} - {{dados.cor}}</p>
 
 <button type="button" onclick="toggleEditar()">✏️ Editar</button>
@@ -1340,11 +1344,13 @@ input[type="file"] {
 <div id="formEditar" style="display:none;">
 
 <form action="/editar_cliente" method="POST">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
     
     <input type="hidden" name="placa" value="{{dados['placa']}}">
 
     <input name="nome" value="{{dados.nome}}">
     <input name="telefone" value="{{dados.telefone}}">
+    <input type="date" name="data_nascimento" value="{{ dados.data_nascimento }}">
     <input name="modelo" value="{{dados.modelo}}">
     <input name="cor" value="{{dados.cor}}">
 
@@ -1357,12 +1363,15 @@ input[type="file"] {
 </div>
 
 <form id="editForm" class="hidden" action="/editar_cliente" method="POST">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 
 <input name="placa" value="{{dados.placa}}" readonly><br>
 
 <input name="nome" value="{{dados.nome}}"><br>
 
 <input name="telefone" value="{{dados.telefone}}"><br>
+
+<input type="date" name="data_nascimento" value="{{ dados.data_nascimento }}"><br>
 
 <input name="modelo" value="{{dados.modelo}}"><br>
 
@@ -1383,10 +1392,12 @@ input[type="file"] {
         <h3>Novo Cliente</h3>
 
         <form action="/cadastrar" method="POST" class="novo-cliente-form">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 
             <input name="placa" placeholder="Placa" value="{{placa}}" required>
             <input name="nome" placeholder="Nome">
             <input name="telefone" placeholder="Telefone">
+            <input type="date" name="data_nascimento" placeholder="Nascimento">
             <input name="modelo" placeholder="Modelo">
             <input name="cor" placeholder="Cor">
 

@@ -166,6 +166,51 @@ class AppRegressionTests(unittest.TestCase):
         conn.commit()
         return conn
 
+    def _criar_banco_clientes_notificacoes_memoria(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute(
+            """
+            CREATE TABLE clientes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER NOT NULL DEFAULT 1,
+                nome TEXT NOT NULL,
+                telefone TEXT,
+                placa_principal TEXT,
+                data_nascimento TEXT
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE veiculos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER NOT NULL DEFAULT 1,
+                placa TEXT NOT NULL,
+                modelo TEXT,
+                cor TEXT,
+                cliente_id INTEGER
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE notificacoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER NOT NULL DEFAULT 1,
+                mensagem TEXT,
+                tipo TEXT,
+                categoria TEXT,
+                referencia TEXT,
+                lida INTEGER DEFAULT 0,
+                criada_em TEXT
+            )
+            """
+        )
+        conn.commit()
+        return conn
+
     def test_login_missing_fields_returns_error_message(self):
         with patch.object(app_module, "csrf_protection_ativa", return_value=False), \
              patch.object(app_module, "INIT_DB_EXECUTADO", True):
@@ -668,6 +713,67 @@ class AppRegressionTests(unittest.TestCase):
 
         self.assertTrue(resultado["ok"])
         self.assertEqual(resultado["tipo_backup"], "banco")
+
+    def test_salvar_cliente_veiculo_persiste_data_nascimento(self):
+        conn = self._criar_banco_clientes_notificacoes_memoria()
+        wrapper = PersistentCompatConnection(conn)
+
+        with patch.object(app_module, "conectar", return_value=wrapper), \
+             patch.object(app_module, "espelhar_cadastro_site_em_sincronizacoes_clientes", return_value={"sucesso": [], "falhas": [], "ignoradas": []}):
+            resultado = app_module.salvar_cliente_veiculo(
+                placa="ABC1234",
+                nome="Maria",
+                telefone="51999999999",
+                data_nascimento="1990-05-05",
+                modelo="Onix",
+                cor="Preto",
+            )
+
+        self.assertEqual(resultado["acao"], "novo")
+        c = conn.cursor()
+        c.execute("SELECT data_nascimento FROM clientes WHERE empresa_id=? LIMIT 1", (1,))
+        self.assertEqual(c.fetchone()["data_nascimento"], "1990-05-05")
+        conn.close()
+
+    def test_garantir_notificacoes_aniversario_cria_e_deduplica(self):
+        conn = self._criar_banco_clientes_notificacoes_memoria()
+        c = conn.cursor()
+        c.execute(
+            """
+            INSERT INTO clientes (empresa_id, nome, telefone, data_nascimento)
+            VALUES (?, ?, ?, ?)
+            """,
+            (1, "Maria", "51999999999", "1990-05-05"),
+        )
+        conn.commit()
+        wrapper = PersistentCompatConnection(conn)
+
+        with patch.object(app_module, "conectar", return_value=wrapper), \
+             patch.object(app_module, "agora", return_value=app_module.datetime(2026, 5, 4, 10, 0, tzinfo=app_module.ZoneInfo("America/Sao_Paulo"))):
+            inseridas_primeira = app_module.garantir_notificacoes_aniversario(empresa_id=1, force=True)
+            inseridas_segunda = app_module.garantir_notificacoes_aniversario(empresa_id=1, force=True)
+
+        self.assertEqual(inseridas_primeira, 1)
+        self.assertEqual(inseridas_segunda, 0)
+        c.execute("SELECT categoria, mensagem FROM notificacoes WHERE empresa_id=? ORDER BY id", (1,))
+        registros = c.fetchall()
+        self.assertEqual(len(registros), 1)
+        self.assertEqual(registros[0]["categoria"], "aniversario_amanha")
+        self.assertIn("Sugestao de mensagem", registros[0]["mensagem"])
+        conn.close()
+
+    def test_montar_resumo_fluxo_atendimento_conta_novos_e_retornos(self):
+        resumo = app_module.montar_resumo_fluxo_atendimento(
+            [
+                {"perfil_cliente_atendimento": "NOVO", "etapa_atual": "LAVAGEM"},
+                {"perfil_cliente_atendimento": "RETORNO", "etapa_atual": "FINALIZACAO"},
+                {"perfil_cliente_atendimento": "", "etapa_atual": "LAVAGEM"},
+            ]
+        )
+
+        self.assertEqual(resumo["total"], 3)
+        self.assertEqual(resumo["novos"], 2)
+        self.assertEqual(resumo["retornos"], 1)
 
 
 if __name__ == "__main__":

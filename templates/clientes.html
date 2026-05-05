@@ -22,6 +22,7 @@
 
 <div class="page-card">
     <form method="POST" class="inline-form">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <input name="busca" placeholder="Buscar placa, modelo ou cliente" value="{{ busca }}">
         <button>Buscar</button>
     </form>
@@ -38,6 +39,7 @@
     <p class="muted-text">Cole o link da planilha para analisar as colunas antes de ativar a rotina automatica.</p>
 
     <form action="/clientes/sincronizacao/preview" method="POST" class="stack-form stack-form--wide">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="field-grid">
             <input name="nome" placeholder="Nome da fonte" value="{{ preview_sync.nome if preview_sync else '' }}">
             <input name="url" placeholder="Link da planilha" value="{{ preview_sync.url if preview_sync else '' }}" required>
@@ -77,6 +79,7 @@
     </div>
 
     <form action="/clientes/sincronizacao/salvar" method="POST" class="stack-form stack-form--wide top-spacing">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="nome" value="{{ preview_sync.nome }}">
         <input type="hidden" name="url" value="{{ preview_sync.url }}">
         <input type="hidden" name="intervalo_minutos" value="{{ preview_sync.intervalo_minutos }}">
@@ -105,6 +108,7 @@
     </form>
 
     <form action="/clientes/sincronizacao/cancelar_preview" method="POST" class="top-spacing">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="button-danger">Cancelar preview</button>
     </form>
 
@@ -195,6 +199,9 @@
         <div class="page-card">
             <p><b>{{ c.nome or "Cliente nao informado" }}</b></p>
             <p>{{ c.telefone or "Telefone nao informado" }}</p>
+            {% if c.data_nascimento_exibicao %}
+            <p class="muted-text">Nascimento: {{ c.data_nascimento_exibicao }}</p>
+            {% endif %}
             <p class="muted-text">
                 Placa: {{ c.placa }}
                 {% if c.modelo %} | Modelo: {{ c.modelo }}{% endif %}
@@ -212,6 +219,7 @@
                 <summary>Editar cliente</summary>
 
                 <form action="/editar_cliente" method="POST" class="stack-form stack-form--wide top-spacing">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="placa_original" value="{{ c.placa_original or c.placa }}">
                     <input type="hidden" name="redirect_to" value="/clientes">
 
@@ -219,6 +227,7 @@
                         <input name="placa" value="{{ c.placa }}" placeholder="Placa" required>
                         <input name="nome" value="{{ c.nome }}" placeholder="Nome">
                         <input name="telefone" value="{{ c.telefone }}" placeholder="Telefone">
+                        <input type="date" name="data_nascimento" value="{{ c.data_nascimento }}" placeholder="Nascimento">
                         <input name="modelo" value="{{ c.modelo }}" placeholder="Modelo">
                         <input name="cor" value="{{ c.cor }}" placeholder="Cor">
                     </div>

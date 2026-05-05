@@ -303,7 +303,7 @@ def consultar_resumo_hud(cursor, empresa_id, entrega_prefixo):
         FROM clientes WHERE empresa_id=?
         UNION ALL
         SELECT 'notificacoes' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id
-        FROM notificacoes
+        FROM notificacoes WHERE empresa_id=?
         UNION ALL
         SELECT 'auditoria' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id
         FROM auditoria
@@ -311,7 +311,7 @@ def consultar_resumo_hud(cursor, empresa_id, entrega_prefixo):
         SELECT 'usuarios' AS tabela, COALESCE(COUNT(*), 0) AS total, COALESCE(MAX(id), 0) AS ultimo_id
         FROM usuarios WHERE empresa_id=?
         """,
-        (empresa_id, empresa_id, empresa_id, empresa_id),
+        (empresa_id, empresa_id, empresa_id, empresa_id, empresa_id),
     )
     totais = rows_to_dicts(cursor)
 

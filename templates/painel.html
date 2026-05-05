@@ -34,6 +34,8 @@
         <p><b>Em atendimento:</b> {{ resumo_fluxo.total }}</p>
         <p><b>Na lavagem:</b> {{ resumo_fluxo.lavagem }}</p>
         <p><b>Na finalizacao:</b> {{ resumo_fluxo.finalizacao }}</p>
+        <p><b>Novos cadastros:</b> {{ resumo_fluxo.novos }}</p>
+        <p><b>Clientes retornando:</b> {{ resumo_fluxo.retornos }}</p>
         <p><b>Com horario combinado:</b> {{ resumo_fluxo.com_horario }}</p>
         <p><b>Sem horario combinado:</b> {{ resumo_fluxo.sem_horario }}</p>
         <p><b>Atrasados:</b> {{ resumo_fluxo.atrasados }}</p>
@@ -68,6 +70,7 @@
     <h2 class="section-title">{{ s.tipo_nome }}</h2>
 
     <p><b>Cliente:</b> {{ s.cliente_nome }}</p>
+    <p><b>Perfil:</b> <span class="pill-label">{{ s.perfil_cliente_atendimento_exibicao }}</span></p>
     <p><b>Veiculo:</b> {{ s.placa }}{% if s.modelo %} - {{ s.modelo }}{% endif %}{% if s.cor %} / {{ s.cor }}{% endif %}</p>
     <p><b>Valor:</b> R$ {{ s.valor_exibicao }}{% if s.tem_valor_adicional %} <span class="muted-text">(+ extra manual R$ {{ s.valor_adicional_exibicao }})</span>{% endif %}</p>
     <p><b>Entrada:</b> {{ s.entrada_exibicao }}</p>
