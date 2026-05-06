@@ -947,10 +947,20 @@ class AppRegressionTests(unittest.TestCase):
             )
 
         self.assertEqual(resultado["acao"], "novo")
+        self.assertEqual(resultado["cliente_acao"], "novo")
         c = conn.cursor()
         c.execute("SELECT data_nascimento FROM clientes WHERE empresa_id=? LIMIT 1", (1,))
         self.assertEqual(c.fetchone()["data_nascimento"], "1990-05-05")
         conn.close()
+
+    def test_marcador_define_novo_atendimento_somente_para_cadastro_recente(self):
+        with app_module.app.test_request_context("/"):
+            session["usuario"] = "admin"
+            app_module.registrar_cadastro_novo_para_atendimento("ABC1234")
+
+            self.assertTrue(app_module.consumir_cadastro_novo_para_atendimento("abc1234"))
+            self.assertFalse(app_module.consumir_cadastro_novo_para_atendimento("abc1234"))
+            self.assertFalse(app_module.consumir_cadastro_novo_para_atendimento("XYZ9876"))
 
     def test_garantir_notificacoes_aniversario_cria_e_deduplica(self):
         conn = self._criar_banco_clientes_notificacoes_memoria()

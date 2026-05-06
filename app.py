@@ -9036,6 +9036,38 @@ def normalizar_perfil_cliente_atendimento(valor, fallback="NOVO"):
 def perfil_cliente_atendimento_exibicao(valor):
     return "Novo cadastro" if normalizar_perfil_cliente_atendimento(valor) == "NOVO" else "Cliente retornando"
 
+def chave_marcadores_cadastro_novo():
+    return "cadastros_novos_para_atendimento"
+
+def registrar_cadastro_novo_para_atendimento(placa):
+    placa_normalizada = normalizar_texto_campo(placa).upper()
+    if not placa_normalizada:
+        return
+
+    marcadores = dict(session.get(chave_marcadores_cadastro_novo()) or {})
+    agora_ts = time.time()
+    marcadores = {
+        item_placa: item_ts
+        for item_placa, item_ts in marcadores.items()
+        if agora_ts - converter_valor_numerico(item_ts) < 7200
+    }
+    marcadores[placa_normalizada] = agora_ts
+    session[chave_marcadores_cadastro_novo()] = marcadores
+
+def remover_cadastro_novo_para_atendimento(placa):
+    placa_normalizada = normalizar_texto_campo(placa).upper()
+    marcadores = dict(session.get(chave_marcadores_cadastro_novo()) or {})
+    if placa_normalizada in marcadores:
+        marcadores.pop(placa_normalizada, None)
+        session[chave_marcadores_cadastro_novo()] = marcadores
+
+def consumir_cadastro_novo_para_atendimento(placa):
+    placa_normalizada = normalizar_texto_campo(placa).upper()
+    marcadores = dict(session.get(chave_marcadores_cadastro_novo()) or {})
+    marcado_em = converter_valor_numerico(marcadores.pop(placa_normalizada, 0))
+    session[chave_marcadores_cadastro_novo()] = marcadores
+    return bool(marcado_em and time.time() - marcado_em < 7200)
+
 def enriquecer_perfil_cliente_atendimento(servicos):
     primeiro_servico_por_veiculo = {}
     for item in sorted(servicos or [], key=lambda row: converter_inteiro(row.get("id"), 0)):
@@ -13450,6 +13482,7 @@ def salvar_cliente_veiculo(placa, nome="", telefone="", data_nascimento=None, mo
         return {
             "placa": resultado["placa"],
             "acao": resultado["acao"],
+            "cliente_acao": resultado.get("cliente_acao"),
             "cliente_id": resultado.get("cliente_id"),
             "espelho_planilha": espelho_planilha,
         }
@@ -17669,6 +17702,10 @@ def cadastrar():
         if espelho.get("falhas"):
             primeiro_erro = espelho["falhas"][0]
             mensagem += f" Aviso na planilha: {primeiro_erro.get('nome')} - {primeiro_erro.get('erro')}."
+        if resultado.get("acao") == "novo":
+            registrar_cadastro_novo_para_atendimento(resultado["placa"])
+        else:
+            remover_cadastro_novo_para_atendimento(resultado["placa"])
         definir_feedback_index("sucesso", mensagem)
         placa = resultado["placa"]
     except Exception as e:
@@ -17787,18 +17824,8 @@ def servico():
     else:
         nova_prioridade = resultado + 1
 
-    c.execute(
-        """
-        SELECT COUNT(*)
-        FROM servicos
-        WHERE empresa_id=? AND veiculo_id=?
-        """,
-        (empresa_id, veiculo_id),
-    )
-    quantidade_atendimentos_anteriores = converter_inteiro(c.fetchone()[0], 0)
-    perfil_cliente_atendimento = (
-        "RETORNO" if quantidade_atendimentos_anteriores > 0 else "NOVO"
-    )
+    cadastro_criado_agora = consumir_cadastro_novo_para_atendimento(placa)
+    perfil_cliente_atendimento = "NOVO" if cadastro_criado_agora else "RETORNO"
 
     # ðŸ”¥ INSERIR SERVIÃ‡O (NOVO MODELO)
     c.execute("""
