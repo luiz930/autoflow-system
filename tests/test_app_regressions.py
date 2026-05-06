@@ -238,6 +238,15 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Informe usuario e senha.", response.data)
 
+    def test_login_exibe_versao_configurada_sem_sessao(self):
+        with patch.object(app_module, "INIT_DB_EXECUTADO", True), \
+             patch.object(app_module, "obter_versao_sistema", return_value="Versao: 0.13.5 - Beta") as versao_mock:
+            response = self.client.get("/login")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Versao: 0.13.5 - Beta", response.data)
+        versao_mock.assert_any_call(permitir_sem_sessao=True)
+
     def test_configuracoes_requires_login(self):
         with patch.object(app_module, "INIT_DB_EXECUTADO", True):
             response = self.client.get("/configuracoes")

@@ -1292,7 +1292,7 @@ input[type="file"] {
         color: white;
         border: 1px solid rgba(255, 0, 0, 0.4);
     ">
-        <span>🚪</span> Sair
+        <span>&#128682;</span> Sair
     </button>
 </a>
 
@@ -1303,7 +1303,7 @@ input[type="file"] {
 {% if 'cabecalho' in hud_usuario_config.itens_habilitados %}
 <div id="sino-container">
     <button id="btn-sino">
-        🔔 <span id="badge">0</span>
+        &#128276; <span id="badge">0</span>
     </button>
 
     <div id="dropdown-notificacoes" class="hidden"></div>
@@ -1314,12 +1314,12 @@ input[type="file"] {
 <div class="main full">
 
 <button onclick="toggleSidebar()" class="menu-btn">
-☰
+&#9776;
 </button>
 
 <div class="home-layout">
 
-<h1>🚗 {{ brand_name }}</h1>
+<h1>{{ brand_name }}</h1>
 
 <!-- BUSCA -->
 <div class="search-panel">
@@ -1341,7 +1341,7 @@ input[type="file"] {
 {% if not buscou %}
 <div class="center-box">
     <div class="card destaque">
-        <h3>🔎 {{ home_empty_state_title }}</h3>
+        <h3>{{ home_empty_state_title }}</h3>
     </div>
 </div>
 {% endif %}
@@ -1462,7 +1462,7 @@ input[type="file"] {
 <form id="formServico" class="hidden" action="/servico" method="POST" enctype="multipart/form-data">
 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 
-<p>📸 Fotos de entrada</p>
+<p>Fotos de entrada</p>
 <input type="file" name="foto_entrada" multiple accept="image/*" capture="environment" required>
 
 <input name="placa" value="{{dados.placa}}" readonly><br>
@@ -1510,7 +1510,7 @@ input[type="file"] {
 
 <b>{{s.tipo_nome or "Servico"}}</b>
 
-<p>💰 R$ {{s.valor_exibicao}}</p>
+<p>R$ {{s.valor_exibicao}}</p>
 <p>Entrada: {{s.entrada_exibicao}}</p>
 {% if s.entrega_exibicao %}
 <p>Entrega: {{s.entrega_exibicao}}</p>
@@ -1950,7 +1950,7 @@ function montarAcoesNotificacoes(dropdown, total) {
 
     const button = document.createElement("button");
     button.style.width = "100%";
-    button.textContent = total ? "🧹 Limpar notificações" : "Sem notificações";
+    button.textContent = total ? "Limpar notificacoes" : "Sem notificacoes";
     button.disabled = total === 0;
 
     if (total) {
@@ -2130,7 +2130,7 @@ async function carregarNotificacoes(force = false) {
     if (!dados.length) {
         const vazio = document.createElement("div");
         vazio.className = "notificacao";
-        vazio.innerText = "Nenhuma notificação registrada.";
+        vazio.innerText = "Nenhuma notificacao registrada.";
         dropdown.appendChild(vazio);
     }
 
@@ -2476,8 +2476,8 @@ function montarStatusBancoHud() {
         ativo,
         resumo: resumo || (ativo ? "Banco online ativo" : "Banco online indisponivel"),
         detalhe: ativo
-            ? `🟢 Banco online ativo e gravando em tempo real${backend ? ` (${backend})` : ""}`
-            : `🔴 ${mensagem || "Banco online indisponivel"}`,
+            ? `Banco online ativo e gravando em tempo real${backend ? ` (${backend})` : ""}`
+            : `${mensagem || "Banco online indisponivel"}`,
     };
 }
 
@@ -2488,42 +2488,42 @@ function montarLinhasHud(agora) {
 
     if (!hudExpandido) {
         return [
-            hudItemAtivo("data_hora") ? { texto: `📅 ${dataAtual} • ${horaAtual}`, compacta: true } : null,
+            hudItemAtivo("data_hora") ? { texto: `${dataAtual} - ${horaAtual}`, compacta: true } : null,
             hudItemAtivo("banco_online") ? {
-                texto: `🗄️ ${statusBanco.resumo}`,
+                texto: `${statusBanco.resumo}`,
                 status: true,
                 statusOk: statusBanco.ativo,
             } : null,
             (hudItemAtivo("operacional") || hudItemAtivo("financeiro")) ? {
                 texto: [
-                    hudItemAtivo("operacional") ? `⚙️ ${hudData.andamento} • 🚨 ${hudData.atrasados}` : "",
-                    hudItemAtivo("financeiro") ? `💰 R$ ${hudData.total}` : "",
+                    hudItemAtivo("operacional") ? `Atend.: ${hudData.andamento} | Atrasos: ${hudData.atrasados}` : "",
+                    hudItemAtivo("financeiro") ? `R$ ${hudData.total}` : "",
                 ].filter(Boolean).join(" • "),
                 compacta: true,
             } : null,
-            (hudItemAtivo("retornos") || hudItemAtivo("entregas")) ? { texto: `📌 ${montarResumoOperacionalCompacto()}`, compacta: true } : null,
+            (hudItemAtivo("retornos") || hudItemAtivo("entregas")) ? { texto: montarResumoOperacionalCompacto(), compacta: true } : null,
             hudItemAtivo("clima") ? { texto: montarTextoClimaHud(), multilinha: true } : null,
         ].filter(Boolean);
     }
 
     return [
-        hudItemAtivo("data_hora") ? { texto: `📅 ${dataAtual} ⏰ ${horaAtual}` } : null,
+        hudItemAtivo("data_hora") ? { texto: `${dataAtual} - ${horaAtual}` } : null,
         hudItemAtivo("banco_online") ? {
             texto: statusBanco.detalhe,
             status: true,
             statusOk: statusBanco.ativo,
         } : null,
         hudItemAtivo("clima") ? { texto: montarTextoClimaHud(), multilinha: true } : null,
-        hudItemAtivo("financeiro") ? { texto: `💰 Hoje: R$ ${hudData.total}` } : null,
-        hudItemAtivo("operacional") ? { texto: `⚙️ Em andamento: ${hudData.andamento}` } : null,
-        hudItemAtivo("operacional") ? { texto: `🚨 Atrasados: ${hudData.atrasados}` } : null,
-        hudItemAtivo("financeiro") ? { texto: `💵 Ticket: R$ ${hudData.ticket}` } : null,
-        hudItemAtivo("retornos") ? { texto: `📅 ${hudData.retornos_mensagem || "Painel retornos em dia"}` } : null,
+        hudItemAtivo("financeiro") ? { texto: `Hoje: R$ ${hudData.total}` } : null,
+        hudItemAtivo("operacional") ? { texto: `Em andamento: ${hudData.andamento}` } : null,
+        hudItemAtivo("operacional") ? { texto: `Atrasados: ${hudData.atrasados}` } : null,
+        hudItemAtivo("financeiro") ? { texto: `Ticket: R$ ${hudData.ticket}` } : null,
+        hudItemAtivo("retornos") ? { texto: `${hudData.retornos_mensagem || "Painel retornos em dia"}` } : null,
         ...(hudItemAtivo("entregas") && Number(hudData.entregas_ativas || 0) > 0
-            ? [{ texto: `📦 ${hudData.entrega_mensagem || "Entrega combinada em dia"}` }]
+            ? [{ texto: `${hudData.entrega_mensagem || "Entrega combinada em dia"}` }]
             : []),
-        hudItemAtivo("usuario") ? { texto: `👤 Usuario: ${hudData.usuario_nome || "-"}` } : null,
-        hudItemAtivo("versao") ? { texto: `🧠 ${hudData.versao || APP_VERSION}` } : null,
+        hudItemAtivo("usuario") ? { texto: `Usuario: ${hudData.usuario_nome || "-"}` } : null,
+        hudItemAtivo("versao") ? { texto: `${hudData.versao || APP_VERSION}` } : null,
     ].filter(Boolean);
 }
 
@@ -2597,7 +2597,7 @@ async function atualizarClima() {
 }
 
 
-// RELÃ“GIO
+// Relogio
 function atualizarRelogio() {
     const agora = new Date();
     const el = document.getElementById("relogio");

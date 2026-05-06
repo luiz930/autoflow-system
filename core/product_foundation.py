@@ -4,6 +4,25 @@ import json
 import re
 
 
+def corrigir_mojibake_texto(valor):
+    texto = str(valor or "").strip()
+    if not texto:
+        return ""
+
+    if not any(marcador in texto for marcador in ("Ã", "Â", "ð", "Ð", "â€", "âœ", "â˜")):
+        return texto
+
+    for encoding in ("cp1252", "latin1"):
+        try:
+            corrigido = texto.encode(encoding).decode("utf-8")
+        except Exception:
+            continue
+        if corrigido and corrigido != texto:
+            return corrigido.strip()
+
+    return texto
+
+
 FOUNDATION_MIGRATIONS = (
     "foundation_enterprises",
     "foundation_licencas",
@@ -906,24 +925,24 @@ def build_brand_context(config_row=None, empresa_row=None):
     config = dict(config_row or {})
     empresa = dict(empresa_row or {})
 
-    brand_name = (
+    brand_name = corrigir_mojibake_texto(
         config.get("marca_nome")
         or empresa.get("nome_fantasia")
         or config.get("nome_fantasia")
         or "Wagen Estetica Automotiva"
     )
-    brand_subtitle = (
+    brand_subtitle = corrigir_mojibake_texto(
         config.get("marca_subtitulo")
         or "Gestao Estetica"
     )
     logo_blob = bool(config.get("marca_logo_blob") or config.get("marca_logo_tem_blob"))
     favicon_blob = bool(config.get("marca_favicon_blob") or config.get("marca_favicon_tem_blob"))
-    site_title = (
+    site_title = corrigir_mojibake_texto(
         config.get("site_titulo")
         or config.get("marca_subtitulo")
         or "Gestao Estetica"
     )
-    site_footer_text = (
+    site_footer_text = corrigir_mojibake_texto(
         config.get("site_rodape_texto")
         or f"Desenvolvido por Luiz Henrique | Qualquer Erro Contate o Desenvolvedor | {brand_name} | Direitos Reservados."
     )
@@ -932,12 +951,12 @@ def build_brand_context(config_row=None, empresa_row=None):
     brand_background_color = config.get("marca_cor_fundo") or "#0b0b0b"
     brand_surface_color = config.get("marca_cor_superficie") or brand_secondary_color or "#111827"
     brand_text_color = config.get("marca_cor_texto") or "#f9fafb"
-    login_title = config.get("login_titulo_publico") or "Acesso ao sistema"
-    login_subtitle = config.get("login_subtitulo_publico") or "Entre no sistema"
-    login_button_text = config.get("login_botao_texto") or "Entrar"
-    home_search_placeholder = config.get("home_busca_placeholder") or "Digite a placa"
-    home_search_button_text = config.get("home_busca_botao_texto") or "Buscar"
-    home_empty_state_title = config.get("home_estado_inicial_titulo") or "Digite uma placa para comecar"
+    login_title = corrigir_mojibake_texto(config.get("login_titulo_publico") or "Acesso ao sistema")
+    login_subtitle = corrigir_mojibake_texto(config.get("login_subtitulo_publico") or "Entre no sistema")
+    login_button_text = corrigir_mojibake_texto(config.get("login_botao_texto") or "Entrar")
+    home_search_placeholder = corrigir_mojibake_texto(config.get("home_busca_placeholder") or "Digite a placa")
+    home_search_button_text = corrigir_mojibake_texto(config.get("home_busca_botao_texto") or "Buscar")
+    home_empty_state_title = corrigir_mojibake_texto(config.get("home_estado_inicial_titulo") or "Digite uma placa para comecar")
 
     return {
         "brand_name": brand_name,

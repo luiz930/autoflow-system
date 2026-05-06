@@ -114,6 +114,22 @@ class ProductFoundationMigrationsTests(unittest.TestCase):
         self.assertEqual(contexto["licenca_plano"], "pro")
         self.assertEqual(contexto["licenca_status"], "ativa")
 
+    def test_build_brand_context_corrige_textos_mojibake(self):
+        contexto = build_brand_context(
+            {
+                "marca_nome": "Wagen EstÃ©tica Automotiva",
+                "site_titulo": "GestÃ£o EstÃ©tica",
+                "site_rodape_texto": "VersÃ£o atualizada",
+                "home_estado_inicial_titulo": "Digite uma placa para comeÃ§ar",
+            },
+            {},
+        )
+
+        self.assertEqual(contexto["brand_name"], "Wagen Estética Automotiva")
+        self.assertEqual(contexto["site_title"], "Gestão Estética")
+        self.assertEqual(contexto["site_footer_text"], "Versão atualizada")
+        self.assertEqual(contexto["home_empty_state_title"], "Digite uma placa para começar")
+
     def test_migration_replaces_global_unique_placa_with_empresa_scope(self):
         self.conn.close()
         self.conn = sqlite3.connect(":memory:")

@@ -3725,11 +3725,11 @@ def registrar_evento_telemetria_app(evento, categoria="sistema", payload=None, s
     )
 
 
-def obter_versao_sistema():
+def obter_versao_sistema(permitir_sem_sessao=False):
     if not INIT_DB_EXECUTADO:
         return APP_VERSION
 
-    if has_request_context() and not session.get("usuario"):
+    if has_request_context() and not session.get("usuario") and not permitir_sem_sessao:
         return APP_VERSION
 
     empresa_id_atual = normalize_empresa_id(empresa_atual_id())
@@ -15295,6 +15295,8 @@ def carregar_usuarios_configuracao():
 @app.route("/login", methods=["GET", "POST"])
 def login():
 
+    versao_login = obter_versao_sistema(permitir_sem_sessao=True)
+
     if session.get("usuario"):
         sincronizar_sessao_usuario()
         if session.get("senha_alteracao_obrigatoria"):
@@ -15312,7 +15314,7 @@ def login():
                 severidade="warning",
                 payload={"usuario": usuario},
             )
-            return render_template("login.html", erro="Informe usuario e senha.")
+            return render_template("login.html", erro="Informe usuario e senha.", app_version=versao_login)
 
         conn = None
         try:
@@ -15330,7 +15332,7 @@ def login():
                     payload={"usuario": usuario},
                 )
                 conn.close()
-                return render_template("login.html", erro="Usuario ou senha invalidos.")
+                return render_template("login.html", erro="Usuario ou senha invalidos.", app_version=versao_login)
 
             if not int(user["ativo"] if user["ativo"] is not None else 1):
                 registrar_evento_telemetria_app(
@@ -15340,7 +15342,7 @@ def login():
                     usuario_row=user,
                 )
                 conn.close()
-                return render_template("login.html", erro="Este acesso esta desativado.")
+                return render_template("login.html", erro="Este acesso esta desativado.", app_version=versao_login)
 
             bloqueado_ate = usuario_bloqueado_ate(user)
             if bloqueado_ate:
@@ -15358,7 +15360,8 @@ def login():
                         "Login bloqueado temporariamente. "
                         f"{formatar_tempo_restante(bloqueado_ate.isoformat(timespec='seconds'))} "
                         "para tentar de novo."
-                    )
+                    ),
+                    app_version=versao_login,
                 )
 
             if not verificar_senha_usuario(senha, user["senha"]):
@@ -15375,9 +15378,10 @@ def login():
                 if novo_bloqueio:
                     return render_template(
                         "login.html",
-                        erro=f"Muitas tentativas invalidas. Login bloqueado por {MINUTOS_BLOQUEIO_LOGIN} minutos."
+                        erro=f"Muitas tentativas invalidas. Login bloqueado por {MINUTOS_BLOQUEIO_LOGIN} minutos.",
+                        app_version=versao_login,
                     )
-                return render_template("login.html", erro="Usuario ou senha invalidos.")
+                return render_template("login.html", erro="Usuario ou senha invalidos.", app_version=versao_login)
 
             if not senha_usa_bcrypt(user["senha"]):
                 c.execute(
@@ -15412,7 +15416,7 @@ def login():
                 severidade="error",
                 payload={"usuario": usuario, "erro": str(erro)},
             )
-            return render_template("login.html", erro=mensagem_erro_login_servidor(erro))
+            return render_template("login.html", erro=mensagem_erro_login_servidor(erro), app_version=versao_login)
 
         conn.close()
         preencher_sessao_usuario(user)
@@ -15434,7 +15438,7 @@ def login():
             return redirect("/configuracoes")
         return redirect("/")
 
-    return render_template("login.html")
+    return render_template("login.html", app_version=versao_login)
 
 @app.route("/logout")
 def logout():
