@@ -103,6 +103,7 @@ from domains.sync_clientes import (
 )
 from domains.tenant import normalize_empresa_id
 from scripts.site_monitor import (
+    CheckResult as SiteMonitorCheckResult,
     build_report as build_site_monitor_report,
     run_site_checks,
     send_telegram_message as send_site_monitor_telegram_message,
@@ -9510,13 +9511,61 @@ def salvar_resultado_auto_teste_seguro(status, relatorio, chat_id=None):
         print("ERRO AO SALVAR RESULTADO AUTO TESTE:", erro)
 
 
+def run_site_checks_interno(timeout=5):
+    rotas = [
+        ("Site HTTPS", "/", {200, 302}),
+        ("Login", "/login", {200}),
+        ("Manifest PWA", "/site.webmanifest", {200}),
+        ("Service Worker", "/sw.js", {200}),
+        ("Status PWA", "/api/pwa/status", {200}),
+    ]
+    resultados = []
+
+    with app.test_client() as client:
+        for nome, caminho, status_esperados in rotas:
+            inicio = time.perf_counter()
+            try:
+                resposta = client.get(caminho)
+                elapsed_ms = int((time.perf_counter() - inicio) * 1000)
+                status = int(resposta.status_code)
+                mensagem = f"HTTP {status}"
+                location = resposta.headers.get("Location")
+                if location:
+                    mensagem += f" -> {location}"
+                resultados.append(
+                    SiteMonitorCheckResult(
+                        name=nome,
+                        ok=status in status_esperados,
+                        status=status,
+                        elapsed_ms=elapsed_ms,
+                        message=mensagem,
+                    )
+                )
+            except Exception as erro:
+                elapsed_ms = int((time.perf_counter() - inicio) * 1000)
+                resultados.append(
+                    SiteMonitorCheckResult(
+                        name=nome,
+                        ok=False,
+                        status=None,
+                        elapsed_ms=elapsed_ms,
+                        message=str(erro),
+                    )
+                )
+
+    return resultados
+
+
 def executar_auto_teste_site(configuracao=None, enviar_telegram=True):
     configuracao = configuracao or obter_configuracao_empresa(force=True)
     site_url = configuracao.get("auto_teste_site_url") or "https://wagenestetica.duckdns.org"
     token = normalizar_texto_campo(configuracao.get("auto_teste_telegram_bot_token"))
     chat_id = normalizar_texto_campo(configuracao.get("auto_teste_telegram_chat_id"))
 
-    resultados = run_site_checks(site_url, 15)
+    if has_request_context():
+        resultados = run_site_checks_interno()
+    else:
+        resultados = run_site_checks(site_url, 6)
     relatorio = build_site_monitor_report(site_url, resultados)
     status = "ok" if all(item.ok for item in resultados) else "falha"
 

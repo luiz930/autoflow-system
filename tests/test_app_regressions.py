@@ -361,7 +361,8 @@ class AppRegressionTests(unittest.TestCase):
             "message": "HTTP 200",
         })()
 
-        with patch.object(app_module, "run_site_checks", return_value=[resultado_check]), \
+        with patch.object(app_module, "has_request_context", return_value=False), \
+             patch.object(app_module, "run_site_checks", return_value=[resultado_check]), \
              patch.object(app_module, "build_site_monitor_report", return_value="relatorio ok"), \
              patch.object(app_module, "resolver_chat_id_telegram", return_value="777"), \
              patch.object(app_module, "send_site_monitor_telegram_message") as enviar, \
@@ -372,6 +373,36 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(resultado["chat_id"], "777")
         enviar.assert_called_once_with("123456:token", "777", "relatorio ok", 15)
         salvar_resultado.assert_called_once_with("ok", "relatorio ok", chat_id="777")
+
+    def test_executar_auto_teste_em_request_nao_chama_http_do_proprio_site(self):
+        config = app_module.empresa_snapshot_padrao()
+        config.update(
+            {
+                "auto_teste_site_url": "https://wagenestetica.duckdns.org",
+                "auto_teste_telegram_bot_token": "123456:token",
+                "auto_teste_telegram_chat_id": "777",
+            }
+        )
+
+        resultado_check = app_module.SiteMonitorCheckResult(
+            name="Login",
+            ok=True,
+            status=200,
+            elapsed_ms=10,
+            message="HTTP 200",
+        )
+
+        with app_module.app.test_request_context("/configuracoes/auto-teste/testar", method="POST"):
+            with patch.object(app_module, "run_site_checks") as externo, \
+                 patch.object(app_module, "run_site_checks_interno", return_value=[resultado_check]) as interno, \
+                 patch.object(app_module, "build_site_monitor_report", return_value="relatorio ok"), \
+                 patch.object(app_module, "send_site_monitor_telegram_message"), \
+                 patch.object(app_module, "salvar_resultado_auto_teste_seguro"):
+                resultado = app_module.executar_auto_teste_site(config, enviar_telegram=True)
+
+        self.assertTrue(resultado["ok"])
+        interno.assert_called_once()
+        externo.assert_not_called()
 
     def test_salvar_campos_configuracao_empresa_garante_colunas_auto_teste(self):
         conn = sqlite3.connect(":memory:")
