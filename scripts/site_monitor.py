@@ -75,6 +75,8 @@ def run_site_checks(base_url: str, timeout: int) -> list[CheckResult]:
     return [
         run_check("Site HTTPS", base_url, timeout, {200, 302}),
         run_check("Login", f"{base_url}/login", timeout, {200}),
+        run_check("Clientes", f"{base_url}/clientes", timeout, {200, 302}),
+        run_check("Status do sistema", f"{base_url}/status-sistema", timeout, {200, 302}),
         run_check("Manifest PWA", f"{base_url}/site.webmanifest", timeout, {200}),
         run_check("Service Worker", f"{base_url}/sw.js", timeout, {200}),
         run_check("Status PWA", f"{base_url}/api/pwa/status", timeout, {200}),

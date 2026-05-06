@@ -29,6 +29,9 @@
         <p class="pill-label">{{ item.nome }}</p>
         <h2 class="section-title top-spacing">{{ item.valor }}</h2>
         <p class="muted-text">{{ item.detalhe }}</p>
+        {% if item.acao %}
+        <p><b>Acao recomendada:</b> {{ item.acao }}</p>
+        {% endif %}
     </div>
     {% endfor %}
 </div>

@@ -9546,6 +9546,8 @@ def run_site_checks_interno(timeout=5):
     rotas = [
         ("Site HTTPS", "/", {200, 302}),
         ("Login", "/login", {200}),
+        ("Clientes", "/clientes", {200, 302}),
+        ("Status do sistema", "/status-sistema", {200, 302}),
         ("Manifest PWA", "/site.webmanifest", {200}),
         ("Service Worker", "/sw.js", {200}),
         ("Status PWA", "/api/pwa/status", {200}),
@@ -9587,6 +9589,32 @@ def run_site_checks_interno(timeout=5):
     return resultados
 
 
+def check_auto_teste_banco_online():
+    inicio = time.perf_counter()
+    try:
+        status = obter_status_banco_online()
+        elapsed_ms = int((time.perf_counter() - inicio) * 1000)
+        conectado = bool(status.get("conectado"))
+        mensagem = status.get("mensagem") or status.get("backend_label") or "Banco online nao validado."
+        return SiteMonitorCheckResult(
+            name="Banco online",
+            ok=conectado,
+            status=200 if conectado else None,
+            elapsed_ms=elapsed_ms,
+            message=mensagem,
+        )
+    except Exception as erro:
+        elapsed_ms = int((time.perf_counter() - inicio) * 1000)
+        registrar_ultimo_erro_producao(erro, descricao="auto_teste_banco_online")
+        return SiteMonitorCheckResult(
+            name="Banco online",
+            ok=False,
+            status=None,
+            elapsed_ms=elapsed_ms,
+            message=str(erro),
+        )
+
+
 def executar_auto_teste_site(configuracao=None, enviar_telegram=True):
     configuracao = configuracao or obter_configuracao_empresa(force=True)
     site_url = configuracao.get("auto_teste_site_url") or "https://wagenestetica.duckdns.org"
@@ -9597,6 +9625,7 @@ def executar_auto_teste_site(configuracao=None, enviar_telegram=True):
         resultados = run_site_checks_interno()
     else:
         resultados = run_site_checks(site_url, 6)
+    resultados.append(check_auto_teste_banco_online())
     relatorio = build_site_monitor_report(site_url, resultados)
     status = "ok" if all(item.ok for item in resultados) else "falha"
 
@@ -15955,6 +15984,18 @@ def salvar_empresa_admin():
         conn.commit()
         conn.close()
         limpar_caches_interface()
+        registrar_auditoria(
+            "salvou_empresa_licenca",
+            "empresa",
+            entidade_id=empresa_salva_id,
+            detalhes={
+                "nome_fantasia": nome_fantasia,
+                "razao_social": razao_social,
+                "plano_codigo": plano_codigo,
+                "licenca_status": status,
+                "ativa": bool(ativa),
+            },
+        )
         session["empresas_feedback"] = {"tipo": "sucesso", "mensagem": "Empresa e licenca salvas com sucesso."}
     except Exception as erro:
         session["empresas_feedback"] = {"tipo": "erro", "mensagem": f"Nao foi possivel salvar a empresa: {erro}"}
@@ -16061,6 +16102,15 @@ def trocar_empresa_ativa():
         "tipo": "sucesso",
         "mensagem": f"Empresa ativa alterada para {empresa.get('nome_fantasia') or empresa.get('razao_social') or empresa_id}.",
     }
+    registrar_auditoria(
+        "trocou_empresa_ativa",
+        "empresa",
+        entidade_id=empresa_id,
+        detalhes={
+            "nome_fantasia": empresa.get("nome_fantasia"),
+            "razao_social": empresa.get("razao_social"),
+        },
+    )
     return redirect("/empresas")
 
 
@@ -16249,6 +16299,7 @@ def montar_status_sistema_dono():
     backup_status = executar_com_fallback_producao(obter_status_backup_banco, status_backup_banco_padrao(), "status_dono_backup")
     licenca = executar_com_fallback_producao(carregar_contexto_licenca_empresa_seguro, {}, "status_dono_licenca")
     usuarios_ativos = executar_com_fallback_producao(contar_usuarios_ativos_empresa, 0, "status_dono_usuarios")
+    configuracao = executar_com_fallback_producao(lambda: obter_configuracao_empresa(force=True), empresa_snapshot_padrao(), "status_dono_config")
     pwa_status = executar_com_fallback_producao(
         lambda: {
             "https": request_https_ativo(),
@@ -16265,36 +16316,58 @@ def montar_status_sistema_dono():
             "ok": bool(banco_status.get("conectado")),
             "valor": banco_status.get("backend_label") or banco_status.get("modo_label") or "-",
             "detalhe": banco_status.get("mensagem") or "-",
+            "acao": "OK" if banco_status.get("conectado") else "Validar DATABASE_URL e migrations do Supabase.",
         },
         {
             "nome": "Backup",
             "ok": bool(backup_status.get("ultimo_backup")),
             "valor": backup_status.get("ultimo_backup_em_fmt") or "Sem backup",
             "detalhe": f"{backup_status.get('tipo_backup_label', '-')} | {backup_status.get('frequencia_label', '-')}",
+            "acao": "OK" if backup_status.get("ultimo_backup") else "Gerar backup e confirmar rotina automatica.",
         },
         {
             "nome": "Licenca",
             "ok": not bool(licenca.get("bloqueada")),
             "valor": f"{licenca.get('plano_label', '-') } / {licenca.get('status_label', '-')}",
             "detalhe": licenca.get("validade_em") or "Sem validade definida",
+            "acao": "OK" if not bool(licenca.get("bloqueada")) else "Renovar ou desbloquear a licenca.",
         },
         {
             "nome": "Usuarios ativos",
             "ok": True,
             "valor": str(usuarios_ativos),
             "detalhe": "Acessos ativos na empresa atual.",
+            "acao": "Revisar acessos inativos periodicamente.",
+        },
+        {
+            "nome": "Bot Telegram",
+            "ok": bool(configuracao.get("auto_teste_ativo") and configuracao.get("auto_teste_telegram_bot_token") and configuracao.get("auto_teste_telegram_chat_id")),
+            "valor": "Ativo" if configuracao.get("auto_teste_ativo") else "Desativado",
+            "detalhe": (
+                f"Ultimo teste: {configuracao.get('auto_teste_ultimo_teste_em_fmt')}. Status: {configuracao.get('auto_teste_ultimo_status') or 'nao testado'}."
+            ),
+            "acao": "OK" if configuracao.get("auto_teste_ativo") and configuracao.get("auto_teste_telegram_chat_id") else "Configurar token/chat e enviar teste.",
         },
         {
             "nome": "PWA instalado",
             "ok": bool(pwa_status.get("https") and pwa_status.get("manifest") and pwa_status.get("service_worker")),
             "valor": "Pronto" if pwa_status.get("https") else "Verificar HTTPS",
             "detalhe": "HTTPS, manifest e service worker validados." if pwa_status.get("https") else "Abra pelo dominio HTTPS.",
+            "acao": "OK" if pwa_status.get("https") else "Usar o dominio HTTPS antes de instalar.",
         },
         {
             "nome": "Versao",
             "ok": True,
             "valor": obter_versao_sistema(),
             "detalhe": "Versao atual exibida no sistema.",
+            "acao": "Atualizar changelog ao publicar novas entregas.",
+        },
+        {
+            "nome": "Onboarding",
+            "ok": bool(int(configuracao.get("onboarding_concluido") or 0)),
+            "valor": "Concluido" if int(configuracao.get("onboarding_concluido") or 0) else "Pendente",
+            "detalhe": "Empresa, plano, usuarios, servicos, banco, backup e PWA devem estar configurados.",
+            "acao": "Criar fluxo guiado para instalacao em cliente novo." if not int(configuracao.get("onboarding_concluido") or 0) else "OK",
         },
     ]
 
@@ -18316,6 +18389,12 @@ def excluir_sync_clientes(sync_id):
 
         if removidos:
             limpar_cache_clientes()
+            registrar_auditoria(
+                "excluiu_planilha_clientes",
+                "sincronizacoes_clientes",
+                entidade_id=sync_id,
+                detalhes={"empresa_id": empresa_id},
+            )
             definir_feedback_clientes("sucesso", "Sincronizacao removida.")
         else:
             definir_feedback_clientes("erro", "Sincronizacao nao encontrada.")
