@@ -1462,8 +1462,8 @@ input[type="file"] {
 <form id="formServico" class="hidden" action="/servico" method="POST" enctype="multipart/form-data">
 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 
-<p>Fotos de entrada</p>
-<input type="file" name="foto_entrada" multiple accept="image/*" capture="environment" required>
+<p>Fotos de entrada (camera ou galeria)</p>
+<input type="file" name="foto_entrada" multiple accept="image/*" required>
 
 <input name="placa" value="{{dados.placa}}" readonly><br>
 
