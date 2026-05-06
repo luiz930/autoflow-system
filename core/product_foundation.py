@@ -216,6 +216,8 @@ def apply_empresa_scope(cursor, add_column):
     add_column(cursor, "fotos", "empresa_id INTEGER DEFAULT 1")
     add_column(cursor, "retornos_clientes", "empresa_id INTEGER DEFAULT 1")
     add_column(cursor, "sincronizacoes_clientes", "empresa_id INTEGER DEFAULT 1")
+    add_column(cursor, "sincronizacoes_clientes", "excluido_em TEXT")
+    add_column(cursor, "sincronizacoes_clientes", "excluido_por TEXT")
     add_column(cursor, "orcamentos", "empresa_id INTEGER DEFAULT 1")
     add_column(cursor, "notas_fiscais", "empresa_id INTEGER DEFAULT 1")
     add_column(cursor, "configuracao_empresa", "empresa_id INTEGER DEFAULT 1")

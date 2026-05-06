@@ -156,14 +156,24 @@ def alternar_sincronizacao_cliente(
     )
 
 
-def excluir_sincronizacao_cliente(cursor, sync_id, empresa_id):
+def excluir_sincronizacao_cliente(cursor, sync_id, empresa_id, atualizado_em, usuario=""):
     empresa_id = normalize_empresa_id(empresa_id)
     cursor.execute(
         "DELETE FROM historico_lavagens_sync WHERE empresa_id=? AND sync_id=?",
         (empresa_id, sync_id),
     )
     cursor.execute(
-        "DELETE FROM sincronizacoes_clientes WHERE empresa_id=? AND id=?",
-        (empresa_id, sync_id),
+        """
+        UPDATE sincronizacoes_clientes
+        SET ativo=0,
+            proximo_sync_em=NULL,
+            ultimo_status='EXCLUIDA',
+            ultima_mensagem='Sincronizacao excluida pelo usuario.',
+            atualizado_em=?,
+            excluido_em=?,
+            excluido_por=?
+        WHERE empresa_id=? AND id=?
+        """,
+        (atualizado_em, atualizado_em, usuario, empresa_id, sync_id),
     )
     return cursor.rowcount

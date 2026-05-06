@@ -5285,6 +5285,8 @@ def garantir_schema_sqlite_local_minima(force=False):
                 ultima_mensagem TEXT,
                 ultimo_hash TEXT,
                 colunas_ultima_sync TEXT,
+                excluido_em TEXT,
+                excluido_por TEXT,
                 criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
                 atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP
             )
@@ -5378,6 +5380,8 @@ def garantir_schema_sqlite_local_minima(force=False):
             adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "colunas_ultima_sync TEXT")
             adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "criado_em TEXT")
             adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "atualizado_em TEXT")
+            adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "excluido_em TEXT")
+            adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "excluido_por TEXT")
             c.execute("UPDATE clientes SET empresa_id=1 WHERE empresa_id IS NULL")
             c.execute("UPDATE veiculos SET empresa_id=1 WHERE empresa_id IS NULL")
             c.execute("UPDATE servicos SET empresa_id=1 WHERE empresa_id IS NULL")
@@ -6195,6 +6199,8 @@ def atualizar_banco():
     adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "colunas_ultima_sync TEXT")
     adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "campo_servico TEXT")
     adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "campo_data TEXT")
+    adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "excluido_em TEXT")
+    adicionar_coluna_se_preciso(c, "sincronizacoes_clientes", "excluido_por TEXT")
     adicionar_coluna_se_preciso(c, "servicos", "origem TEXT")
     adicionar_coluna_se_preciso(c, "servicos", "guarita TEXT")
     adicionar_coluna_se_preciso(c, "servicos", "pneu TEXT")
@@ -6750,6 +6756,8 @@ def criar_todas_tabelas():
         ultima_mensagem TEXT,
         ultimo_hash TEXT,
         colunas_ultima_sync TEXT,
+        excluido_em TEXT,
+        excluido_por TEXT,
         criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
         atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP
     )
@@ -6840,6 +6848,8 @@ def criar_todas_tabelas():
         ultima_mensagem TEXT,
         ultimo_hash TEXT,
         colunas_ultima_sync TEXT,
+        excluido_em TEXT,
+        excluido_por TEXT,
         criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
         atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP
     )
@@ -14012,6 +14022,7 @@ def espelhar_cadastro_site_em_sincronizacoes_clientes(placa, nome="", telefone="
         SELECT id, nome, url, campo_placa, campo_nome, campo_telefone, campo_modelo, campo_cor, campo_servico, campo_data, colunas_ultima_sync
         FROM sincronizacoes_clientes
         WHERE empresa_id=? AND ativo=1
+          AND COALESCE(excluido_em, '')=''
         ORDER BY id ASC
     """, (empresa_id,))
     sincronizacoes = [dict(row) for row in c.fetchall()]
@@ -14112,6 +14123,7 @@ def sincronizar_fontes_pendentes():
                     SELECT id
                     FROM sincronizacoes_clientes
                     WHERE ativo=1
+                      AND COALESCE(excluido_em, '')=''
                       AND (proximo_sync_em IS NULL OR proximo_sync_em<=?)
                     ORDER BY id
                     LIMIT 1
@@ -18282,7 +18294,13 @@ def excluir_sync_clientes(sync_id):
     try:
         conn = conectar()
         c = conn.cursor()
-        removidos = excluir_sincronizacao_cliente_domain(c, sync_id, empresa_id)
+        removidos = excluir_sincronizacao_cliente_domain(
+            c,
+            sync_id,
+            empresa_id,
+            agora_iso(),
+            session.get("usuario") or "",
+        )
         conn.commit()
         conn.close()
 

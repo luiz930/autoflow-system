@@ -164,6 +164,7 @@ def consultar_sincronizacoes_clientes(cursor, empresa_id):
         SELECT *
         FROM sincronizacoes_clientes
         WHERE empresa_id=?
+          AND COALESCE(excluido_em, '')=''
         ORDER BY id DESC
         """,
         (empresa_id,),
@@ -173,7 +174,7 @@ def consultar_sincronizacoes_clientes(cursor, empresa_id):
 
 def consultar_sincronizacao_cliente(cursor, sync_id, empresa_id=None):
     params = [int(sync_id)]
-    sql = "SELECT * FROM sincronizacoes_clientes WHERE id=?"
+    sql = "SELECT * FROM sincronizacoes_clientes WHERE id=? AND COALESCE(excluido_em, '')=''"
 
     if empresa_id is not None:
         sql += " AND empresa_id=?"
@@ -190,6 +191,7 @@ def consultar_ultima_sincronizacao_cliente(cursor, empresa_id):
         SELECT id, ultima_mensagem, ultimo_status
         FROM sincronizacoes_clientes
         WHERE empresa_id=?
+          AND COALESCE(excluido_em, '')=''
         ORDER BY id DESC
         LIMIT 1
         """,

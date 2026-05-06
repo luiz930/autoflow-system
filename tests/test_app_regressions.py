@@ -9,6 +9,8 @@ import zipfile
 from flask import request, session
 
 import app as app_module
+from domains.clientes import consultar_sincronizacoes_clientes
+from domains.sync_clientes import excluir_sincronizacao_cliente
 
 
 class PersistentCompatConnection:
@@ -59,6 +61,56 @@ class AppRegressionTests(unittest.TestCase):
 
         self.assertIn("empresa_id", colunas_usuarios)
         self.assertIn("empresa_id", colunas_clientes)
+
+    def test_excluir_sincronizacao_cliente_marca_como_excluida_sem_apagar(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute(
+            """
+            CREATE TABLE sincronizacoes_clientes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER DEFAULT 1,
+                nome TEXT,
+                ativo INTEGER DEFAULT 1,
+                proximo_sync_em TEXT,
+                ultimo_status TEXT,
+                ultima_mensagem TEXT,
+                atualizado_em TEXT,
+                excluido_em TEXT,
+                excluido_por TEXT
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE historico_lavagens_sync (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER DEFAULT 1,
+                sync_id INTEGER
+            )
+            """
+        )
+        c.execute(
+            "INSERT INTO sincronizacoes_clientes (empresa_id, nome, ativo, proximo_sync_em) VALUES (1, 'Planilha', 1, '2026-05-06T10:00:00')"
+        )
+        sync_id = c.lastrowid
+        c.execute("INSERT INTO historico_lavagens_sync (empresa_id, sync_id) VALUES (1, ?)", (sync_id,))
+
+        removidos = excluir_sincronizacao_cliente(c, sync_id, 1, "2026-05-06T20:00:00", "admin")
+
+        self.assertEqual(removidos, 1)
+        c.execute("SELECT * FROM sincronizacoes_clientes WHERE id=?", (sync_id,))
+        sync = c.fetchone()
+        self.assertIsNotNone(sync)
+        self.assertEqual(sync["ativo"], 0)
+        self.assertEqual(sync["ultimo_status"], "EXCLUIDA")
+        self.assertEqual(sync["excluido_em"], "2026-05-06T20:00:00")
+        self.assertEqual(sync["excluido_por"], "admin")
+        c.execute("SELECT COUNT(*) AS total FROM historico_lavagens_sync WHERE sync_id=?", (sync_id,))
+        self.assertEqual(c.fetchone()["total"], 0)
+        self.assertEqual(consultar_sincronizacoes_clientes(c, 1), [])
+        conn.close()
 
     def _criar_banco_admin_memoria(self):
         conn = sqlite3.connect(":memory:")
