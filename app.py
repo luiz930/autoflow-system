@@ -4,6 +4,7 @@ import json
 import math
 import sqlite3
 import socket
+from flask import send_from_directory
 from copy import deepcopy
 import base64
 import mimetypes
@@ -11561,7 +11562,8 @@ def servir_manifesto_site():
     nome_curto = (produto.get("brand_name") or "Gestao")[:24]
     cor_fundo = produto.get("brand_background_color") or "#0b0b0b"
     cor_tema = produto.get("brand_primary_color") or "#facc15"
-    icone = produto.get("brand_favicon_url") or "/branding/favicon"
+    icone_192 = "/static/icon-192.jpg"
+    icone_512 = "/static/icon-512.jpg"
     manifest = {
         "id": "/?source=pwa",
         "name": nome_app,
@@ -11587,25 +11589,27 @@ def servir_manifesto_site():
                 "short_name": "Painel",
                 "description": "Abrir atendimentos em andamento.",
                 "url": "/painel?source=pwa_shortcut",
-                "icons": [{"src": icone, "sizes": "192x192", "purpose": "any maskable"}],
+                "icons": [{"src": icone_192, "sizes": "192x192", "type": "image/jpeg", "purpose": "any maskable"}],
             },
             {
                 "name": "Novo atendimento",
                 "short_name": "Atender",
                 "description": "Abrir a tela inicial para iniciar atendimento.",
                 "url": "/?source=pwa_shortcut",
-                "icons": [{"src": icone, "sizes": "192x192", "purpose": "any maskable"}],
+                "icons": [{"src": icone_192, "sizes": "192x192", "type": "image/jpeg", "purpose": "any maskable"}],
             },
         ],
         "icons": [
             {
-                "src": icone,
+                "src": icone_192,
                 "sizes": "192x192",
+                "type": "image/jpeg",
                 "purpose": "any maskable",
             },
             {
-                "src": icone,
+                "src": icone_512,
                 "sizes": "512x512",
+                "type": "image/jpeg",
                 "purpose": "any maskable",
             },
         ],
@@ -11616,6 +11620,38 @@ def servir_manifesto_site():
     )
     response.headers["Cache-Control"] = "no-cache"
     return response
+
+
+@app.route("/sw.js")
+def servir_service_worker_raiz():
+    response = send_from_directory(
+        os.path.join(app.root_path, "static"),
+        "sw.js",
+        mimetype="application/javascript",
+        max_age=0,
+    )
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.route("/api/pwa/status")
+def api_pwa_status():
+    seguro = bool(request.is_secure or request.host.startswith(("localhost", "127.0.0.1")))
+    return jsonify({
+        "ok": seguro,
+        "secure_context_required": True,
+        "secure_request": bool(request.is_secure),
+        "host": request.host,
+        "manifest_url": "/site.webmanifest",
+        "service_worker_url": "/sw.js",
+        "service_worker_scope": "/",
+        "mensagem": (
+            "PWA pronto para instalacao."
+            if seguro else
+            "Para instalar como app no Chrome Android, acesse por HTTPS com certificado valido. Em HTTP o Chrome permite apenas criar atalho."
+        ),
+    })
 
 
 def listar_fotos_servicos(ids_servicos, conn=None, cursor=None):

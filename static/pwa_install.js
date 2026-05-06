@@ -27,6 +27,14 @@
         return;
     }
 
+    if (!window.isSecureContext) {
+        installButton.textContent = "App exige HTTPS";
+        installButton.title = "Para instalar como app no Chrome Android, abra o sistema por HTTPS com certificado valido.";
+        installButton.hidden = false;
+        installButton.disabled = true;
+        return;
+    }
+
     window.addEventListener("beforeinstallprompt", (event) => {
         event.preventDefault();
         deferredPrompt = event;

@@ -361,8 +361,26 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(payload["display"], "standalone")
         self.assertEqual(payload["scope"], "/")
         self.assertIn("camera", payload["permissions"])
-        self.assertEqual(payload["icons"][0]["src"], "/branding/favicon")
+        self.assertEqual(payload["icons"][0]["src"], "/static/icon-192.jpg")
+        self.assertEqual(payload["icons"][1]["src"], "/static/icon-512.jpg")
         self.assertEqual(response.mimetype, "application/manifest+json")
+
+    def test_service_worker_raiz_tem_escopo_do_app(self):
+        response = self.client.get("/sw.js")
+        conteudo = response.get_data()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("Service-Worker-Allowed"), "/")
+        self.assertIn(b"wagen-pwa", conteudo)
+        response.close()
+
+    def test_api_pwa_status_exige_https_para_instalar(self):
+        inseguro = self.client.get("/api/pwa/status", base_url="http://66.70.198.72:5000")
+        seguro = self.client.get("/api/pwa/status", base_url="https://sistema.exemplo.com")
+
+        self.assertFalse(inseguro.get_json()["ok"])
+        self.assertIn("HTTPS", inseguro.get_json()["mensagem"])
+        self.assertTrue(seguro.get_json()["ok"])
 
     def test_filtrar_registros_por_periodo_generico(self):
         referencia = app_module.date(2026, 5, 3)
