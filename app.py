@@ -4082,6 +4082,12 @@ def limpar_caches_operacionais_leves():
     SYNC_TOKEN_CACHE["resultado"] = None
 
 
+def limpar_cache_painel():
+    PAINEL_CONTEXT_CACHE["testado_em"] = 0.0
+    PAINEL_CONTEXT_CACHE["chave"] = ""
+    PAINEL_CONTEXT_CACHE["resultado"] = None
+
+
 def limpar_cache_banco_online():
     BANCO_ONLINE_STATUS_CACHE["testado_em"] = 0.0
     BANCO_ONLINE_STATUS_CACHE["resultado"] = {}
@@ -11636,6 +11642,41 @@ def listar_fotos_servicos(ids_servicos, conn=None, cursor=None):
         conn_local.close()
     return fotos_por_servico
 
+def listar_resumo_fotos_servicos(ids_servicos, conn=None, cursor=None):
+    ids = [int(item) for item in (ids_servicos or []) if item]
+
+    if not ids:
+        return {}
+
+    conn_local = None
+    c = cursor
+    if c is None:
+        conn_local = conn or conectar()
+        c = conn_local.cursor()
+
+    placeholders = ",".join(["?"] * len(ids))
+    c.execute(f"""
+        SELECT servico_id, tipo, COUNT(*) AS total
+        FROM fotos
+        WHERE empresa_id=? AND servico_id IN ({placeholders})
+        GROUP BY servico_id, tipo
+    """, (empresa_atual_id(), *ids))
+
+    resumo = {}
+    for row in c.fetchall():
+        item = dict(row)
+        servico_id = item.get("servico_id")
+        tipo = normalizar_texto_campo(item.get("tipo")).lower()
+        if not servico_id or tipo not in {"entrada", "detalhe", "saida"}:
+            continue
+        grupo = resumo.setdefault(servico_id, {"entrada": 0, "detalhe": 0, "saida": 0})
+        grupo[tipo] = converter_inteiro(item.get("total"), 0)
+
+    if conn_local:
+        conn_local.close()
+
+    return resumo
+
 def contar_fotos_validas(fotos):
     return sum(
         1
@@ -11695,6 +11736,42 @@ def listar_cobrancas_extras_servicos(ids_servicos, conn=None, cursor=None):
         grupo["total_exibicao"] = formatar_valor_monetario(grupo["total"])
 
     return extras_por_servico
+
+def listar_resumo_cobrancas_extras_servicos(ids_servicos, conn=None, cursor=None):
+    ids = [int(item) for item in (ids_servicos or []) if item]
+
+    if not ids:
+        return {}
+
+    conn_local = None
+    c = cursor
+    if c is None:
+        conn_local = conn or conectar()
+        c = conn_local.cursor()
+
+    placeholders = ",".join(["?"] * len(ids))
+    c.execute(f"""
+        SELECT servico_id, COUNT(*) AS quantidade, COALESCE(SUM(valor), 0) AS total
+        FROM servico_cobrancas_extras
+        WHERE servico_id IN ({placeholders})
+        GROUP BY servico_id
+    """, ids)
+
+    resumo = {}
+    for row in c.fetchall():
+        item = dict(row)
+        total = converter_valor_numerico(item.get("total"))
+        resumo[item["servico_id"]] = {
+            "itens": [],
+            "quantidade": converter_inteiro(item.get("quantidade"), 0),
+            "total": total,
+            "total_exibicao": formatar_valor_monetario(total),
+        }
+
+    if conn_local:
+        conn_local.close()
+
+    return resumo
 
 def listar_cobrancas_extras_servico(servico_id):
     extras = listar_cobrancas_extras_servicos([servico_id])
@@ -17700,6 +17777,7 @@ def servico():
 
     conn.commit()
     conn.close()
+    limpar_cache_painel()
 
     registrar_auditoria(
         "iniciou_atendimento",
@@ -17750,6 +17828,7 @@ def salvar_operacional_painel(id):
         servico_db = registrar_transicao_etapa_servico(c, servico_db, "FINALIZACAO")
         conn.commit()
         conn.close()
+        limpar_cache_painel()
         registrar_auditoria(
             "abriu_checklist_finalizacao",
             "servico",
@@ -17778,6 +17857,7 @@ def salvar_operacional_painel(id):
 
     conn.commit()
     conn.close()
+    limpar_cache_painel()
 
     registrar_auditoria(
         "salvou_operacional",
@@ -17838,6 +17918,7 @@ def trocar_etapa_servico_painel(id):
     )
     conn.commit()
     conn.close()
+    limpar_cache_painel()
 
     servico_atualizado = enriquecer_etapas_operacionais_servico(dict(servico_atualizado or {}))
     registrar_auditoria(
@@ -17911,6 +17992,7 @@ def adicionar_cobranca_extra_painel(id):
     )
     conn.commit()
     conn.close()
+    limpar_cache_painel()
 
     registrar_auditoria(
         "adicionou_cobranca_extra",
@@ -18032,6 +18114,7 @@ def checklist_servico(id):
             )
             conn.commit()
             conn.close()
+            limpar_cache_painel()
 
             registrar_auditoria(
                 "finalizou_atendimento",
@@ -18084,6 +18167,7 @@ def detalhe(id):
 
     conn.commit()
     conn.close()
+    limpar_cache_painel()
     registrar_auditoria(
         "adicionou_fotos_detalhe",
         "servico",
@@ -18499,8 +18583,8 @@ def _carregar_dados_painel(conn):
     return {
         "servicos_db": servicos_db,
         "produtos_pneu": produtos_pneu,
-        "fotos_por_servico": listar_fotos_servicos(ids_servicos, cursor=c),
-        "extras_por_servico": listar_cobrancas_extras_servicos(ids_servicos, cursor=c),
+        "resumo_fotos_por_servico": listar_resumo_fotos_servicos(ids_servicos, cursor=c),
+        "resumo_extras_por_servico": listar_resumo_cobrancas_extras_servicos(ids_servicos, cursor=c),
     }
 
 
@@ -18525,21 +18609,21 @@ def painel():
             padrao={
                 "servicos_db": [],
                 "produtos_pneu": [],
-                "fotos_por_servico": {},
-                "extras_por_servico": {},
+                "resumo_fotos_por_servico": {},
+                "resumo_extras_por_servico": {},
             },
         ) or {
             "servicos_db": [],
             "produtos_pneu": [],
-            "fotos_por_servico": {},
-            "extras_por_servico": {},
+            "resumo_fotos_por_servico": {},
+            "resumo_extras_por_servico": {},
         }
         salvar_cache_consulta(PAINEL_CONTEXT_CACHE, chave_cache, leitura_painel)
 
     servicos_db = leitura_painel["servicos_db"]
     produtos_pneu = leitura_painel["produtos_pneu"]
-    fotos_por_servico = leitura_painel.get("fotos_por_servico", {})
-    extras_por_servico = leitura_painel.get("extras_por_servico", {})
+    resumo_fotos_por_servico = leitura_painel.get("resumo_fotos_por_servico") or leitura_painel.get("fotos_por_servico", {})
+    resumo_extras_por_servico = leitura_painel.get("resumo_extras_por_servico") or leitura_painel.get("extras_por_servico", {})
 
     servicos = []
 
@@ -18598,17 +18682,34 @@ def painel():
         s_dict["cera"] = s_dict.get("cera") or "Nao"
         s_dict["hidro_lataria"] = s_dict.get("hidro_lataria") or "Nao"
         s_dict["hidro_vidros"] = s_dict.get("hidro_vidros") or "Nao"
-        s_dict["galeria_fotos"] = fotos_por_servico.get(s_dict["id"], {})
-        s_dict["fotos_entrada"] = len(s_dict["galeria_fotos"].get("entrada", []))
-        s_dict["fotos_detalhe"] = len(s_dict["galeria_fotos"].get("detalhe", []))
-        s_dict["fotos_saida"] = len(s_dict["galeria_fotos"].get("saida", []))
+        s_dict["galeria_fotos"] = {}
+        resumo_fotos = resumo_fotos_por_servico.get(s_dict["id"], {})
+        s_dict["fotos_entrada"] = (
+            len(resumo_fotos.get("entrada", []))
+            if isinstance(resumo_fotos.get("entrada"), list)
+            else converter_inteiro(resumo_fotos.get("entrada"), 0)
+        )
+        s_dict["fotos_detalhe"] = (
+            len(resumo_fotos.get("detalhe", []))
+            if isinstance(resumo_fotos.get("detalhe"), list)
+            else converter_inteiro(resumo_fotos.get("detalhe"), 0)
+        )
+        s_dict["fotos_saida"] = (
+            len(resumo_fotos.get("saida", []))
+            if isinstance(resumo_fotos.get("saida"), list)
+            else converter_inteiro(resumo_fotos.get("saida"), 0)
+        )
         s_dict["tem_fotos"] = bool(s_dict["fotos_entrada"] or s_dict["fotos_detalhe"] or s_dict["fotos_saida"])
-        s_dict["cobrancas_extras_info"] = extras_por_servico.get(s_dict["id"], {
+        s_dict["cobrancas_extras_info"] = resumo_extras_por_servico.get(s_dict["id"], {
             "itens": [],
+            "quantidade": 0,
             "total": 0.0,
             "total_exibicao": "0.00",
         })
-        s_dict["tem_cobrancas_extras"] = bool(s_dict["cobrancas_extras_info"]["itens"])
+        s_dict["tem_cobrancas_extras"] = bool(
+            s_dict["cobrancas_extras_info"].get("quantidade")
+            or s_dict["cobrancas_extras_info"].get("itens")
+        )
         enriquecer_responsaveis_servico(s_dict)
         enriquecer_entrega_servico(s_dict)
         enriquecer_etapas_operacionais_servico(s_dict)
@@ -18629,6 +18730,50 @@ def painel():
         produtos_pneu=produtos_pneu,
         feedback=session.pop("painel_feedback", None),
     )
+
+@app.route("/api/painel/servico/<int:id>/detalhes")
+def api_painel_servico_detalhes(id):
+    if not session.get("usuario"):
+        return jsonify({"ok": False, "erro": "Sessao expirada. Entre novamente para carregar os detalhes."}), 401
+
+    empresa_id = empresa_atual_id()
+
+    def carregar(conn):
+        c = conn.cursor()
+        servico = consultar_servico_operacional_domain(c, empresa_id, id)
+        if not servico:
+            return None
+        fotos = listar_fotos_servicos([id], cursor=c).get(id, {})
+        extras = listar_cobrancas_extras_servicos([id], cursor=c).get(
+            id,
+            {"itens": [], "total": 0.0, "total_exibicao": "0.00"},
+        )
+        return {
+            "fotos": fotos,
+            "cobrancas_extras": extras,
+        }
+
+    try:
+        detalhes = executar_leitura_resiliente(
+            carregar,
+            descricao="PAINEL_DETALHES_SERVICO",
+            padrao=None,
+        )
+    except Exception:
+        app.logger.exception("Falha ao carregar detalhes do painel")
+        detalhes = None
+
+    if detalhes is None:
+        return jsonify({
+            "ok": False,
+            "erro": "Nao foi possivel carregar os detalhes agora. Tente novamente.",
+        }), 503
+
+    return jsonify({
+        "ok": True,
+        "servico_id": id,
+        **detalhes,
+    })
 
 @app.route("/historico", methods=["GET", "POST"])
 def pagina_historico():
@@ -18866,6 +19011,7 @@ def excluir_foto_historico(id, foto_id):
     c.execute("DELETE FROM fotos WHERE empresa_id=? AND servico_id=? AND id=?", (empresa_id, id, foto_id))
     conn.commit()
     conn.close()
+    limpar_cache_painel()
     remover_foto_servico_local(caminho_foto)
 
     registrar_auditoria(
@@ -18963,6 +19109,7 @@ def excluir_atendimento_historico(id):
     recalcular_resumo_veiculo_por_servicos(c, servico["veiculo_id"])
     conn.commit()
     conn.close()
+    limpar_cache_painel()
     for caminho_foto in caminhos_fotos:
         remover_foto_servico_local(caminho_foto)
 

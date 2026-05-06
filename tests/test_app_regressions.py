@@ -731,6 +731,46 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(len(kwargs["servicos_finalizacao"]), 1)
         self.assertEqual(kwargs["resumo_fluxo"]["total"], 2)
 
+    def test_api_painel_servico_detalhes_retorna_json_resiliente(self):
+        detalhes = {
+            "fotos": {
+                "entrada": [
+                    {
+                        "url": "/fotos/1/arquivo",
+                        "usuario_nome_exibicao": "Operador",
+                    }
+                ]
+            },
+            "cobrancas_extras": {
+                "itens": [
+                    {
+                        "descricao": "Polimento",
+                        "valor_exibicao": "50.00",
+                        "criado_por_nome_exibicao": "Admin",
+                    }
+                ],
+                "total": 50.0,
+                "total_exibicao": "50.00",
+            },
+        }
+
+        with self.client.session_transaction() as sess:
+            sess["usuario"] = "admin"
+            sess["empresa_id"] = 1
+
+        with patch.object(app_module, "INIT_DB_EXECUTADO", True), \
+             patch.object(app_module, "sincronizar_sessao_usuario"), \
+             patch.object(app_module, "carregar_contexto_licenca_empresa_seguro", return_value={"bloqueada": False}), \
+             patch.object(app_module, "executar_leitura_resiliente", return_value=detalhes):
+            response = self.client.get("/api/painel/servico/10/detalhes")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["servico_id"], 10)
+        self.assertEqual(payload["fotos"]["entrada"][0]["url"], "/fotos/1/arquivo")
+        self.assertEqual(payload["cobrancas_extras"]["itens"][0]["descricao"], "Polimento")
+
     def test_listar_fotos_servicos_prefere_rota_do_banco_quando_ha_blob(self):
         conn = self._criar_banco_fotos_memoria()
         c = conn.cursor()

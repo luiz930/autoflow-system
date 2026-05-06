@@ -99,25 +99,25 @@
     <p class="muted-text">Entrada por: {{ s.criado_por_nome_exibicao }}{% if s.operacional_por_nome_exibicao != "Nao registrado" %} | Operacional por: {{ s.operacional_por_nome_exibicao }}{% endif %}</p>
     <p class="muted-text">Fotos: entrada {{ s.fotos_entrada }} | detalhe {{ s.fotos_detalhe }} | saida {{ s.fotos_saida }}</p>
 
-    {% if s.tem_fotos %}
-    <div class="photo-gallery top-spacing">
-        {% for tipo, titulo in [('entrada', 'Entrada'), ('detalhe', 'Detalhe'), ('saida', 'Finalizacao')] %}
-        {% set fotos = s.galeria_fotos.get(tipo, []) %}
-        {% if fotos %}
-        <div class="photo-gallery-group">
-            <p class="photo-gallery-label">{{ titulo }} ({{ fotos|length }}){% if s.resumo_uploaders_fotos.get(tipo) %} - por {{ s.resumo_uploaders_fotos.get(tipo) }}{% endif %}</p>
-            <div class="photo-gallery-track">
-                {% for foto in fotos %}
-                <a href="{{ foto.url }}" target="_blank" rel="noopener" class="photo-thumb-link" title="{{ titulo }} {{ loop.index }} - {{ foto.usuario_nome_exibicao }}">
-                    <img src="{{ foto.url }}" alt="{{ titulo }} {{ loop.index }}" class="photo-thumb-image">
-                </a>
-                {% endfor %}
+    <div class="page-card page-card--soft top-spacing js-servico-detalhes" data-detalhes-url="/api/painel/servico/{{ s.id }}/detalhes">
+        <div class="actions-row actions-row--between">
+            <div>
+                <p><b>Detalhes sob demanda</b></p>
+                <p class="muted-text">Fotos e historico de extras ficam fora do carregamento inicial para manter o painel rapido.</p>
             </div>
+            <button type="button" class="js-carregar-detalhes">Carregar fotos e extras</button>
         </div>
-        {% endif %}
-        {% endfor %}
+        <p class="muted-text top-spacing">
+            Fotos registradas: {{ s.fotos_entrada + s.fotos_detalhe + s.fotos_saida }} |
+            Extras: {{ s.cobrancas_extras_info.quantidade or s.cobrancas_extras_info.itens|length }}
+            {% if s.tem_cobrancas_extras %}| Total extras: R$ {{ s.cobrancas_extras_info.total_exibicao }}{% endif %}
+        </p>
+        <div class="js-detalhes-status muted-text top-spacing" hidden></div>
+        <div class="js-detalhes-conteudo top-spacing" hidden>
+            <div class="photo-gallery js-detalhes-fotos"></div>
+            <div class="extra-charge-list top-spacing js-detalhes-extras"></div>
+        </div>
     </div>
-    {% endif %}
 
     <div class="actions-row actions-row--left top-spacing">
         <a href="/prioridade/{{ s.id }}/up" class="button-link">
@@ -204,18 +204,10 @@
         </form>
 
         {% if s.tem_cobrancas_extras %}
-        <div class="extra-charge-list top-spacing">
-            <p class="muted-text"><b>Total de extras:</b> R$ {{ s.cobrancas_extras_info.total_exibicao }}</p>
-            {% for extra in s.cobrancas_extras_info.itens %}
-            <div class="extra-charge-item">
-                <div>
-                    <strong>{{ extra.descricao }}</strong>
-                    <p class="muted-text">Lancado por {{ extra.criado_por_nome_exibicao }}{% if extra.criado_em_exibicao %} em {{ extra.criado_em_exibicao }}{% endif %}</p>
-                </div>
-                <span class="extra-charge-value">R$ {{ extra.valor_exibicao }}</span>
-            </div>
-            {% endfor %}
-        </div>
+        <p class="muted-text top-spacing">
+            {{ s.cobrancas_extras_info.quantidade or s.cobrancas_extras_info.itens|length }} cobranca(s) extra(s), total R$ {{ s.cobrancas_extras_info.total_exibicao }}.
+            Use "Carregar fotos e extras" para ver os lancamentos.
+        </p>
         {% else %}
         <p class="muted-text top-spacing">Nenhuma cobranca extra registrada neste atendimento ainda.</p>
         {% endif %}
@@ -289,6 +281,144 @@
 
     updateStageTimers();
     window.setInterval(updateStageTimers, 1000);
+})();
+
+(function () {
+    const panels = Array.from(document.querySelectorAll(".js-servico-detalhes"));
+    if (!panels.length) return;
+
+    const photoLabels = {
+        entrada: "Entrada",
+        detalhe: "Detalhe",
+        saida: "Finalizacao",
+    };
+
+    function setStatus(panel, message, isError) {
+        const status = panel.querySelector(".js-detalhes-status");
+        if (!status) return;
+        status.hidden = !message;
+        status.textContent = message || "";
+        status.classList.toggle("error-text", Boolean(isError));
+    }
+
+    function createTextElement(tag, className, text) {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        element.textContent = text || "";
+        return element;
+    }
+
+    function renderFotos(container, fotos) {
+        container.innerHTML = "";
+        let total = 0;
+
+        ["entrada", "detalhe", "saida"].forEach((tipo) => {
+            const itens = Array.isArray(fotos && fotos[tipo]) ? fotos[tipo] : [];
+            if (!itens.length) return;
+
+            total += itens.length;
+            const group = document.createElement("div");
+            group.className = "photo-gallery-group";
+            group.appendChild(createTextElement("p", "photo-gallery-label", `${photoLabels[tipo]} (${itens.length})`));
+
+            const track = document.createElement("div");
+            track.className = "photo-gallery-track";
+
+            itens.forEach((foto, index) => {
+                if (!foto || !foto.url) return;
+                const link = document.createElement("a");
+                link.href = foto.url;
+                link.target = "_blank";
+                link.rel = "noopener";
+                link.className = "photo-thumb-link";
+                link.title = `${photoLabels[tipo]} ${index + 1} - ${foto.usuario_nome_exibicao || "Nao identificado"}`;
+
+                const image = document.createElement("img");
+                image.src = foto.url;
+                image.alt = `${photoLabels[tipo]} ${index + 1}`;
+                image.className = "photo-thumb-image";
+                image.loading = "lazy";
+
+                link.appendChild(image);
+                track.appendChild(link);
+            });
+
+            group.appendChild(track);
+            container.appendChild(group);
+        });
+
+        if (!total) {
+            container.appendChild(createTextElement("p", "muted-text", "Nenhuma foto registrada neste atendimento."));
+        }
+    }
+
+    function renderExtras(container, extras) {
+        container.innerHTML = "";
+        const itens = Array.isArray(extras && extras.itens) ? extras.itens : [];
+
+        if (!itens.length) {
+            container.appendChild(createTextElement("p", "muted-text", "Nenhuma cobranca extra registrada neste atendimento."));
+            return;
+        }
+
+        container.appendChild(createTextElement("p", "muted-text", `Total de extras: R$ ${extras.total_exibicao || "0.00"}`));
+
+        itens.forEach((extra) => {
+            const item = document.createElement("div");
+            item.className = "extra-charge-item";
+
+            const info = document.createElement("div");
+            info.appendChild(createTextElement("strong", "", extra.descricao || "Cobranca extra"));
+            const meta = `Lancado por ${extra.criado_por_nome_exibicao || "Nao identificado"}${extra.criado_em_exibicao ? ` em ${extra.criado_em_exibicao}` : ""}`;
+            info.appendChild(createTextElement("p", "muted-text", meta));
+
+            item.appendChild(info);
+            item.appendChild(createTextElement("span", "extra-charge-value", `R$ ${extra.valor_exibicao || "0.00"}`));
+            container.appendChild(item);
+        });
+    }
+
+    panels.forEach((panel) => {
+        const button = panel.querySelector(".js-carregar-detalhes");
+        if (!button) return;
+
+        button.addEventListener("click", async () => {
+            if (panel.dataset.carregado === "1") {
+                const content = panel.querySelector(".js-detalhes-conteudo");
+                if (content) content.hidden = !content.hidden;
+                button.textContent = content && content.hidden ? "Mostrar fotos e extras" : "Ocultar fotos e extras";
+                return;
+            }
+
+            button.disabled = true;
+            setStatus(panel, "Carregando detalhes...", false);
+
+            try {
+                const response = await fetch(panel.dataset.detalhesUrl, {
+                    headers: { Accept: "application/json" },
+                    credentials: "same-origin",
+                });
+                const payload = await response.json();
+
+                if (!response.ok || !payload.ok) {
+                    throw new Error(payload.erro || "Nao foi possivel carregar os detalhes agora.");
+                }
+
+                renderFotos(panel.querySelector(".js-detalhes-fotos"), payload.fotos || {});
+                renderExtras(panel.querySelector(".js-detalhes-extras"), payload.cobrancas_extras || {});
+
+                const content = panel.querySelector(".js-detalhes-conteudo");
+                if (content) content.hidden = false;
+                panel.dataset.carregado = "1";
+                button.textContent = "Ocultar fotos e extras";
+                setStatus(panel, "", false);
+            } catch (error) {
+                setStatus(panel, `${error.message || "Banco indisponivel."} Tentar novamente.`, true);
+            } finally {
+                button.disabled = false;
+            }
+        });
+    });
 })();
 </script>
 
