@@ -247,6 +247,22 @@ class AppRegressionTests(unittest.TestCase):
         self.assertIn(b"Versao: 0.13.5 - Beta", response.data)
         versao_mock.assert_any_call(permitir_sem_sessao=True)
 
+    def test_uploads_de_imagem_nao_forcam_camera_no_mobile(self):
+        caminhos = [
+            "templates/checklist_finalizacao.html",
+            "templates/editar_atendimento.html",
+            "templates/index.html",
+            "templates/index2.html",
+            "templates/painel.html",
+            "templates/components/service_card.html",
+        ]
+
+        for caminho in caminhos:
+            with self.subTest(caminho=caminho):
+                with open(caminho, encoding="utf-8") as arquivo:
+                    conteudo = arquivo.read()
+                self.assertNotIn("capture=", conteudo)
+
     def test_configuracoes_requires_login(self):
         with patch.object(app_module, "INIT_DB_EXECUTADO", True):
             response = self.client.get("/configuracoes")

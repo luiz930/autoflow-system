@@ -53,7 +53,7 @@
                 </div>
                 <div>
                     <label for="status-fotos-{{ servico.id }}">Fotos de depois</label>
-                    <input id="status-fotos-{{ servico.id }}" type="file" name="fotos_depois" accept="image/*" capture="environment" multiple>
+                    <input id="status-fotos-{{ servico.id }}" type="file" name="fotos_depois" accept="image/*" multiple>
                 </div>
             </div>
             <div class="actions-row actions-row--left">
@@ -74,7 +74,7 @@
             <input type="hidden" name="tipo_foto" value="entrada">
             <input type="hidden" name="redirect_to" value="{{ request.full_path if request.query_string else request.path }}">
             <label for="antes-{{ servico.id }}">Adicionar fotos de antes</label>
-            <input id="antes-{{ servico.id }}" type="file" name="fotos" accept="image/*" capture="environment" multiple>
+            <input id="antes-{{ servico.id }}" type="file" name="fotos" accept="image/*" multiple>
             <button type="submit">Enviar antes</button>
         </form>
 
@@ -83,7 +83,7 @@
             <input type="hidden" name="tipo_foto" value="saida">
             <input type="hidden" name="redirect_to" value="{{ request.full_path if request.query_string else request.path }}">
             <label for="depois-{{ servico.id }}">Adicionar fotos de depois</label>
-            <input id="depois-{{ servico.id }}" type="file" name="fotos" accept="image/*" capture="environment" multiple>
+            <input id="depois-{{ servico.id }}" type="file" name="fotos" accept="image/*" multiple>
             <button type="submit">Enviar depois</button>
         </form>
     </div>
