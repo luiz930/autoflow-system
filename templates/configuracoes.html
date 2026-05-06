@@ -303,6 +303,132 @@
 {% endif %}
 
 {% if secao_configuracoes == 'desenvolvedor' and desenvolvedor_logado %}
+<div class="page-card top-spacing" style="background:#050a07; border-color:rgba(34,197,94,.55); box-shadow:0 0 28px rgba(34,197,94,.12);">
+    <p class="pill-label">Central tecnica</p>
+    <h2 class="section-title top-spacing" style="font-family:Consolas, 'Courier New', monospace;">
+        {% if central_tecnica.resumo.ok %}[OK] Sistema operacional{% else %}[WARN] Revisao tecnica necessaria{% endif %}
+    </h2>
+    <p class="muted-text">Diagnostico em tempo real para suporte: saude do sistema, banco, scanner de rotas e caches carregados.</p>
+    <div class="actions-row actions-row--left top-spacing">
+        <a href="/configuracoes/desenvolvedor" class="button-link"><button type="button">Atualizar central</button></a>
+        <a href="/status-sistema.json" class="button-link"><button type="button">Exportar status JSON</button></a>
+        <a href="/diagnostico/exportar.json" class="button-link"><button type="button">Exportar diagnostico JSON</button></a>
+    </div>
+    <p class="muted-text top-spacing" style="font-family:Consolas, 'Courier New', monospace;">Gerado em {{ central_tecnica.gerado_em }}</p>
+</div>
+
+<div class="list-grid top-spacing">
+    <div class="page-card">
+        <p class="pill-label">Rotas</p>
+        <h2 class="section-title top-spacing">{{ central_tecnica.resumo.rotas_testadas }}</h2>
+        <p class="muted-text">{{ central_tecnica.resumo.rotas_falha }} falha(s), {{ central_tecnica.resumo.rotas_lentas }} lenta(s).</p>
+    </div>
+    <div class="page-card">
+        <p class="pill-label">Banco</p>
+        <h2 class="section-title top-spacing">{{ central_tecnica.banco.backend }}</h2>
+        <p class="muted-text">{{ central_tecnica.banco.mensagem }} | {{ central_tecnica.banco.tempo_ms }} ms</p>
+    </div>
+    <div class="page-card">
+        <p class="pill-label">Tabelas</p>
+        <h2 class="section-title top-spacing">{{ central_tecnica.resumo.tabelas_ok }}</h2>
+        <p class="muted-text">Tabelas principais encontradas no banco ativo.</p>
+    </div>
+    <div class="page-card">
+        <p class="pill-label">Caches</p>
+        <h2 class="section-title top-spacing">{{ central_tecnica.resumo.caches_ativos }}</h2>
+        <p class="muted-text">Caches ativos neste processo Flask.</p>
+    </div>
+</div>
+
+<div class="page-grid top-spacing">
+    <div class="page-card">
+        <p class="pill-label">Saude do sistema</p>
+        <h2 class="section-title top-spacing">{% if central_tecnica.saude.resumo.ok %}Tudo operacional{% else %}Pontos em aberto{% endif %}</h2>
+        {% for item in central_tecnica.saude.itens %}
+        <div class="top-spacing" style="border-top:1px solid rgba(250,204,21,.18); padding-top:12px;">
+            <p style="margin:0; font-family:Consolas, 'Courier New', monospace;">
+                {% if item.ok %}[OK]{% else %}[FAIL]{% endif %} {{ item.nome }}: {{ item.valor }}
+            </p>
+            <p class="muted-text" style="margin:.35rem 0 0;">{{ item.detalhe }}</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="page-card">
+        <p class="pill-label">Estado real do banco</p>
+        <h2 class="section-title top-spacing">{% if central_tecnica.banco.conectado %}Conectado{% else %}Verificar conexao{% endif %}</h2>
+        <p><b>Backend:</b> {{ central_tecnica.banco.backend }}</p>
+        <p><b>Tempo:</b> {{ central_tecnica.banco.tempo_ms }} ms</p>
+        <p><b>Mensagem:</b> {{ central_tecnica.banco.mensagem }}</p>
+        <div class="top-spacing" style="max-height:360px; overflow:auto; font-family:Consolas, 'Courier New', monospace;">
+            {% for tabela in central_tecnica.banco.tabelas %}
+            <p style="margin:.35rem 0; color:{% if tabela.ok %}#86efac{% else %}#fca5a5{% endif %};">
+                {% if tabela.ok %}[OK]{% else %}[MISS]{% endif %} {{ tabela.nome }} :: {{ tabela.mensagem }}
+            </p>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="page-card top-spacing">
+    <p class="pill-label">Scanner de rotas</p>
+    <h2 class="section-title top-spacing">Tempo de resposta das paginas</h2>
+    <div style="overflow:auto;">
+        <table class="data-table" style="min-width:760px;">
+            <thead>
+                <tr>
+                    <th>Rota</th>
+                    <th>Status</th>
+                    <th>Tempo</th>
+                    <th>Peso</th>
+                    <th>Classificacao</th>
+                    <th>Detalhe</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rota in central_tecnica.rotas %}
+                <tr>
+                    <td><code>{{ rota.caminho }}</code><br><span class="muted-text">{{ rota.nome }}</span></td>
+                    <td>{% if rota.ok %}<span style="color:#86efac;">{{ rota.status }}</span>{% else %}<span style="color:#fca5a5;">{{ rota.status or "erro" }}</span>{% endif %}</td>
+                    <td>{{ rota.tempo_ms }} ms</td>
+                    <td>{{ rota.tamanho_kb }} KB</td>
+                    <td>
+                        {% if rota.tempo_classe == 'rapido' %}
+                        <span style="color:#86efac;">Rapido</span>
+                        {% elif rota.tempo_classe == 'atencao' %}
+                        <span style="color:#fde68a;">Medio</span>
+                        {% else %}
+                        <span style="color:#fca5a5;">Lento</span>
+                        {% endif %}
+                    </td>
+                    <td class="muted-text">{{ rota.mensagem }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="page-card top-spacing">
+    <p class="pill-label">Banco e caches</p>
+    <h2 class="section-title top-spacing">O que esta carregado na memoria</h2>
+    <div class="field-grid top-spacing">
+        {% for cache in central_tecnica.caches %}
+        <div style="border:1px solid rgba(250,204,21,.22); border-radius:8px; padding:12px; background:rgba(15,23,42,.45);">
+            <p style="margin:0; font-family:Consolas, 'Courier New', monospace;">
+                {% if cache.ativo %}<span style="color:#86efac;">[HOT]</span>{% else %}<span style="color:#94a3b8;">[COLD]</span>{% endif %}
+                {{ cache.nome }}
+            </p>
+            <p class="muted-text" style="margin:.35rem 0 0;">Idade: {{ cache.idade_label }} | TTL: {{ cache.ttl }}s</p>
+            <p class="muted-text" style="margin:.35rem 0 0;">Resultado: {% if cache.tem_resultado %}carregado{% else %}vazio{% endif %}</p>
+            {% if cache.chave %}
+            <p class="muted-text" style="margin:.35rem 0 0; word-break:break-word;">Chave: {{ cache.chave }}</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
 <div class="page-card top-spacing">
     <p class="pill-label">Desenvolvedor</p>
     <h2 class="section-title top-spacing">Paginas do sistema</h2>

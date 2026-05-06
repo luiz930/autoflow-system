@@ -16392,6 +16392,233 @@ def contar_usuarios_ativos_empresa():
         conn.close()
 
 
+ROTAS_CENTRAL_TECNICA = [
+    ("Login", "/login"),
+    ("Inicio", "/"),
+    ("Painel", "/painel"),
+    ("Clientes", "/clientes"),
+    ("Historico", "/historico"),
+    ("Financeiro", "/financeiro"),
+    ("Relatorios", "/relatorios"),
+    ("Configuracoes", "/configuracoes"),
+    ("Status sistema", "/status-sistema"),
+    ("PWA status", "/api/pwa/status"),
+    ("Manifest", "/site.webmanifest"),
+    ("Service worker", "/sw.js"),
+]
+
+
+TABELAS_CENTRAL_TECNICA = [
+    "empresas",
+    "licencas",
+    "usuarios",
+    "clientes",
+    "veiculos",
+    "servicos",
+    "fotos",
+    "sincronizacoes_clientes",
+    "historico_lavagens_sync",
+    "configuracao_empresa",
+    "configuracao_backup",
+    "auditoria",
+    "telemetria_eventos",
+    "schema_migrations",
+]
+
+
+def classificar_latencia_ms(valor_ms):
+    valor = int(valor_ms or 0)
+    if valor <= 500:
+        return "rapido"
+    if valor <= 1500:
+        return "atencao"
+    return "lento"
+
+
+def rotulo_latencia_ms(valor_ms):
+    categoria = classificar_latencia_ms(valor_ms)
+    if categoria == "rapido":
+        return "Rapido"
+    if categoria == "atencao":
+        return "Medio"
+    return "Lento"
+
+
+def scanner_rotas_central_tecnica():
+    resultados = []
+    with app.test_client() as client:
+        for nome, caminho in ROTAS_CENTRAL_TECNICA:
+            inicio = time.perf_counter()
+            try:
+                resposta = client.get(caminho)
+                tempo_ms = int((time.perf_counter() - inicio) * 1000)
+                tamanho = len(resposta.get_data() or b"")
+                status = int(resposta.status_code)
+                destino = resposta.headers.get("Location") or ""
+                resultados.append({
+                    "nome": nome,
+                    "caminho": caminho,
+                    "status": status,
+                    "ok": status < 500,
+                    "tempo_ms": tempo_ms,
+                    "tempo_label": rotulo_latencia_ms(tempo_ms),
+                    "tempo_classe": classificar_latencia_ms(tempo_ms),
+                    "tamanho_kb": round(tamanho / 1024, 1),
+                    "destino": destino,
+                    "mensagem": f"HTTP {status}" + (f" -> {destino}" if destino else ""),
+                })
+            except Exception as erro:
+                tempo_ms = int((time.perf_counter() - inicio) * 1000)
+                registrar_ultimo_erro_producao(erro, descricao=f"central_tecnica_rota_{caminho}")
+                resultados.append({
+                    "nome": nome,
+                    "caminho": caminho,
+                    "status": "",
+                    "ok": False,
+                    "tempo_ms": tempo_ms,
+                    "tempo_label": "Falha",
+                    "tempo_classe": "lento",
+                    "tamanho_kb": 0,
+                    "destino": "",
+                    "mensagem": str(erro),
+                })
+    return resultados
+
+
+def contar_registros_tabela_central(cursor, tabela):
+    cursor.execute(f"SELECT COUNT(*) AS total FROM {tabela}")
+    linha = cursor.fetchone()
+    if linha is None:
+        return 0
+    try:
+        return int(linha["total"] or 0)
+    except Exception:
+        return int(linha[0] or 0)
+
+
+def estado_banco_central_tecnica():
+    inicio = time.perf_counter()
+    banco_status = executar_com_fallback_producao(
+        obter_status_banco_online,
+        {"conectado": False, "backend_label": "Indisponivel", "mensagem": "Banco nao validado."},
+        "central_tecnica_banco_status",
+    )
+    tabelas = []
+    conn = None
+    try:
+        conn = conectar()
+        cursor = conn.cursor()
+        for tabela in TABELAS_CENTRAL_TECNICA:
+            try:
+                total = contar_registros_tabela_central(cursor, tabela)
+                tabelas.append({
+                    "nome": tabela,
+                    "ok": True,
+                    "total": total,
+                    "mensagem": f"{total} registro(s)",
+                })
+            except Exception as erro_tabela:
+                tabelas.append({
+                    "nome": tabela,
+                    "ok": False,
+                    "total": "",
+                    "mensagem": str(erro_tabela),
+                })
+    except Exception as erro:
+        registrar_ultimo_erro_producao(erro, descricao="central_tecnica_banco")
+        tabelas.append({
+            "nome": "conexao",
+            "ok": False,
+            "total": "",
+            "mensagem": str(erro),
+        })
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+    return {
+        "backend": banco_status.get("backend_label") or banco_status.get("modo_label") or "-",
+        "conectado": bool(banco_status.get("conectado")),
+        "mensagem": banco_status.get("mensagem") or "-",
+        "tempo_ms": int((time.perf_counter() - inicio) * 1000),
+        "tabelas": tabelas,
+        "tabelas_ok": sum(1 for item in tabelas if item.get("ok")),
+        "tabelas_falha": [item["nome"] for item in tabelas if not item.get("ok")],
+    }
+
+
+def idade_cache_segundos(cache):
+    testado = float((cache or {}).get("testado_em") or 0.0)
+    if not testado:
+        return None
+    return max(0, int(time.time() - testado))
+
+
+def resumo_cache_central(nome, cache, ttl, chave_campo="chave"):
+    idade = idade_cache_segundos(cache)
+    ativo = idade is not None and idade < int(ttl or 0)
+    chave = cache.get(chave_campo)
+    if isinstance(chave, set):
+        chave = ",".join(sorted(chave))
+    return {
+        "nome": nome,
+        "ativo": ativo,
+        "idade": idade,
+        "idade_label": f"{idade}s" if idade is not None else "Vazio",
+        "ttl": int(ttl or 0),
+        "chave": str(chave or ""),
+        "tem_resultado": cache.get("resultado") is not None,
+    }
+
+
+def caches_central_tecnica():
+    return [
+        resumo_cache_central("HUD", HUD_CACHE, HUD_CACHE_TTL, "usuario"),
+        resumo_cache_central("Home snapshot", HOME_SNAPSHOT_CACHE, HOME_SNAPSHOT_CACHE_TTL, "usuario"),
+        resumo_cache_central("Notificacoes", NOTIFICACOES_CACHE, NOTIFICACOES_CACHE_TTL, "usuario"),
+        resumo_cache_central("Status sync", STATUS_SYNC_CACHE, STATUS_SYNC_CACHE_TTL, "usuario"),
+        resumo_cache_central("Clientes", CLIENTES_CONTEXT_CACHE, CLIENTES_CONTEXT_CACHE_TTL),
+        resumo_cache_central("Painel", PAINEL_CONTEXT_CACHE, PAINEL_CONTEXT_CACHE_TTL),
+        resumo_cache_central("Historico", HISTORICO_CONTEXT_CACHE, HISTORICO_CONTEXT_CACHE_TTL),
+        resumo_cache_central("Relatorios", RELATORIOS_CONTEXT_CACHE, RELATORIOS_CONTEXT_CACHE_TTL),
+        resumo_cache_central("Auditoria", AUDITORIA_CONTEXT_CACHE, AUDITORIA_CONTEXT_CACHE_TTL),
+        resumo_cache_central("Banco online", BANCO_ONLINE_STATUS_CACHE, BANCO_ONLINE_STATUS_CACHE_TTL, "backend"),
+        resumo_cache_central("Tabelas online", BANCO_ONLINE_TABELAS_CACHE, BANCO_ONLINE_TABELAS_CACHE_TTL, "dsn"),
+        resumo_cache_central("Produto/template", TEMPLATE_PRODUTO_CACHE, TEMPLATE_PRODUTO_CACHE_TTL, "empresa_id"),
+        resumo_cache_central("Licenca/template", TEMPLATE_LICENCA_CACHE, TEMPLATE_LICENCA_CACHE_TTL, "empresa_id"),
+        resumo_cache_central("Configuracao empresa", CONFIG_EMPRESA_CACHE, CONFIG_EMPRESA_CACHE_TTL, "empresa_id"),
+        resumo_cache_central("Versao", VERSAO_SISTEMA_CACHE, VERSAO_SISTEMA_CACHE_TTL, "empresa_id"),
+        resumo_cache_central("Paginas menu", PAGINAS_MENU_CACHE, PAGINAS_MENU_CACHE_TTL, "empresa_id"),
+    ]
+
+
+def montar_central_tecnica_desenvolvedor():
+    status = montar_status_sistema_dono()
+    banco = estado_banco_central_tecnica()
+    rotas = scanner_rotas_central_tecnica()
+    caches = caches_central_tecnica()
+    falhas_rotas = [item for item in rotas if not item.get("ok")]
+    rotas_lentas = [item for item in rotas if item.get("tempo_classe") == "lento"]
+    return {
+        "gerado_em": agora_iso(),
+        "saude": status,
+        "banco": banco,
+        "rotas": rotas,
+        "caches": caches,
+        "resumo": {
+            "ok": bool(status.get("resumo", {}).get("ok")) and not falhas_rotas and not banco.get("tabelas_falha"),
+            "rotas_testadas": len(rotas),
+            "rotas_falha": len(falhas_rotas),
+            "rotas_lentas": len(rotas_lentas),
+            "caches_ativos": sum(1 for item in caches if item.get("ativo")),
+            "tabelas_ok": banco.get("tabelas_ok", 0),
+        },
+    }
+
+
 @app.route("/diagnostico")
 def pagina_diagnostico():
     if not session.get("usuario"):
@@ -16545,6 +16772,7 @@ def configuracoes(secao="meu-acesso"):
     backups_disponiveis = []
     pastas_sync_sugeridas = []
     banco_online_tabelas = {}
+    central_tecnica = {}
 
     if pode_gerenciar_usuarios and secao == "usuarios" and request.args.get("detalhar_usuarios") == "1":
         try:
@@ -16631,6 +16859,20 @@ def configuracoes(secao="meu-acesso"):
             print("ERRO CONFIG PASTAS SYNC:", erro)
             pastas_sync_sugeridas = []
 
+    if pode_gerenciar_base and secao == "desenvolvedor":
+        try:
+            central_tecnica = montar_central_tecnica_desenvolvedor()
+        except Exception as erro:
+            registrar_ultimo_erro_producao(erro, descricao="central_tecnica")
+            central_tecnica = {
+                "gerado_em": agora_iso(),
+                "saude": {"resumo": {"ok": False, "falhas": ["Central tecnica"]}, "itens": []},
+                "banco": {"backend": "-", "conectado": False, "mensagem": str(erro), "tempo_ms": 0, "tabelas": [], "tabelas_ok": 0, "tabelas_falha": ["central_tecnica"]},
+                "rotas": [],
+                "caches": [],
+                "resumo": {"ok": False, "rotas_testadas": 0, "rotas_falha": 0, "rotas_lentas": 0, "caches_ativos": 0, "tabelas_ok": 0},
+            }
+
     return render_template(
         "configuracoes.html",
         feedback=session.pop("configuracoes_feedback", None),
@@ -16677,6 +16919,7 @@ def configuracoes(secao="meu-acesso"):
         arquivos_status=arquivos_status,
         pastas_sync_sugeridas=pastas_sync_sugeridas,
         banco_online_tabelas=banco_online_tabelas,
+        central_tecnica=central_tecnica,
         paginas_menu_configuracao=montar_paginas_menu_configuracao(
             paginas_desabilitadas_config
         ) if pode_gerenciar_base else [],
