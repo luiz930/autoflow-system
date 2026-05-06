@@ -4103,6 +4103,12 @@ def limpar_cache_configuracao_empresa():
     PAGINAS_MENU_CACHE["resultado"] = set()
 
 
+def limpar_cache_clientes():
+    CLIENTES_CONTEXT_CACHE["testado_em"] = 0.0
+    CLIENTES_CONTEXT_CACHE["chave"] = ""
+    CLIENTES_CONTEXT_CACHE["resultado"] = None
+
+
 def limpar_caches_operacionais_leves():
     HUD_CACHE["testado_em"] = 0.0
     HUD_CACHE["usuario"] = ""
@@ -18138,6 +18144,7 @@ def adicionar_sincronizacao_clientes():
         conn.close()
 
         salvar_historico_lavagens_sync(sync_id, registros_historico, empresa_id=empresa_id)
+        limpar_cache_clientes()
 
         definir_feedback_clientes(
             "sucesso",
@@ -18222,6 +18229,7 @@ def salvar_sincronizacao_clientes():
         conn.close()
 
         salvar_historico_lavagens_sync(sync_id, registros_historico, empresa_id=empresa_id)
+        limpar_cache_clientes()
 
         limpar_preview_sincronizacao()
         salvar_notificacao(mensagem_importacao, "sucesso")
@@ -18244,6 +18252,7 @@ def executar_sync_clientes(sync_id):
         return redirect("/login")
 
     sucesso, mensagem = executar_sincronizacao_cliente(sync_id, empresa_id=empresa_atual_id())
+    limpar_cache_clientes()
     definir_feedback_clientes("sucesso" if sucesso else "erro", mensagem)
     return redirect("/clientes")
 
@@ -18278,6 +18287,7 @@ def alternar_sync_clientes(sync_id):
     )
     conn.commit()
     conn.close()
+    limpar_cache_clientes()
 
     definir_feedback_clientes(
         "sucesso",
@@ -18305,6 +18315,7 @@ def excluir_sync_clientes(sync_id):
         conn.close()
 
         if removidos:
+            limpar_cache_clientes()
             definir_feedback_clientes("sucesso", "Sincronizacao removida.")
         else:
             definir_feedback_clientes("erro", "Sincronizacao nao encontrada.")

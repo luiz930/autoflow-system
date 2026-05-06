@@ -112,6 +112,54 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(consultar_sincronizacoes_clientes(c, 1), [])
         conn.close()
 
+    def test_excluir_sync_clientes_limpa_cache_da_tela_clientes(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute(
+            """
+            CREATE TABLE sincronizacoes_clientes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER DEFAULT 1,
+                nome TEXT,
+                ativo INTEGER DEFAULT 1,
+                proximo_sync_em TEXT,
+                ultimo_status TEXT,
+                ultima_mensagem TEXT,
+                atualizado_em TEXT,
+                excluido_em TEXT,
+                excluido_por TEXT
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE historico_lavagens_sync (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER DEFAULT 1,
+                sync_id INTEGER
+            )
+            """
+        )
+        c.execute("INSERT INTO sincronizacoes_clientes (empresa_id, nome, ativo) VALUES (1, 'Planilha', 1)")
+        sync_id = c.lastrowid
+        wrapper = PersistentCompatConnection(conn)
+        app_module.CLIENTES_CONTEXT_CACHE["testado_em"] = 9999999999.0
+        app_module.CLIENTES_CONTEXT_CACHE["chave"] = "admin|1|"
+        app_module.CLIENTES_CONTEXT_CACHE["resultado"] = {"sincronizacoes": [{"id": sync_id}]}
+
+        with app_module.app.test_request_context(f"/clientes/sincronizacao/{sync_id}/excluir", method="POST"):
+            session["usuario"] = "admin"
+            session["empresa_id"] = 1
+            with patch.object(app_module, "conectar", return_value=wrapper):
+                resposta = app_module.excluir_sync_clientes(sync_id)
+
+        self.assertEqual(resposta.status_code, 302)
+        self.assertEqual(app_module.CLIENTES_CONTEXT_CACHE["testado_em"], 0.0)
+        self.assertEqual(app_module.CLIENTES_CONTEXT_CACHE["chave"], "")
+        self.assertIsNone(app_module.CLIENTES_CONTEXT_CACHE["resultado"])
+        conn.close()
+
     def _criar_banco_admin_memoria(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
