@@ -11557,25 +11557,65 @@ def servir_favicon_site():
 @app.route("/site.webmanifest")
 def servir_manifesto_site():
     produto = carregar_contexto_produto()
+    nome_app = produto.get("site_title") or produto.get("brand_name") or "Gestao Estetica"
+    nome_curto = (produto.get("brand_name") or "Gestao")[:24]
+    cor_fundo = produto.get("brand_background_color") or "#0b0b0b"
+    cor_tema = produto.get("brand_primary_color") or "#facc15"
+    icone = produto.get("brand_favicon_url") or "/branding/favicon"
     manifest = {
-        "name": produto.get("site_title") or produto.get("brand_name") or "Gestao Estetica",
-        "short_name": (produto.get("brand_name") or "Gestao")[:24],
-        "start_url": "/",
+        "id": "/?source=pwa",
+        "name": nome_app,
+        "short_name": nome_curto,
+        "description": "Aplicativo operacional para gestao de estetica automotiva, atendimentos, fotos, clientes, financeiro e licencas.",
+        "start_url": "/?source=pwa",
+        "scope": "/",
         "display": "standalone",
-        "background_color": produto.get("brand_background_color") or "#0b0b0b",
-        "theme_color": produto.get("brand_primary_color") or "#facc15",
-        "icons": [
+        "display_override": ["standalone", "minimal-ui", "browser"],
+        "orientation": "portrait",
+        "background_color": cor_fundo,
+        "theme_color": cor_tema,
+        "categories": ["business", "productivity", "utilities"],
+        "lang": "pt-BR",
+        "dir": "ltr",
+        "prefer_related_applications": False,
+        "capture_links": "existing-client-navigate",
+        "launch_handler": {"client_mode": "navigate-existing"},
+        "permissions": ["camera", "microphone"],
+        "shortcuts": [
             {
-                "src": produto.get("brand_favicon_url") or "/branding/favicon",
-                "sizes": "192x192",
+                "name": "Painel operacional",
+                "short_name": "Painel",
+                "description": "Abrir atendimentos em andamento.",
+                "url": "/painel?source=pwa_shortcut",
+                "icons": [{"src": icone, "sizes": "192x192", "purpose": "any maskable"}],
             },
             {
-                "src": produto.get("brand_favicon_url") or "/branding/favicon",
+                "name": "Novo atendimento",
+                "short_name": "Atender",
+                "description": "Abrir a tela inicial para iniciar atendimento.",
+                "url": "/?source=pwa_shortcut",
+                "icons": [{"src": icone, "sizes": "192x192", "purpose": "any maskable"}],
+            },
+        ],
+        "icons": [
+            {
+                "src": icone,
+                "sizes": "192x192",
+                "purpose": "any maskable",
+            },
+            {
+                "src": icone,
                 "sizes": "512x512",
+                "purpose": "any maskable",
             },
         ],
     }
-    return jsonify(manifest)
+    response = app.response_class(
+        json.dumps(manifest, ensure_ascii=False),
+        mimetype="application/manifest+json",
+    )
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 def listar_fotos_servicos(ids_servicos, conn=None, cursor=None):

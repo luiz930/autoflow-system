@@ -35,8 +35,10 @@
 </style>
 
 <script>
-if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/static/sw.js");
+if ("serviceWorker" in navigator && window.isSecureContext) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/static/sw.js").catch(() => undefined);
+    });
 }
 </script>
 
@@ -649,6 +651,7 @@ document.addEventListener("storage", (evento) => {
 </script>
 
 <script src="/static/photo_upload.js"></script>
+<script src="/static/pwa_install.js"></script>
 {% block page_scripts %}{% endblock %}
 
 </body>

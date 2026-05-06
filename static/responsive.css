@@ -220,6 +220,17 @@ body.responsive-page {
     justify-content: space-between;
 }
 
+.pwa-install-button {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 3200;
+    width: auto;
+    max-width: min(220px, calc(100vw - 36px));
+    padding: 12px 16px;
+    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.32);
+}
+
 .button-link {
     text-decoration: none;
     display: inline-flex;

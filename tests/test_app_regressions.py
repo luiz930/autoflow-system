@@ -349,7 +349,11 @@ class AppRegressionTests(unittest.TestCase):
         payload = json.loads(response.get_data(as_text=True))
         self.assertEqual(payload["name"], "Minha Operacao")
         self.assertEqual(payload["short_name"], "Minha Marca")
+        self.assertEqual(payload["display"], "standalone")
+        self.assertEqual(payload["scope"], "/")
+        self.assertIn("camera", payload["permissions"])
         self.assertEqual(payload["icons"][0]["src"], "/branding/favicon")
+        self.assertEqual(response.mimetype, "application/manifest+json")
 
     def test_filtrar_registros_por_periodo_generico(self):
         referencia = app_module.date(2026, 5, 3)

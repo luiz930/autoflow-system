@@ -62,6 +62,5 @@ def append_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin-allow-popups")
-    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()")
     return response
-

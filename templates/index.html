@@ -1463,7 +1463,7 @@ input[type="file"] {
 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 
 <p>📸 Fotos de entrada</p>
-<input type="file" name="foto_entrada" multiple accept="image/*" required>
+<input type="file" name="foto_entrada" multiple accept="image/*" capture="environment" required>
 
 <input name="placa" value="{{dados.placa}}" readonly><br>
 
