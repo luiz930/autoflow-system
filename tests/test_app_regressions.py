@@ -1232,6 +1232,53 @@ class AppRegressionTests(unittest.TestCase):
             self.assertFalse(app_module.consumir_cadastro_novo_para_atendimento("abc1234"))
             self.assertFalse(app_module.consumir_cadastro_novo_para_atendimento("XYZ9876"))
 
+    def test_servico_bloqueia_atendimento_duplicado_sem_consumir_marcador_novo(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute(
+            """
+            CREATE TABLE veiculos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER DEFAULT 1,
+                placa TEXT,
+                cliente_id INTEGER
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE servicos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER DEFAULT 1,
+                veiculo_id INTEGER,
+                status TEXT
+            )
+            """
+        )
+        c.execute("INSERT INTO veiculos (empresa_id, placa, cliente_id) VALUES (1, 'ABC1234', 10)")
+        veiculo_id = c.lastrowid
+        c.execute("INSERT INTO servicos (empresa_id, veiculo_id, status) VALUES (1, ?, 'EM ANDAMENTO')", (veiculo_id,))
+        wrapper = PersistentCompatConnection(conn)
+
+        with app_module.app.test_request_context(
+            "/servico",
+            method="POST",
+            data={"placa": "ABC1234", "tipo": "Lavagem"},
+        ):
+            session["usuario"] = "admin"
+            session["empresa_id"] = 1
+            app_module.registrar_cadastro_novo_para_atendimento("ABC1234")
+            with patch.object(app_module, "conectar", return_value=wrapper), \
+                 patch.object(app_module, "bloquear_criacao_atendimento_por_licenca", return_value=False):
+                resposta = app_module.servico()
+
+            self.assertEqual(resposta.status_code, 302)
+            self.assertEqual(resposta.location, "/painel")
+            self.assertIn("ja possui atendimento em andamento", session["painel_feedback"]["mensagem"])
+            self.assertTrue(app_module.consumir_cadastro_novo_para_atendimento("ABC1234"))
+        conn.close()
+
     def test_garantir_notificacoes_aniversario_cria_e_deduplica(self):
         conn = self._criar_banco_clientes_notificacoes_memoria()
         c = conn.cursor()

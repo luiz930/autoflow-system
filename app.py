@@ -18761,6 +18761,27 @@ def servico():
     veiculo_id = veiculo["id"]
     cliente_id = veiculo["cliente_id"] if veiculo["cliente_id"] else None
 
+    c.execute(
+        """
+        SELECT id
+        FROM servicos
+        WHERE empresa_id=?
+          AND veiculo_id=?
+          AND COALESCE(TRIM(UPPER(status)), '')='EM ANDAMENTO'
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (empresa_id, veiculo_id),
+    )
+    atendimento_aberto = c.fetchone()
+    if atendimento_aberto:
+        conn.close()
+        definir_feedback_painel(
+            "erro",
+            f"A placa {placa} ja possui atendimento em andamento. Finalize ou reabra o atendimento existente antes de iniciar outro.",
+        )
+        return redirect("/painel")
+
     # ðŸ”¥ BUSCAR TIPO DE SERVIÃ‡O
     tipo_nome = data["tipo"]
 
