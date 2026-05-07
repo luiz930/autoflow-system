@@ -1618,6 +1618,77 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["pacote_codex"]["texto_para_codex"], "PACOTE")
 
+    def test_auto_suporte_fluxos_usa_agregacao_compativel_com_postgres(self):
+        class CursorFake:
+            backend = "postgres"
+
+            def __init__(self):
+                self.sql = ""
+                self.params = None
+
+            def execute(self, sql, params=None):
+                self.sql = sql
+                self.params = params
+
+            def fetchall(self):
+                return []
+
+        class ConnFake:
+            def __init__(self):
+                self.cursor_fake = CursorFake()
+
+            def cursor(self):
+                return self.cursor_fake
+
+            def close(self):
+                return None
+
+        conn = ConnFake()
+        with app_module.app.test_request_context("/api/auto-suporte/status"):
+            session["empresa_id"] = 1
+            with patch.object(app_module, "conectar", return_value=conn):
+                resultado = app_module.detectar_fluxos_suspeitos_auto_suporte()
+
+        self.assertEqual(resultado, [])
+        self.assertIn("STRING_AGG(servicos.id::text, ',')", conn.cursor_fake.sql)
+        self.assertNotIn("GROUP_CONCAT", conn.cursor_fake.sql)
+
+    def test_auto_suporte_planilhas_erro_parametriza_like_para_postgres(self):
+        class CursorFake:
+            backend = "postgres"
+
+            def __init__(self):
+                self.sql = ""
+                self.params = None
+
+            def execute(self, sql, params=None):
+                self.sql = sql
+                self.params = params
+
+            def fetchall(self):
+                return []
+
+        class ConnFake:
+            def __init__(self):
+                self.cursor_fake = CursorFake()
+
+            def cursor(self):
+                return self.cursor_fake
+
+            def close(self):
+                return None
+
+        conn = ConnFake()
+        with app_module.app.test_request_context("/api/auto-suporte/status"):
+            session["empresa_id"] = 1
+            with patch.object(app_module, "conectar", return_value=conn):
+                resultado = app_module.listar_planilhas_com_erro_auto_suporte(limite=3)
+
+        self.assertEqual(resultado, [])
+        self.assertNotIn("LIKE '%ERRO%'", conn.cursor_fake.sql)
+        self.assertNotIn("LIKE '%FALHA%'", conn.cursor_fake.sql)
+        self.assertEqual(conn.cursor_fake.params, (1, "%ERRO%", "%FALHA%", "%ERRO%", "%FALHA%", 3))
+
 
 if __name__ == "__main__":
     unittest.main()

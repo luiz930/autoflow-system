@@ -17097,12 +17097,17 @@ def detectar_fluxos_suspeitos_auto_suporte():
     conn = conectar()
     try:
         c = conn.cursor()
+        agregador_ids = (
+            "STRING_AGG(servicos.id::text, ',')"
+            if getattr(c, "backend", "") == "postgres"
+            else "GROUP_CONCAT(servicos.id)"
+        )
         c.execute(
-            """
+            f"""
             SELECT
                 veiculos.placa,
                 COUNT(*) AS total,
-                GROUP_CONCAT(servicos.id) AS servicos_ids
+                {agregador_ids} AS servicos_ids
             FROM servicos
             LEFT JOIN veiculos
               ON servicos.veiculo_id = veiculos.id
@@ -17125,6 +17130,8 @@ def desativar_planilhas_com_erro_auto_suporte():
     try:
         c = conn.cursor()
         agora_atual = agora_iso()
+        padrao_erro = "%ERRO%"
+        padrao_falha = "%FALHA%"
         c.execute(
             """
             UPDATE sincronizacoes_clientes
@@ -17137,13 +17144,13 @@ def desativar_planilhas_com_erro_auto_suporte():
               AND ativo=1
               AND COALESCE(excluido_em, '')=''
               AND (
-                    UPPER(COALESCE(ultimo_status, '')) LIKE '%ERRO%'
-                 OR UPPER(COALESCE(ultimo_status, '')) LIKE '%FALHA%'
-                 OR UPPER(COALESCE(ultima_mensagem, '')) LIKE '%ERRO%'
-                 OR UPPER(COALESCE(ultima_mensagem, '')) LIKE '%FALHA%'
+                    UPPER(COALESCE(ultimo_status, '')) LIKE ?
+                 OR UPPER(COALESCE(ultimo_status, '')) LIKE ?
+                 OR UPPER(COALESCE(ultima_mensagem, '')) LIKE ?
+                 OR UPPER(COALESCE(ultima_mensagem, '')) LIKE ?
               )
             """,
-            (agora_atual, empresa_atual_id()),
+            (agora_atual, empresa_atual_id(), padrao_erro, padrao_falha, padrao_erro, padrao_falha),
         )
         total = int(c.rowcount or 0)
         conn.commit()
@@ -17156,6 +17163,8 @@ def listar_planilhas_com_erro_auto_suporte(limite=6):
     conn = conectar()
     try:
         c = conn.cursor()
+        padrao_erro = "%ERRO%"
+        padrao_falha = "%FALHA%"
         c.execute(
             """
             SELECT id, nome, ultimo_status, ultima_mensagem
@@ -17164,15 +17173,15 @@ def listar_planilhas_com_erro_auto_suporte(limite=6):
               AND ativo=1
               AND COALESCE(excluido_em, '')=''
               AND (
-                    UPPER(COALESCE(ultimo_status, '')) LIKE '%ERRO%'
-                 OR UPPER(COALESCE(ultimo_status, '')) LIKE '%FALHA%'
-                 OR UPPER(COALESCE(ultima_mensagem, '')) LIKE '%ERRO%'
-                 OR UPPER(COALESCE(ultima_mensagem, '')) LIKE '%FALHA%'
+                    UPPER(COALESCE(ultimo_status, '')) LIKE ?
+                 OR UPPER(COALESCE(ultimo_status, '')) LIKE ?
+                 OR UPPER(COALESCE(ultima_mensagem, '')) LIKE ?
+                 OR UPPER(COALESCE(ultima_mensagem, '')) LIKE ?
               )
             ORDER BY atualizado_em DESC
             LIMIT ?
             """,
-            (empresa_atual_id(), int(limite or 6)),
+            (empresa_atual_id(), padrao_erro, padrao_falha, padrao_erro, padrao_falha, int(limite or 6)),
         )
         return [dict(row) for row in c.fetchall()]
     finally:
