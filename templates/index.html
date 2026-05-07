@@ -3,6 +3,7 @@
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta charset="UTF-8">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <title>{{ site_title }}</title>
 
 <link rel="icon" href="{{ brand_favicon_url or '/static/favicon.jpg' }}">
@@ -10,6 +11,9 @@
 
 <link rel="manifest" href="/site.webmanifest">
 <meta name="theme-color" content="{{ brand_primary_color }}">
+{% if auto_suporte_disponivel %}
+<link rel="stylesheet" href="/static/auto_suporte.css">
+{% endif %}
 
 <script>
 if ("serviceWorker" in navigator) {
@@ -2708,6 +2712,9 @@ async function limparNotificacoes() {
 </script>
 
 <script src="/static/photo_upload.js"></script>
+{% if auto_suporte_disponivel %}
+<script src="/static/auto_suporte.js"></script>
+{% endif %}
 
 </body>
 </html>

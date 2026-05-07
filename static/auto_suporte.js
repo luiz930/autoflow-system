@@ -17,6 +17,15 @@
         return el;
     }
 
+    function obterCsrfToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta && meta.getAttribute("content")) {
+            return meta.getAttribute("content");
+        }
+        const input = document.querySelector('input[name="_csrf_token"]');
+        return input ? input.value : "";
+    }
+
     function textoFalhas(status) {
         const falhas = status && Array.isArray(status.falhas) ? status.falhas : [];
         if (!falhas.length) {
@@ -69,7 +78,10 @@
         try {
             const resposta = await fetch("/api/auto-suporte/acao", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRF-Token": obterCsrfToken(),
+                },
                 body: JSON.stringify({ acao }),
             });
             const dados = await resposta.json();
@@ -96,10 +108,21 @@
         raiz.innerHTML = "";
 
         const status = estado.status || {};
-        const bubble = criarElemento("button", "auto-support-bubble", "AS");
+        const bubble = criarElemento("button", "auto-support-bubble");
         bubble.type = "button";
         bubble.title = "AutoSuporte";
+        bubble.setAttribute("aria-label", "Abrir AutoSuporte");
         bubble.setAttribute("data-alert", status.ok === false ? "true" : "false");
+        bubble.innerHTML = `
+            <span class="auto-support-bot" aria-hidden="true">
+                <span class="auto-support-bot-antenna"></span>
+                <span class="auto-support-bot-face">
+                    <span class="auto-support-bot-eye"></span>
+                    <span class="auto-support-bot-eye"></span>
+                </span>
+                <span class="auto-support-bot-mouth"></span>
+            </span>
+        `;
         bubble.addEventListener("click", () => {
             estado.aberto ? fecharPainel() : abrirPainel();
         });
