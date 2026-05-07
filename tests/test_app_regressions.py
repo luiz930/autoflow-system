@@ -407,6 +407,40 @@ class AppRegressionTests(unittest.TestCase):
         montar.assert_called_once()
         render_mock.assert_called_once()
 
+    def test_auto_suporte_limpa_caches_com_acao_segura(self):
+        app_module.CLIENTES_CONTEXT_CACHE["testado_em"] = 9999999999.0
+        app_module.CLIENTES_CONTEXT_CACHE["chave"] = "admin|1|"
+        app_module.CLIENTES_CONTEXT_CACHE["resultado"] = {"clientes": [1]}
+
+        with app_module.app.test_request_context("/api/auto-suporte/acao", method="POST", json={"acao": "limpar_caches"}):
+            session["usuario"] = "admin"
+            session["usuario_perfil"] = "admin"
+            session["empresa_id"] = 1
+            with patch.object(app_module, "usuario_gerencia_configuracao_sistema", return_value=True), \
+                 patch.object(app_module, "registrar_auditoria", return_value=None), \
+                 patch.object(app_module, "salvar_notificacao", return_value=True), \
+                 patch.object(app_module, "registrar_evento_telemetria_app", return_value=True), \
+                 patch.object(app_module, "status_auto_suporte", return_value={"ok": True, "falhas": []}):
+                response = app_module.api_auto_suporte_acao()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(app_module.CLIENTES_CONTEXT_CACHE["testado_em"], 0.0)
+        self.assertIsNone(app_module.CLIENTES_CONTEXT_CACHE["resultado"])
+
+    def test_auto_suporte_rejeita_acao_nao_permitida(self):
+        with app_module.app.test_request_context("/api/auto-suporte/acao", method="POST", json={"acao": "editar_codigo"}):
+            session["usuario"] = "admin"
+            session["usuario_perfil"] = "admin"
+            session["empresa_id"] = 1
+            with patch.object(app_module, "usuario_gerencia_configuracao_sistema", return_value=True):
+                response = app_module.api_auto_suporte_acao()
+
+        resposta, status_code = response
+        self.assertEqual(status_code, 400)
+        self.assertIn("nao permitida", resposta.get_json()["erro"])
+
     def test_pre_deploy_json_retorna_checklist_sem_500(self):
         checklist = [{"nome": "HTTPS ativo", "ok": True, "detalhe": "OK", "acao": "OK"}]
 

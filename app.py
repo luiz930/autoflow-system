@@ -3835,6 +3835,7 @@ def inject_global_template_context():
         "csrf_token": lambda: issue_csrf_token(session),
         "licenca_atual": licenca_atual,
         "pode_gerenciar_empresas": usuario_gerencia_empresas() if session.get("usuario") else False,
+        "auto_suporte_disponivel": usuario_gerencia_configuracao_sistema() if session.get("usuario") else False,
         "pagina_menu_habilitada": pagina_menu_habilitada,
         "hud_usuario_config": obter_configuracao_hud_usuario() if session.get("usuario") else configuracao_hud_usuario_padrao(),
         **produto,
@@ -16617,6 +16618,242 @@ def montar_central_tecnica_desenvolvedor():
             "tabelas_ok": banco.get("tabelas_ok", 0),
         },
     }
+
+
+ACOES_AUTO_SUPORTE = {
+    "limpar_caches": "Limpar caches",
+    "validar_ambiente": "Reiniciar validacao",
+    "testar_banco": "Testar banco",
+    "gerar_backup_suporte": "Gerar backup de suporte",
+    "desativar_planilhas_com_erro": "Pausar planilhas com erro",
+    "registrar_incidente": "Registrar incidente",
+    "enviar_alerta_telegram": "Enviar alerta Telegram",
+    "marcar_fluxo_suspeito": "Marcar fluxo suspeito",
+}
+
+
+def usuario_pode_usar_auto_suporte():
+    return bool(session.get("usuario") and usuario_gerencia_configuracao_sistema())
+
+
+def registrar_incidente_auto_suporte(titulo, mensagem, detalhes=None, severidade="warning"):
+    detalhes = dict(detalhes or {})
+    detalhes.update(
+        {
+            "titulo": normalizar_texto_campo(titulo),
+            "mensagem": normalizar_texto_campo(mensagem),
+            "severidade": normalizar_texto_campo(severidade) or "warning",
+        }
+    )
+    try:
+        registrar_auditoria(
+            "auto_suporte_incidente",
+            "auto_suporte",
+            detalhes=detalhes,
+        )
+    except Exception as erro:
+        print("ERRO AUDITORIA AUTO SUPORTE:", erro)
+
+    try:
+        salvar_notificacao(
+            f"AutoSuporte: {titulo} - {mensagem}",
+            "erro" if severidade == "error" else "info",
+            categoria="auto_suporte",
+            referencia="incidente",
+        )
+    except Exception as erro:
+        print("ERRO NOTIFICACAO AUTO SUPORTE:", erro)
+
+    registrar_evento_telemetria_app(
+        "auto_suporte_incidente",
+        categoria="auto_suporte",
+        severidade=severidade,
+        payload=detalhes,
+    )
+
+
+def detectar_fluxos_suspeitos_auto_suporte():
+    conn = conectar()
+    try:
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT
+                veiculos.placa,
+                COUNT(*) AS total,
+                GROUP_CONCAT(servicos.id) AS servicos_ids
+            FROM servicos
+            LEFT JOIN veiculos
+              ON servicos.veiculo_id = veiculos.id
+             AND veiculos.empresa_id = ?
+            WHERE servicos.empresa_id = ?
+              AND COALESCE(TRIM(UPPER(servicos.status)), '')='EM ANDAMENTO'
+            GROUP BY servicos.veiculo_id, veiculos.placa
+            HAVING COUNT(*) > 1
+            ORDER BY total DESC
+            """,
+            (empresa_atual_id(), empresa_atual_id()),
+        )
+        return [dict(row) for row in c.fetchall()]
+    finally:
+        conn.close()
+
+
+def desativar_planilhas_com_erro_auto_suporte():
+    conn = conectar()
+    try:
+        c = conn.cursor()
+        agora_atual = agora_iso()
+        c.execute(
+            """
+            UPDATE sincronizacoes_clientes
+            SET ativo=0,
+                ultimo_status='PAUSADA_AUTO_SUPORTE',
+                ultima_mensagem='Pausada temporariamente pelo AutoSuporte por status de erro.',
+                proximo_sync_em=NULL,
+                atualizado_em=?
+            WHERE empresa_id=?
+              AND ativo=1
+              AND COALESCE(excluido_em, '')=''
+              AND (
+                    UPPER(COALESCE(ultimo_status, '')) LIKE '%ERRO%'
+                 OR UPPER(COALESCE(ultimo_status, '')) LIKE '%FALHA%'
+                 OR UPPER(COALESCE(ultima_mensagem, '')) LIKE '%ERRO%'
+                 OR UPPER(COALESCE(ultima_mensagem, '')) LIKE '%FALHA%'
+              )
+            """,
+            (agora_atual, empresa_atual_id()),
+        )
+        total = int(c.rowcount or 0)
+        conn.commit()
+        return total
+    finally:
+        conn.close()
+
+
+def enviar_alerta_telegram_auto_suporte(texto):
+    config = obter_configuracao_empresa(force=True)
+    token = normalizar_texto_campo(config.get("auto_teste_telegram_bot_token"))
+    chat_id = normalizar_texto_campo(config.get("auto_teste_telegram_chat_id"))
+    if not token:
+        raise ValueError("Token do Telegram nao configurado no Auto teste.")
+    chat_id = resolver_chat_id_telegram(token, chat_id)
+    if not chat_id:
+        raise ValueError("Chat ID nao configurado. Envie /start para o bot e teste novamente.")
+    send_site_monitor_telegram_message(token, chat_id, texto, 15)
+    return chat_id
+
+
+def status_auto_suporte():
+    status = montar_status_sistema_dono()
+    fluxos = executar_com_fallback_producao(
+        detectar_fluxos_suspeitos_auto_suporte,
+        [],
+        "auto_suporte_fluxos",
+    )
+    falhas = list(status.get("resumo", {}).get("falhas") or [])
+    if fluxos:
+        falhas.append("Fluxos duplicados")
+
+    return {
+        "ok": not falhas,
+        "gerado_em": agora_iso(),
+        "falhas": falhas,
+        "ultimo_erro": dict(ULTIMO_ERRO_PRODUCAO),
+        "fluxos_suspeitos": fluxos,
+        "acoes": [
+            {"id": chave, "label": label}
+            for chave, label in ACOES_AUTO_SUPORTE.items()
+        ],
+        "mensagem": "Sistema sem incidentes criticos." if not falhas else "AutoSuporte encontrou pontos para revisar.",
+    }
+
+
+def executar_acao_auto_suporte(acao, observacao=""):
+    acao = normalizar_texto_campo(acao)
+    observacao = normalizar_texto_campo(observacao)
+    if acao not in ACOES_AUTO_SUPORTE:
+        raise ValueError("Acao de AutoSuporte nao permitida.")
+
+    detalhes = {"acao": acao, "observacao": observacao}
+    mensagem = ""
+    severidade = "info"
+
+    if acao == "limpar_caches":
+        limpar_caches_interface()
+        mensagem = "Caches da interface, painel, clientes, relatorios, banco e configuracoes foram limpos."
+    elif acao == "validar_ambiente":
+        checklist = montar_pre_deploy_checklist()
+        falhas = [item["nome"] for item in checklist if not item.get("ok")]
+        detalhes["falhas"] = falhas
+        mensagem = "Ambiente validado sem pendencias." if not falhas else "Pendencias: " + ", ".join(falhas)
+        severidade = "warning" if falhas else "info"
+    elif acao == "testar_banco":
+        status = diagnosticar_banco_online(force=True)
+        detalhes["banco"] = status
+        mensagem = status.get("mensagem") or "Banco validado."
+        severidade = "info" if status.get("conectado") else "warning"
+    elif acao == "gerar_backup_suporte":
+        sucesso, msg, destino = criar_backup_banco(force=True, tipo_backup="completo")
+        detalhes.update({"sucesso": bool(sucesso), "destino": destino})
+        mensagem = msg or ("Backup de suporte gerado." if sucesso else "Backup de suporte falhou.")
+        severidade = "info" if sucesso else "error"
+    elif acao == "desativar_planilhas_com_erro":
+        total = desativar_planilhas_com_erro_auto_suporte()
+        limpar_cache_clientes()
+        detalhes["planilhas_pausadas"] = total
+        mensagem = f"{total} planilha(s) com erro foram pausadas temporariamente."
+    elif acao == "registrar_incidente":
+        mensagem = observacao or "Incidente registrado manualmente pelo AutoSuporte."
+        severidade = "warning"
+    elif acao == "enviar_alerta_telegram":
+        texto = observacao or "AutoSuporte executado: revisar o status do sistema."
+        chat_id = enviar_alerta_telegram_auto_suporte(f"AutoSuporte Wagen Estetica\n{texto}")
+        detalhes["chat_id"] = chat_id
+        mensagem = "Alerta enviado para o Telegram."
+    elif acao == "marcar_fluxo_suspeito":
+        fluxos = detectar_fluxos_suspeitos_auto_suporte()
+        detalhes["fluxos_suspeitos"] = fluxos
+        mensagem = (
+            f"{len(fluxos)} fluxo(s) suspeito(s) encontrado(s)."
+            if fluxos else
+            "Nenhum fluxo duplicado em andamento foi encontrado."
+        )
+        severidade = "warning" if fluxos else "info"
+
+    registrar_incidente_auto_suporte(ACOES_AUTO_SUPORTE[acao], mensagem, detalhes=detalhes, severidade=severidade)
+    return {
+        "ok": severidade != "error",
+        "acao": acao,
+        "titulo": ACOES_AUTO_SUPORTE[acao],
+        "mensagem": mensagem,
+        "detalhes": detalhes,
+        "status": status_auto_suporte(),
+    }
+
+
+@app.route("/api/auto-suporte/status")
+def api_auto_suporte_status():
+    if not usuario_pode_usar_auto_suporte():
+        return jsonify({"erro": "nao_autorizado"}), 403
+    return jsonify(json.loads(json.dumps(status_auto_suporte(), ensure_ascii=False, default=str)))
+
+
+@app.route("/api/auto-suporte/acao", methods=["POST"])
+def api_auto_suporte_acao():
+    if not usuario_pode_usar_auto_suporte():
+        return jsonify({"erro": "nao_autorizado"}), 403
+
+    payload = request.get_json(silent=True) or request.form or {}
+    try:
+        resultado = executar_acao_auto_suporte(
+            payload.get("acao"),
+            observacao=payload.get("observacao") or "",
+        )
+        return jsonify(json.loads(json.dumps(resultado, ensure_ascii=False, default=str)))
+    except Exception as erro:
+        registrar_ultimo_erro_producao(erro, descricao="auto_suporte_acao")
+        return jsonify({"ok": False, "erro": str(erro)}), 400
 
 
 @app.route("/diagnostico")
