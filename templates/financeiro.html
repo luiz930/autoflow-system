@@ -233,6 +233,37 @@
     </div>
 </div>
 
+{% if not relatorio_detalhado %}
+<div class="page-grid top-spacing">
+    <div class="page-card">
+        <p class="pill-label">Faturamento do periodo</p>
+        <div class="metric-value metric-value--success">R$ {{ total_periodo }}</div>
+        <p class="financial-note">{{ quantidade_periodo }} servico(s) finalizado(s) em {{ periodo_label }}</p>
+    </div>
+    <div class="page-card">
+        <p class="pill-label">Ticket medio</p>
+        <div class="metric-value">R$ {{ ticket_periodo }}</div>
+        <p class="financial-note">Resumo rapido sem carregar graficos e rankings.</p>
+    </div>
+    <div class="page-card">
+        <p class="pill-label">Hoje</p>
+        <div class="metric-value metric-value--success">R$ {{ total_hoje }}</div>
+        <p class="financial-note">{{ quantidade_hoje }} servico(s) finalizado(s) hoje.</p>
+    </div>
+</div>
+{% endif %}
+
+{% if not relatorio_detalhado %}
+<div class="page-card page-card--soft top-spacing">
+    <p class="pill-label">Detalhes sob demanda</p>
+    <h2 class="section-title">Graficos, rankings e documentos</h2>
+    <p class="muted-text">A tela abriu com o resumo principal. Carregue os detalhes apenas quando precisar analisar rankings, graficos, ultimos atendimentos, orcamentos e notas.</p>
+    <a href="{{ url_for('financeiro', periodo=periodo_atual, detalhar=1) }}" class="button-link top-spacing">
+        <button type="button">Carregar relatorio completo</button>
+    </a>
+</div>
+{% else %}
+
 {% if servico_campeao %}
 <div class="financial-hero">
     <div class="page-card financial-highlight">
@@ -548,5 +579,7 @@
         </div>
     </div>
 </div>
+
+{% endif %}
 
 {% endblock %}

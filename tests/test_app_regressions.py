@@ -1492,6 +1492,84 @@ class AppRegressionTests(unittest.TestCase):
         self.assertIn("/api/pwa/status", regras)
         self.assertIn("/clientes/sincronizacao/<int:sync_id>/excluir", regras)
 
+    def test_alerta_estabilidade_dispara_para_rota_lenta_e_piora_repetida(self):
+        rota = "/financeiro"
+        estado_original = dict(app_module.METRICAS_TEMPO_RESPOSTA[rota])
+        try:
+            app_module.METRICAS_TEMPO_RESPOSTA[rota] = {
+                "rota": rota,
+                "ultimo_ms": 400,
+                "media_ms": 400,
+                "max_ms": 400,
+                "amostras": 2,
+                "status": 200,
+                "ultima_medicao": "",
+                "classe": "rapido",
+                "pioras_consecutivas": 2,
+            }
+            with app_module.app.test_request_context(rota):
+                app_module.g.inicio_tempo_resposta = app_module.time.perf_counter() - 2.2
+                response = app_module.app.response_class("ok", status=200)
+                with patch.object(app_module, "enviar_alerta_estabilidade_assincrono") as alerta_mock:
+                    app_module.registrar_tempo_resposta(response)
+
+            chaves = [chamada.kwargs.get("chave") for chamada in alerta_mock.call_args_list]
+            self.assertIn("rota_lenta:/financeiro", chaves)
+            self.assertIn("rota_piorando:/financeiro", chaves)
+            self.assertEqual(app_module.METRICAS_TEMPO_RESPOSTA[rota]["pioras_consecutivas"], 3)
+        finally:
+            app_module.METRICAS_TEMPO_RESPOSTA[rota] = estado_original
+
+    def test_erro_global_agenda_alerta_resumido_telegram(self):
+        with app_module.app.test_request_context("/painel"):
+            session["usuario"] = "admin"
+            with patch.object(app_module, "salvar_registro_erro_producao"), \
+                 patch.object(app_module, "enviar_alerta_estabilidade_assincrono") as alerta_mock:
+                app_module.registrar_ultimo_erro_producao(RuntimeError("falha teste"), descricao="erro_global")
+
+        alerta_mock.assert_called_once()
+        self.assertIn("erro500:/painel:RuntimeError", alerta_mock.call_args.kwargs.get("chave"))
+
+    def test_clientes_sincronizacoes_sao_sob_demanda(self):
+        with app_module.app.test_request_context("/clientes", method="GET"):
+            session["usuario"] = "admin"
+            with patch.object(app_module, "carregar_contexto_clientes", return_value=([], [])) as contexto_mock, \
+                 patch.object(app_module, "render_template", return_value="ok") as render_mock:
+                resposta = app_module.renderizar_pagina_clientes()
+
+        self.assertEqual(resposta, "ok")
+        self.assertFalse(contexto_mock.call_args.kwargs["detalhar_sincronizacoes"])
+        self.assertFalse(render_mock.call_args.kwargs["detalhar_sincronizacoes"])
+
+        with app_module.app.test_request_context("/clientes?detalhar_sincronizacoes=1", method="GET"):
+            session["usuario"] = "admin"
+            with patch.object(app_module, "carregar_contexto_clientes", return_value=([], [])) as contexto_mock, \
+                 patch.object(app_module, "render_template", return_value="ok") as render_mock:
+                resposta = app_module.renderizar_pagina_clientes()
+
+        self.assertEqual(resposta, "ok")
+        self.assertTrue(contexto_mock.call_args.kwargs["detalhar_sincronizacoes"])
+        self.assertTrue(render_mock.call_args.kwargs["detalhar_sincronizacoes"])
+
+    def test_financeiro_completo_e_sob_demanda(self):
+        with app_module.app.test_request_context("/financeiro", method="GET"):
+            session["usuario"] = "admin"
+            with patch.object(app_module, "carregar_contexto_relatorios", return_value={}) as contexto_mock, \
+                 patch.object(app_module, "render_template", return_value="ok"):
+                resposta = app_module.financeiro()
+
+        self.assertEqual(resposta, "ok")
+        self.assertFalse(contexto_mock.call_args.kwargs["detalhado"])
+
+        with app_module.app.test_request_context("/financeiro?detalhar=1", method="GET"):
+            session["usuario"] = "admin"
+            with patch.object(app_module, "carregar_contexto_relatorios", return_value={}) as contexto_mock, \
+                 patch.object(app_module, "render_template", return_value="ok"):
+                resposta = app_module.financeiro()
+
+        self.assertEqual(resposta, "ok")
+        self.assertTrue(contexto_mock.call_args.kwargs["detalhado"])
+
 
 if __name__ == "__main__":
     unittest.main()

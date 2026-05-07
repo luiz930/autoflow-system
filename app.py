@@ -3867,6 +3867,8 @@ POSTGRES_CONNECT_TIMEOUT = 3
 POSTGRES_RETRY_TENTATIVAS = 2
 POSTGRES_RETRY_DELAY = 0.25
 BANCO_ONLINE_FALHAS_ROTAS = {}
+ESTABILIDADE_ALERTAS_CACHE = {}
+ESTABILIDADE_ALERTA_INTERVALO = 600
 ROTAS_MONITORADAS_RESPOSTA = {"/", "/clientes", "/painel", "/configuracoes", "/financeiro", "/status-sistema"}
 METRICAS_TEMPO_RESPOSTA = {
     rota: {
@@ -3882,6 +3884,7 @@ METRICAS_TEMPO_RESPOSTA = {
         "tendencia": "estavel",
         "tendencia_label": "Estavel",
         "alerta_2s": False,
+        "pioras_consecutivas": 0,
     }
     for rota in ROTAS_MONITORADAS_RESPOSTA
 }
@@ -8372,11 +8375,12 @@ def montar_csv_resposta(nome_arquivo, linhas):
     )
 
 
-def carregar_contexto_relatorios(periodo_atual=None):
+def carregar_contexto_relatorios(periodo_atual=None, detalhado=False):
     periodo_atual = normalizar_periodo_financeiro(periodo_atual)
+    detalhado = bool(detalhado)
     empresa_id = empresa_atual_id()
     usuario_cache = str(session.get("usuario") or "")
-    chave_cache = f"{usuario_cache}|{empresa_id}|{periodo_atual}"
+    chave_cache = f"{usuario_cache}|{empresa_id}|{periodo_atual}|det:{int(detalhado)}"
     contexto_cache = obter_cache_consulta(
         RELATORIOS_CONTEXT_CACHE,
         chave_cache,
@@ -8410,7 +8414,10 @@ def carregar_contexto_relatorios(periodo_atual=None):
         )
         servicos = [dict(row) for row in c.fetchall()]
         enriquecer_perfil_cliente_atendimento(servicos)
-        orcamentos, notas = consultar_documentos_relatorios_cursor(c, empresa_id)
+        if detalhado:
+            orcamentos, notas = consultar_documentos_relatorios_cursor(c, empresa_id)
+        else:
+            orcamentos, notas = [], []
         return {
             "servicos_raw": servicos,
             "orcamentos_raw": orcamentos,
@@ -8686,6 +8693,7 @@ def carregar_contexto_relatorios(periodo_atual=None):
         "finalizados_periodo_raw": finalizados_periodo,
         "orcamentos_periodo_raw": orcamentos_periodo,
         "notas_periodo_raw": notas_periodo,
+        "relatorio_detalhado": detalhado,
     }
     salvar_cache_consulta(RELATORIOS_CONTEXT_CACHE, chave_cache, contexto)
     return contexto
@@ -14318,11 +14326,11 @@ def loop_importacao():
         time.sleep(3600)  # atualiza a cada 1 minuto
 
 
-def carregar_contexto_clientes(busca="", limpar=False):
+def carregar_contexto_clientes(busca="", limpar=False, detalhar_sincronizacoes=False):
     busca_aplicada = "" if limpar else busca
     empresa_id = empresa_atual_id()
     usuario_cache = f"{session.get('usuario') or ''}|{empresa_id}"
-    chave_cache = f"{usuario_cache}|{empresa_id}|{busca_aplicada}"
+    chave_cache = f"{usuario_cache}|{empresa_id}|{busca_aplicada}|sync:{int(bool(detalhar_sincronizacoes))}"
     contexto_cache = obter_cache_consulta(
         CLIENTES_CONTEXT_CACHE,
         chave_cache,
@@ -14337,7 +14345,9 @@ def carregar_contexto_clientes(busca="", limpar=False):
     contexto_lido = executar_leitura_resiliente(
         lambda conn: {
             "clientes": listar_registros_clientes(busca_aplicada, conn=conn),
-            "sincronizacoes_raw": consultar_sincronizacoes_clientes_domain(conn.cursor(), empresa_id),
+            "sincronizacoes_raw": consultar_sincronizacoes_clientes_domain(conn.cursor(), empresa_id)
+            if detalhar_sincronizacoes
+            else [],
         },
         descricao="CONTEXTO CLIENTES",
         padrao={"clientes": [], "sincronizacoes_raw": []},
@@ -14458,6 +14468,11 @@ def registrar_tempo_resposta(response):
                 ultimo_anterior = int(atual.get("ultimo_ms") or 0)
                 media = int(((media_anterior * (amostras - 1)) + tempo_ms) / amostras)
                 tendencia = classificar_tendencia_resposta_ms(ultimo_anterior, tempo_ms)
+                pioras_consecutivas = int(atual.get("pioras_consecutivas") or 0)
+                if tendencia == "piorou":
+                    pioras_consecutivas += 1
+                elif tendencia == "melhorou":
+                    pioras_consecutivas = 0
                 atual.update(
                     {
                         "rota": caminho,
@@ -14473,9 +14488,11 @@ def registrar_tempo_resposta(response):
                         "tendencia": tendencia,
                         "tendencia_label": rotulo_tendencia_resposta(tendencia),
                         "alerta_2s": tempo_ms > 2000,
+                        "pioras_consecutivas": pioras_consecutivas,
                     }
                 )
                 METRICAS_TEMPO_RESPOSTA[caminho] = atual
+                avaliar_alerta_estabilidade_resposta(caminho, atual)
     except Exception as erro:
         print("ERRO METRICA RESPOSTA:", erro)
     return response
@@ -16420,6 +16437,10 @@ def registrar_ultimo_erro_producao(erro, descricao=""):
         print("ERRO AO GRAVAR CENTRAL DE ERROS:", erro_log)
     print("ERRO PRODUCAO:", descricao or ULTIMO_ERRO_PRODUCAO["endpoint"], erro)
     print(registro.get("stack") or "".join(traceback.format_exception(type(erro), erro, erro.__traceback__)))
+    if descricao == "erro_global":
+        texto = montar_alerta_erro_500_telegram(registro)
+        chave = f"erro500:{registro.get('path')}:{registro.get('tipo')}:{str(registro.get('mensagem') or '')[:80]}"
+        enviar_alerta_estabilidade_assincrono(texto, chave=chave)
 
 
 def registrar_falha_banco_online_request(erro, descricao="banco_online"):
@@ -16434,6 +16455,83 @@ def registrar_falha_banco_online_request(erro, descricao="banco_online"):
         registrar_ultimo_erro_producao(erro, descricao=descricao)
     except Exception as erro_log:
         print("ERRO AO REGISTRAR FALHA BANCO ONLINE:", erro_log)
+
+
+def enviar_alerta_estabilidade_assincrono(texto, chave, intervalo=None):
+    chave = normalizar_texto_campo(chave)
+    if not chave:
+        return False
+    agora_ts = time.time()
+    intervalo = int(intervalo or ESTABILIDADE_ALERTA_INTERVALO)
+    if agora_ts - float(ESTABILIDADE_ALERTAS_CACHE.get(chave) or 0.0) < intervalo:
+        return False
+    ESTABILIDADE_ALERTAS_CACHE[chave] = agora_ts
+
+    def executar():
+        try:
+            enviar_alerta_telegram_auto_suporte(texto)
+        except Exception as erro:
+            print("ERRO ALERTA ESTABILIDADE TELEGRAM:", erro)
+
+    Thread(target=executar, daemon=True).start()
+    return True
+
+
+def montar_alerta_erro_500_telegram(registro):
+    return (
+        "Alerta de estabilidade Wagen Estetica\n"
+        "Tipo: erro 500\n"
+        f"Rota: {registro.get('path') or registro.get('endpoint') or '-'}\n"
+        f"Usuario: {registro.get('usuario') or '-'}\n"
+        f"Quando: {registro.get('quando') or '-'}\n"
+        f"Erro: {registro.get('tipo')}: {registro.get('mensagem')}\n"
+        "Acao: abrir Configuracoes > Desenvolvedor > Central de erros."
+    )
+
+
+def avaliar_alerta_estabilidade_resposta(caminho, metrica):
+    tempo_ms = int(metrica.get("ultimo_ms") or 0)
+    status = int(metrica.get("status") or 0)
+    pioras = int(metrica.get("pioras_consecutivas") or 0)
+    alertas = []
+    if tempo_ms > 2000:
+        alertas.append(
+            (
+                f"rota_lenta:{caminho}",
+                "Alerta de estabilidade Wagen Estetica\n"
+                "Tipo: rota acima de 2s\n"
+                f"Rota: {caminho}\n"
+                f"Tempo: {tempo_ms} ms\n"
+                f"Media: {metrica.get('media_ms')} ms\n"
+                "Acao: abrir Configuracoes > Desenvolvedor > Central Tecnica."
+            )
+        )
+    if pioras >= 3:
+        alertas.append(
+            (
+                f"rota_piorando:{caminho}",
+                "Alerta de estabilidade Wagen Estetica\n"
+                "Tipo: rota piorou 3 vezes seguidas\n"
+                f"Rota: {caminho}\n"
+                f"Ultimo tempo: {tempo_ms} ms\n"
+                f"Pioras consecutivas: {pioras}\n"
+                "Acao: revisar a rota na Central Tecnica."
+            )
+        )
+    if status >= 500:
+        alertas.append(
+            (
+                f"rota_500:{caminho}:{status}",
+                "Alerta de estabilidade Wagen Estetica\n"
+                "Tipo: resposta 500\n"
+                f"Rota: {caminho}\n"
+                f"Status: {status}\n"
+                f"Tempo: {tempo_ms} ms\n"
+                "Acao: verificar Central de erros."
+            )
+        )
+    for chave, texto in alertas:
+        enviar_alerta_estabilidade_assincrono(texto, chave=chave)
 
 
 def request_https_ativo():
@@ -16778,6 +16876,7 @@ def metricas_tempo_resposta_central_tecnica():
         )
         item["tendencia_label"] = rotulo_tendencia_resposta(item.get("tendencia"))
         item["alerta_2s"] = bool(item.get("alerta_2s") or int(item.get("ultimo_ms") or 0) > 2000)
+        item["pioras_consecutivas"] = int(item.get("pioras_consecutivas") or 0)
         itens.append(item)
     return itens
 
@@ -18932,7 +19031,10 @@ def exportar_relatorios_csv():
 def financeiro():
     if not session.get("usuario"):
         return redirect("/login")
-    contexto = carregar_contexto_relatorios(request.args.get("periodo"))
+    contexto = carregar_contexto_relatorios(
+        request.args.get("periodo"),
+        detalhado=bool(request.args.get("detalhar") or request.args.get("detalhes")),
+    )
     return render_template("financeiro.html", **contexto)
 
 
@@ -19005,12 +19107,18 @@ def index():
     )
 
 def renderizar_pagina_clientes(busca="", limpar=False):
-    clientes_lista, sincronizacoes = carregar_contexto_clientes(busca=busca, limpar=limpar)
+    detalhar_sincronizacoes = bool(request.args.get("detalhar_sincronizacoes") or request.args.get("sync"))
+    clientes_lista, sincronizacoes = carregar_contexto_clientes(
+        busca=busca,
+        limpar=limpar,
+        detalhar_sincronizacoes=detalhar_sincronizacoes,
+    )
 
     return render_template(
         "clientes.html",
         clientes=clientes_lista,
         sincronizacoes=sincronizacoes,
+        detalhar_sincronizacoes=detalhar_sincronizacoes,
         feedback=session.pop("clientes_feedback", None),
         preview_sync=session.get("clientes_sync_preview"),
         campos_sync=CAMPOS_SINCRONIZACAO_CLIENTES,
@@ -20409,8 +20517,9 @@ def _carregar_dados_painel(conn):
     return {
         "servicos_db": servicos_db,
         "produtos_pneu": produtos_pneu,
-        "resumo_fotos_por_servico": listar_resumo_fotos_servicos(ids_servicos, cursor=c),
-        "resumo_extras_por_servico": listar_resumo_cobrancas_extras_servicos(ids_servicos, cursor=c),
+        "resumo_fotos_por_servico": {},
+        "resumo_extras_por_servico": {},
+        "detalhes_sob_demanda": bool(ids_servicos),
     }
 
 

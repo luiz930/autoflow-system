@@ -138,6 +138,14 @@
 
 <div class="top-spacing">
     <h2 class="section-title">Sincronizacoes ativas</h2>
+    {% if not detalhar_sincronizacoes %}
+    <div class="page-card page-card--soft top-spacing">
+        <p class="muted-text">As sincronizacoes de planilhas ficam sob demanda para a tela de clientes abrir mais rapido.</p>
+        <a href="/clientes?detalhar_sincronizacoes=1{% if busca %}&busca={{ busca }}{% endif %}" class="button-link">
+            <button type="button">Carregar sincronizacoes</button>
+        </a>
+    </div>
+    {% else %}
 
     <div class="list-grid">
         {% for sync in sincronizacoes %}
@@ -192,6 +200,7 @@
         </div>
         {% endfor %}
     </div>
+    {% endif %}
 </div>
 
 <div class="top-spacing">
