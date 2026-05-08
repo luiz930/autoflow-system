@@ -3864,6 +3864,10 @@ ULTIMO_ERRO_PRODUCAO = {
 ERROS_PRODUCAO_ARQUIVO = os.path.join("logs", "erros_producao.json")
 ERROS_PRODUCAO_LIMITE = 80
 ERROS_PRODUCAO_LOCK = Lock()
+AUTO_SUPORTE_HISTORICO_ARQUIVO = os.path.join("logs", "auto_suporte_historico.json")
+AUTO_SUPORTE_ESTADO_ARQUIVO = os.path.join("logs", "auto_suporte_estado.json")
+AUTO_SUPORTE_HISTORICO_LIMITE = 80
+AUTO_SUPORTE_LOCK = Lock()
 POSTGRES_CONNECT_TIMEOUT = 3
 POSTGRES_RETRY_TENTATIVAS = 2
 POSTGRES_RETRY_DELAY = 0.25
@@ -17083,9 +17087,14 @@ ACOES_AUTO_SUPORTE = {
     "limpar_caches": "Limpar caches",
     "validar_ambiente": "Reiniciar validacao",
     "testar_banco": "Testar banco",
+    "testar_backup": "Testar backup",
+    "testar_telegram": "Testar Telegram",
+    "revalidar_pwa": "Revalidar PWA",
     "gerar_backup_suporte": "Gerar backup de suporte",
     "desativar_planilhas_com_erro": "Pausar planilhas com erro",
+    "limpar_erros_resolvidos": "Limpar erros resolvidos",
     "gerar_pacote_codex": "Gerar pacote Codex",
+    "enviar_relatorio_telegram": "Enviar relatorio Telegram",
     "registrar_incidente": "Registrar incidente",
     "enviar_alerta_telegram": "Enviar alerta Telegram",
     "marcar_fluxo_suspeito": "Marcar fluxo suspeito",
@@ -17094,6 +17103,65 @@ ACOES_AUTO_SUPORTE = {
 
 def usuario_pode_usar_auto_suporte():
     return bool(session.get("usuario") and usuario_gerencia_configuracao_sistema())
+
+
+def caminho_auto_suporte_json(caminho_relativo):
+    caminho = os.path.abspath(caminho_relativo)
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    return caminho
+
+
+def carregar_json_auto_suporte(caminho_relativo, padrao):
+    caminho = caminho_auto_suporte_json(caminho_relativo)
+    if not os.path.isfile(caminho):
+        return deepcopy(padrao)
+    try:
+        with open(caminho, "r", encoding="utf-8") as arquivo:
+            dados = json.load(arquivo)
+        return dados if isinstance(dados, type(padrao)) else deepcopy(padrao)
+    except Exception:
+        return deepcopy(padrao)
+
+
+def salvar_json_auto_suporte(caminho_relativo, dados):
+    caminho = caminho_auto_suporte_json(caminho_relativo)
+    caminho_temp = f"{caminho}.tmp"
+    with open(caminho_temp, "w", encoding="utf-8") as arquivo:
+        json.dump(dados, arquivo, ensure_ascii=False, indent=2, default=sanitizar_para_json)
+    os.replace(caminho_temp, caminho)
+
+
+def listar_historico_auto_suporte(limite=12):
+    historico = carregar_json_auto_suporte(AUTO_SUPORTE_HISTORICO_ARQUIVO, [])
+    return [item for item in historico if isinstance(item, dict)][: int(limite or 12)]
+
+
+def registrar_historico_auto_suporte(evento, titulo, mensagem, severidade="info", detalhes=None):
+    registro = {
+        "id": f"{int(time.time() * 1000)}-{secrets.token_hex(3)}",
+        "quando": agora_iso(),
+        "evento": normalizar_texto_campo(evento),
+        "titulo": normalizar_texto_campo(titulo),
+        "mensagem": normalizar_texto_campo(mensagem),
+        "severidade": normalizar_texto_campo(severidade) or "info",
+        "usuario": normalizar_texto_campo(session.get("usuario")) if has_request_context() else "",
+        "detalhes": dict(detalhes or {}),
+    }
+    with AUTO_SUPORTE_LOCK:
+        historico = carregar_json_auto_suporte(AUTO_SUPORTE_HISTORICO_ARQUIVO, [])
+        historico.insert(0, registro)
+        salvar_json_auto_suporte(AUTO_SUPORTE_HISTORICO_ARQUIVO, historico[:AUTO_SUPORTE_HISTORICO_LIMITE])
+    return registro
+
+
+def carregar_estado_auto_suporte():
+    estado = carregar_json_auto_suporte(AUTO_SUPORTE_ESTADO_ARQUIVO, {})
+    return estado if isinstance(estado, dict) else {}
+
+
+def salvar_estado_auto_suporte(estado):
+    with AUTO_SUPORTE_LOCK:
+        salvar_json_auto_suporte(AUTO_SUPORTE_ESTADO_ARQUIVO, dict(estado or {}))
 
 
 def registrar_incidente_auto_suporte(titulo, mensagem, detalhes=None, severidade="warning"):
@@ -17129,6 +17197,13 @@ def registrar_incidente_auto_suporte(titulo, mensagem, detalhes=None, severidade
         categoria="auto_suporte",
         severidade=severidade,
         payload=detalhes,
+    )
+    registrar_historico_auto_suporte(
+        "incidente",
+        titulo,
+        mensagem,
+        severidade=severidade,
+        detalhes=detalhes,
     )
 
 
@@ -17227,6 +17302,132 @@ def listar_planilhas_com_erro_auto_suporte(limite=6):
         conn.close()
 
 
+def montar_item_diagnostico_auto_suporte(nivel, titulo, mensagem, acao="", detalhes=None):
+    nivel = normalizar_texto_campo(nivel) or "info"
+    ordem = {"critico": 4, "alerta": 3, "atencao": 2, "info": 1}
+    labels = {
+        "critico": "Erro critico",
+        "alerta": "Alerta",
+        "atencao": "Atencao",
+        "info": "Informativo",
+    }
+    return {
+        "nivel": nivel,
+        "peso": ordem.get(nivel, 1),
+        "label": labels.get(nivel, "Informativo"),
+        "titulo": normalizar_texto_campo(titulo),
+        "mensagem": normalizar_texto_campo(mensagem),
+        "acao": normalizar_texto_campo(acao),
+        "detalhes": dict(detalhes or {}),
+    }
+
+
+def montar_diagnostico_auto_suporte(status_sistema, fluxos, planilhas_erro, tempo_resposta, erros_abertos):
+    itens = []
+    itens_status = status_sistema.get("itens") or []
+    banco_item = next((item for item in itens_status if item.get("nome") == "Banco online"), {})
+    backup_item = next((item for item in itens_status if item.get("nome") == "Backup"), {})
+    telegram_item = next((item for item in itens_status if item.get("nome") == "Bot Telegram"), {})
+    licenca_item = next((item for item in itens_status if item.get("nome") == "Licenca"), {})
+    onboarding_item = next((item for item in itens_status if item.get("nome") == "Onboarding"), {})
+
+    if not banco_item.get("ok"):
+        itens.append(montar_item_diagnostico_auto_suporte(
+            "critico",
+            "Banco online indisponivel",
+            banco_item.get("detalhe") or "A conexao online nao respondeu.",
+            "testar_banco",
+        ))
+    if erros_abertos:
+        itens.append(montar_item_diagnostico_auto_suporte(
+            "critico",
+            "Erro 500 aberto",
+            f"{len(erros_abertos)} erro(s) aberto(s) aguardando revisao tecnica.",
+            "gerar_pacote_codex",
+        ))
+
+    rotas_500 = [item for item in tempo_resposta if int(item.get("status") or 0) >= 500]
+    if rotas_500:
+        rota = rotas_500[0]
+        itens.append(montar_item_diagnostico_auto_suporte(
+            "critico",
+            "Rota retornando 500",
+            f"{rota.get('rota')} retornou HTTP {rota.get('status')}. Gere o pacote para correcao.",
+            "gerar_pacote_codex",
+        ))
+
+    rotas_lentas = [item for item in tempo_resposta if item.get("classe") == "lento" or item.get("alerta_2s")]
+    if rotas_lentas:
+        rota = sorted(rotas_lentas, key=lambda item: int(item.get("ultimo_ms") or 0), reverse=True)[0]
+        itens.append(montar_item_diagnostico_auto_suporte(
+            "alerta",
+            "Pagina lenta",
+            f"{rota.get('rota')} respondeu em {rota.get('ultimo_ms')} ms. Recomendo limpar caches e revisar a Central Tecnica.",
+            "limpar_caches",
+        ))
+    if not backup_item.get("ok"):
+        itens.append(montar_item_diagnostico_auto_suporte(
+            "alerta",
+            "Backup precisa de atencao",
+            backup_item.get("detalhe") or "O backup nao esta em estado ideal.",
+            "testar_backup",
+        ))
+    if not telegram_item.get("ok"):
+        itens.append(montar_item_diagnostico_auto_suporte(
+            "alerta",
+            "Telegram sem validacao completa",
+            telegram_item.get("detalhe") or "Configure token, chat ID e envie um teste.",
+            "testar_telegram",
+        ))
+    if planilhas_erro:
+        itens.append(montar_item_diagnostico_auto_suporte(
+            "alerta",
+            "Planilha com erro",
+            f"{len(planilhas_erro)} planilha(s) ativa(s) com erro podem travar sincronizacoes.",
+            "desativar_planilhas_com_erro",
+        ))
+    if fluxos:
+        itens.append(montar_item_diagnostico_auto_suporte(
+            "alerta",
+            "Atendimento duplicado suspeito",
+            f"{len(fluxos)} placa(s) aparecem duplicadas em andamento.",
+            "marcar_fluxo_suspeito",
+        ))
+    if licenca_item and not licenca_item.get("ok"):
+        itens.append(montar_item_diagnostico_auto_suporte(
+            "atencao",
+            "Licenca exige revisao",
+            licenca_item.get("detalhe") or "Revise plano, validade e status da licenca.",
+            "",
+        ))
+    if onboarding_item and not onboarding_item.get("ok"):
+        itens.append(montar_item_diagnostico_auto_suporte(
+            "atencao",
+            "Onboarding pendente",
+            onboarding_item.get("detalhe") or "Concluir configuracao guiada do cliente.",
+            "registrar_incidente",
+        ))
+
+    if not itens:
+        itens.append(montar_item_diagnostico_auto_suporte(
+            "info",
+            "Tudo operacional",
+            "Nenhum incidente critico no momento. Ultima validacao concluida sem bloqueios.",
+            "",
+        ))
+
+    itens = sorted(itens, key=lambda item: item.get("peso", 0), reverse=True)
+    principal = itens[0]
+    return {
+        "nivel": principal.get("nivel"),
+        "label": principal.get("label"),
+        "titulo": principal.get("titulo"),
+        "frase": principal.get("mensagem"),
+        "auto_abrir": principal.get("nivel") == "critico",
+        "itens": itens[:10],
+    }
+
+
 def montar_sugestoes_auto_suporte(status_sistema, fluxos, planilhas_erro, tempo_resposta, erros_abertos):
     sugestoes = []
     banco_item = next((item for item in status_sistema.get("itens", []) if item.get("nome") == "Banco online"), {})
@@ -17251,6 +17452,58 @@ def montar_sugestoes_auto_suporte(status_sistema, fluxos, planilhas_erro, tempo_
     if erros_abertos:
         sugestoes.append({"titulo": "Erro 500 aberto", "mensagem": f"{len(erros_abertos)} erro(s) aguardando revisao. Gere o pacote e me envie no Codex.", "acao": "gerar_pacote_codex"})
     return sugestoes[:8]
+
+
+def avaliar_alertas_auto_suporte(status_payload):
+    diagnostico = status_payload.get("diagnostico") or {}
+    nivel = diagnostico.get("nivel") or "info"
+    falhas = list(status_payload.get("falhas") or [])
+    chave_estado = "|".join([nivel, *falhas])[:240]
+    agora_ts = time.time()
+    estado = carregar_estado_auto_suporte()
+    estado_anterior = normalizar_texto_campo(estado.get("chave_estado"))
+    resumo_ts = float(estado.get("ultimo_resumo_ts") or 0.0)
+
+    if chave_estado != estado_anterior:
+        registrar_historico_auto_suporte(
+            "diagnostico",
+            diagnostico.get("titulo") or "Diagnostico atualizado",
+            diagnostico.get("frase") or status_payload.get("mensagem") or "",
+            severidade=nivel,
+            detalhes={"falhas": falhas, "nivel": nivel},
+        )
+        if nivel in {"critico", "alerta"}:
+            enviar_alerta_estabilidade_assincrono(
+                "AutoSuporte Wagen Estetica\n"
+                f"Nivel: {diagnostico.get('label')}\n"
+                f"Resumo: {diagnostico.get('frase')}\n"
+                "Acao: abra o AutoSuporte ou gere pacote Codex.",
+                chave=f"auto_suporte_estado:{chave_estado}",
+                intervalo=1800,
+            )
+        elif estado_anterior and nivel == "info":
+            enviar_alerta_estabilidade_assincrono(
+                "AutoSuporte Wagen Estetica\nStatus normalizado.\nNenhum incidente critico no momento.",
+                chave="auto_suporte_normalizou",
+                intervalo=1800,
+            )
+
+    if agora_ts - resumo_ts >= 7200:
+        enviar_alerta_estabilidade_assincrono(
+            "Resumo AutoSuporte Wagen Estetica\n"
+            f"Nivel: {diagnostico.get('label')}\n"
+            f"Resumo: {diagnostico.get('frase')}\n"
+            f"Erros abertos: {len(status_payload.get('erros_abertos') or [])}\n"
+            f"Gerado em: {status_payload.get('gerado_em')}",
+            chave=f"auto_suporte_resumo:{int(agora_ts // 7200)}",
+            intervalo=3600,
+        )
+        estado["ultimo_resumo_ts"] = agora_ts
+
+    estado["chave_estado"] = chave_estado
+    estado["ultimo_nivel"] = nivel
+    estado["atualizado_em"] = agora_iso()
+    salvar_estado_auto_suporte(estado)
 
 
 def executar_git_local_auto_suporte(*args):
@@ -17419,22 +17672,32 @@ def status_auto_suporte():
     if erros_abertos:
         falhas.append("Erro 500 aberto")
 
-    return {
-        "ok": not falhas,
+    diagnostico = montar_diagnostico_auto_suporte(status, fluxos, planilhas_erro, tempo_resposta, erros_abertos)
+    if diagnostico.get("nivel") in {"critico", "alerta"} and diagnostico.get("titulo") not in falhas:
+        falhas.insert(0, diagnostico.get("titulo"))
+    ok_status = not falhas and diagnostico.get("nivel") not in {"critico", "alerta"}
+    resposta = {
+        "ok": ok_status,
         "gerado_em": agora_iso(),
         "falhas": falhas,
+        "diagnostico": diagnostico,
         "ultimo_erro": dict(ULTIMO_ERRO_PRODUCAO),
         "erros_abertos": erros_abertos,
         "fluxos_suspeitos": fluxos,
         "planilhas_erro": planilhas_erro,
         "tempo_resposta": tempo_resposta,
         "sugestoes": montar_sugestoes_auto_suporte(status, fluxos, planilhas_erro, tempo_resposta, erros_abertos),
+        "historico": listar_historico_auto_suporte(limite=10),
+        "auto_abrir": bool(diagnostico.get("auto_abrir")),
         "acoes": [
             {"id": chave, "label": label}
             for chave, label in ACOES_AUTO_SUPORTE.items()
         ],
-        "mensagem": "Sistema sem incidentes criticos." if not falhas else "AutoSuporte encontrou pontos para revisar.",
+        "mensagem": diagnostico.get("frase") or ("Sistema sem incidentes criticos." if not falhas else "AutoSuporte encontrou pontos para revisar."),
     }
+    avaliar_alertas_auto_suporte(resposta)
+    resposta["historico"] = listar_historico_auto_suporte(limite=10)
+    return resposta
 
 
 def executar_acao_auto_suporte(acao, observacao=""):
@@ -17457,10 +17720,46 @@ def executar_acao_auto_suporte(acao, observacao=""):
         mensagem = "Ambiente validado sem pendencias." if not falhas else "Pendencias: " + ", ".join(falhas)
         severidade = "warning" if falhas else "info"
     elif acao == "testar_banco":
+        inicio = time.perf_counter()
         status = diagnosticar_banco_online(force=True)
+        tempo_ms = int((time.perf_counter() - inicio) * 1000)
+        status["tempo_ms"] = tempo_ms
         detalhes["banco"] = status
-        mensagem = status.get("mensagem") or "Banco validado."
+        if status.get("conectado"):
+            mensagem = (
+                f"Banco respondeu em {tempo_ms / 1000:.1f}s. "
+                + ("Esta acima do ideal; recomendo revisar a conexao online." if tempo_ms > 2000 else "Conexao online validada.")
+            )
+        else:
+            mensagem = status.get("mensagem") or "Banco indisponivel."
         severidade = "info" if status.get("conectado") else "warning"
+    elif acao == "testar_backup":
+        backup = obter_status_backup_banco()
+        detalhes["backup"] = backup
+        ultimo = backup.get("ultimo_backup") or backup.get("ultimo") or {}
+        mensagem = (
+            f"Backup validado. Ultimo arquivo: {ultimo.get('nome') or backup.get('ultimo_nome') or 'verificar configuracao'}."
+            if backup.get("ok") or backup.get("existe") or ultimo
+            else "Backup nao encontrado ou precisa de configuracao."
+        )
+        severidade = "info" if (backup.get("ok") or ultimo) else "warning"
+    elif acao == "testar_telegram":
+        chat_id = enviar_alerta_telegram_auto_suporte(
+            "AutoSuporte Wagen Estetica\nTeste manual do bot concluido com sucesso."
+        )
+        detalhes["chat_id"] = chat_id
+        detalhes["telegram_enviado"] = True
+        mensagem = "Mensagem de teste enviada para o Telegram."
+    elif acao == "revalidar_pwa":
+        checks = [
+            testar_rota_interna_status("Manifest PWA", "/site.webmanifest", 200),
+            testar_rota_interna_status("Service worker", "/sw.js", 200),
+            testar_rota_interna_status("Status PWA", "/api/pwa/status", 200),
+        ]
+        detalhes["pwa"] = checks
+        falhas = [item.get("nome") for item in checks if not item.get("ok")]
+        mensagem = "PWA, manifest e service worker revalidados." if not falhas else "Falhas PWA: " + ", ".join(falhas)
+        severidade = "info" if not falhas else "warning"
     elif acao == "gerar_backup_suporte":
         sucesso, msg, destino = criar_backup_banco(force=True, tipo_backup="completo")
         detalhes.update({"sucesso": bool(sucesso), "destino": destino})
@@ -17471,10 +17770,28 @@ def executar_acao_auto_suporte(acao, observacao=""):
         limpar_cache_clientes()
         detalhes["planilhas_pausadas"] = total
         mensagem = f"{total} planilha(s) com erro foram pausadas temporariamente."
+    elif acao == "limpar_erros_resolvidos":
+        total = limpar_erros_producao_resolvidos()
+        detalhes["erros_removidos"] = total
+        mensagem = f"{total} erro(s) resolvido(s) foram removido(s) da Central de erros."
     elif acao == "gerar_pacote_codex":
         pacote = montar_pacote_codex_auto_suporte()
         detalhes["pacote_codex"] = pacote
         mensagem = "Pacote tecnico gerado. Copie ou baixe o relatorio e envie aqui no Codex."
+    elif acao == "enviar_relatorio_telegram":
+        pacote = montar_pacote_codex_auto_suporte()
+        resumo = (
+            "Relatorio AutoSuporte Wagen Estetica\n"
+            f"Gerado em: {pacote.get('gerado_em')}\n"
+            f"Erros abertos: {len(pacote.get('erros_abertos') or [])}\n"
+            f"Ultimo erro: {(pacote.get('ultimo_erro') or {}).get('tipo') or '-'}\n"
+            f"Versao: {pacote.get('ambiente', {}).get('versao_sistema') or '-'}"
+        )
+        chat_id = enviar_alerta_telegram_auto_suporte(resumo)
+        detalhes["chat_id"] = chat_id
+        detalhes["telegram_enviado"] = True
+        detalhes["pacote_codex"] = pacote
+        mensagem = "Relatorio tecnico enviado para o Telegram."
     elif acao == "registrar_incidente":
         mensagem = observacao or "Incidente registrado manualmente pelo AutoSuporte."
         severidade = "warning"
@@ -17482,6 +17799,7 @@ def executar_acao_auto_suporte(acao, observacao=""):
         texto = observacao or "AutoSuporte executado: revisar o status do sistema."
         chat_id = enviar_alerta_telegram_auto_suporte(f"AutoSuporte Wagen Estetica\n{texto}")
         detalhes["chat_id"] = chat_id
+        detalhes["telegram_enviado"] = True
         mensagem = "Alerta enviado para o Telegram."
     elif acao == "marcar_fluxo_suspeito":
         fluxos = detectar_fluxos_suspeitos_auto_suporte()
@@ -17501,6 +17819,7 @@ def executar_acao_auto_suporte(acao, observacao=""):
             "ultimo_erro": (pacote.get("ultimo_erro") or {}).get("id"),
             "erros_abertos": len(pacote.get("erros_abertos") or []),
         }
+    detalhes_incidente["telegram_enviado"] = bool(detalhes.get("telegram_enviado"))
     registrar_incidente_auto_suporte(ACOES_AUTO_SUPORTE[acao], mensagem, detalhes=detalhes_incidente, severidade=severidade)
     return {
         "ok": severidade != "error",

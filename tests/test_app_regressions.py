@@ -1736,6 +1736,60 @@ class AppRegressionTests(unittest.TestCase):
                 self.assertEqual(pacote["erros_abertos"], [])
                 self.assertTrue(all(item["resolvido"] for item in app_module.carregar_erros_producao()))
 
+    def test_auto_suporte_classifica_erro_aberto_como_critico(self):
+        diagnostico = app_module.montar_diagnostico_auto_suporte(
+            {"itens": [{"nome": "Banco online", "ok": True}, {"nome": "Backup", "ok": True}]},
+            [],
+            [],
+            [],
+            [{"id": "erro-500"}],
+        )
+
+        self.assertEqual(diagnostico["nivel"], "critico")
+        self.assertTrue(diagnostico["auto_abrir"])
+        self.assertIn("Erro 500", diagnostico["titulo"])
+
+    def test_auto_suporte_status_registra_historico_e_diagnostico(self):
+        with tempfile.TemporaryDirectory(prefix="auto_suporte_status_") as pasta:
+            historico = os.path.join(pasta, "historico.json")
+            estado = os.path.join(pasta, "estado.json")
+            erros = os.path.join(pasta, "erros.json")
+            with patch.object(app_module, "AUTO_SUPORTE_HISTORICO_ARQUIVO", historico), \
+                 patch.object(app_module, "AUTO_SUPORTE_ESTADO_ARQUIVO", estado), \
+                 patch.object(app_module, "ERROS_PRODUCAO_ARQUIVO", erros), \
+                 patch.object(app_module, "enviar_alerta_estabilidade_assincrono", return_value=True), \
+                 patch.object(app_module, "montar_status_sistema_dono", return_value={"resumo": {"falhas": []}, "itens": [{"nome": "Banco online", "ok": False, "detalhe": "offline"}]}), \
+                 patch.object(app_module, "obter_configuracao_empresa", return_value={"auto_teste_telegram_bot_token": "x", "auto_teste_telegram_chat_id": "1"}), \
+                 patch.object(app_module, "detectar_fluxos_suspeitos_auto_suporte", return_value=[]), \
+                 patch.object(app_module, "listar_planilhas_com_erro_auto_suporte", return_value=[]), \
+                 patch.object(app_module, "metricas_tempo_resposta_central_tecnica", return_value=[]):
+                with app_module.app.test_request_context("/api/auto-suporte/status"):
+                    session["usuario"] = "admin"
+                    status = app_module.status_auto_suporte()
+
+            self.assertEqual(status["diagnostico"]["nivel"], "critico")
+            self.assertTrue(status["auto_abrir"])
+            self.assertTrue(status["historico"])
+            self.assertEqual(status["historico"][0]["evento"], "diagnostico")
+
+    def test_auto_suporte_acao_limpa_erros_resolvidos(self):
+        with tempfile.TemporaryDirectory(prefix="auto_suporte_limpa_erros_") as pasta:
+            caminho = os.path.join(pasta, "erros.json")
+            erros = [
+                {"id": "aberto", "resolvido": False},
+                {"id": "resolvido", "resolvido": True},
+            ]
+            with patch.object(app_module, "ERROS_PRODUCAO_ARQUIVO", caminho), \
+                 patch.object(app_module, "registrar_incidente_auto_suporte"), \
+                 patch.object(app_module, "status_auto_suporte", return_value={"ok": True, "falhas": []}):
+                app_module.salvar_erros_producao(erros)
+                resultado = app_module.executar_acao_auto_suporte("limpar_erros_resolvidos")
+                erros_restantes = app_module.carregar_erros_producao()
+
+            self.assertTrue(resultado["ok"])
+            self.assertEqual(resultado["detalhes"]["erros_removidos"], 1)
+            self.assertEqual([item["id"] for item in erros_restantes], ["aberto"])
+
 
 if __name__ == "__main__":
     unittest.main()
