@@ -1801,7 +1801,7 @@ class AppRegressionTests(unittest.TestCase):
                 self.calls += 1
 
             def fetchone(self):
-                return [1 if self.calls in {1, 3, 7} else 0]
+                return [1 if self.calls in {1, 3, 6} else 0]
 
         class ConnFake:
             def __init__(self):
@@ -1822,6 +1822,51 @@ class AppRegressionTests(unittest.TestCase):
         self.assertIn("servico_sem_veiculo", ids)
         self.assertIn("novo_com_historico", ids)
         self.assertIn("planilha_sincronizando_ha_muito_tempo", ids)
+        self.assertNotIn("retorno_sem_historico", ids)
+        novo = next(item for item in inconsistencias if item["id"] == "novo_com_historico")
+        self.assertEqual(novo["acao"], "corrigir_classificacao_clientes")
+
+    def test_auto_suporte_corrige_novo_com_historico_para_retorno(self):
+        class CursorFake:
+            rowcount = 1
+
+            def __init__(self):
+                self.sql = ""
+                self.params = None
+
+            def execute(self, sql, params=None):
+                self.sql = sql
+                self.params = params
+
+        class ConnFake:
+            def __init__(self):
+                self.cursor_fake = CursorFake()
+                self.committed = False
+
+            def cursor(self):
+                return self.cursor_fake
+
+            def commit(self):
+                self.committed = True
+
+            def close(self):
+                return None
+
+        conn = ConnFake()
+        with app_module.app.test_request_context("/auto-suporte"):
+            session["empresa_id"] = 7
+            with patch.object(app_module, "conectar", return_value=conn), \
+                 patch.object(app_module, "limpar_caches_operacionais_leves") as caches_mock, \
+                 patch.object(app_module, "limpar_cache_clientes") as clientes_mock:
+                resultado = app_module.corrigir_classificacao_clientes_auto_suporte()
+
+        self.assertEqual(resultado["novos_corrigidos_para_retorno"], 1)
+        self.assertIn("SET perfil_cliente_atendimento='RETORNO'", conn.cursor_fake.sql)
+        self.assertIn("UPPER(COALESCE(perfil_cliente_atendimento, ''))='NOVO'", conn.cursor_fake.sql)
+        self.assertEqual(conn.cursor_fake.params, (7,))
+        self.assertTrue(conn.committed)
+        caches_mock.assert_called_once()
+        clientes_mock.assert_called_once()
 
     def test_pagina_auto_suporte_renderiza_painel_proprio(self):
         status_auto = {

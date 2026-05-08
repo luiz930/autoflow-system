@@ -17099,6 +17099,7 @@ ACOES_AUTO_SUPORTE = {
     "revalidar_pwa": "Revalidar PWA",
     "gerar_backup_suporte": "Gerar backup de suporte",
     "desativar_planilhas_com_erro": "Pausar planilhas com erro",
+    "corrigir_classificacao_clientes": "Corrigir classificacao novo/retorno",
     "limpar_erros_resolvidos": "Limpar erros resolvidos",
     "gerar_pacote_codex": "Gerar pacote Codex",
     "enviar_relatorio_telegram": "Enviar relatorio Telegram",
@@ -17354,7 +17355,7 @@ def detectar_inconsistencias_negocio_auto_suporte():
             "id": "novo_com_historico",
             "titulo": "Cliente novo contado com historico",
             "mensagem": "Atendimento marcado como NOVO mesmo com servico anterior para o mesmo veiculo.",
-            "acao": "marcar_fluxo_suspeito",
+            "acao": "corrigir_classificacao_clientes",
             "sql": """
                 SELECT COUNT(*)
                 FROM servicos atual
@@ -17362,27 +17363,6 @@ def detectar_inconsistencias_negocio_auto_suporte():
                   AND UPPER(COALESCE(atual.perfil_cliente_atendimento, ''))='NOVO'
                   AND atual.veiculo_id IS NOT NULL
                   AND EXISTS (
-                      SELECT 1 FROM servicos anterior
-                      WHERE anterior.empresa_id=atual.empresa_id
-                        AND anterior.veiculo_id=atual.veiculo_id
-                        AND anterior.id<>atual.id
-                        AND COALESCE(anterior.entrada, '') < COALESCE(atual.entrada, '')
-                  )
-            """,
-            "params": (empresa_id,),
-        },
-        {
-            "id": "retorno_sem_historico",
-            "titulo": "Retorno sem historico",
-            "mensagem": "Atendimento marcado como RETORNO sem servico anterior para o veiculo.",
-            "acao": "marcar_fluxo_suspeito",
-            "sql": """
-                SELECT COUNT(*)
-                FROM servicos atual
-                WHERE atual.empresa_id=?
-                  AND UPPER(COALESCE(atual.perfil_cliente_atendimento, ''))='RETORNO'
-                  AND atual.veiculo_id IS NOT NULL
-                  AND NOT EXISTS (
                       SELECT 1 FROM servicos anterior
                       WHERE anterior.empresa_id=atual.empresa_id
                         AND anterior.veiculo_id=atual.veiculo_id
@@ -17471,6 +17451,39 @@ def detectar_inconsistencias_negocio_auto_suporte():
                     "severidade": "alerta",
                 })
         return inconsistencias
+    finally:
+        conn.close()
+
+
+def corrigir_classificacao_clientes_auto_suporte():
+    conn = conectar()
+    try:
+        c = conn.cursor()
+        c.execute(
+            """
+            UPDATE servicos
+            SET perfil_cliente_atendimento='RETORNO'
+            WHERE empresa_id=?
+              AND UPPER(COALESCE(perfil_cliente_atendimento, ''))='NOVO'
+              AND veiculo_id IS NOT NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM servicos anterior
+                  WHERE anterior.empresa_id=servicos.empresa_id
+                    AND anterior.veiculo_id=servicos.veiculo_id
+                    AND anterior.id<>servicos.id
+                    AND COALESCE(anterior.entrada, '') < COALESCE(servicos.entrada, '')
+              )
+            """,
+            (empresa_atual_id(),),
+        )
+        corrigidos = int(c.rowcount or 0)
+        conn.commit()
+        limpar_caches_operacionais_leves()
+        limpar_cache_clientes()
+        return {
+            "novos_corrigidos_para_retorno": corrigidos,
+        }
     finally:
         conn.close()
 
@@ -18047,6 +18060,12 @@ def executar_acao_auto_suporte(acao, observacao=""):
         limpar_cache_clientes()
         detalhes["planilhas_pausadas"] = total
         mensagem = f"{total} planilha(s) com erro foram pausadas temporariamente."
+    elif acao == "corrigir_classificacao_clientes":
+        resultado = corrigir_classificacao_clientes_auto_suporte()
+        detalhes["classificacao_clientes"] = resultado
+        total = int(resultado.get("novos_corrigidos_para_retorno") or 0)
+        mensagem = f"{total} atendimento(s) marcado(s) como NOVO com historico foram corrigidos para RETORNO."
+        severidade = "info" if total >= 0 else "warning"
     elif acao == "limpar_erros_resolvidos":
         total = limpar_erros_producao_resolvidos()
         detalhes["erros_removidos"] = total

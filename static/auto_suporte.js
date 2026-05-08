@@ -345,6 +345,7 @@
             ["revalidar_pwa", "Revalidar PWA"],
             ["gerar_backup_suporte", "Backup suporte"],
             ["desativar_planilhas_com_erro", "Pausar planilhas"],
+            ["corrigir_classificacao_clientes", "Corrigir novo/retorno"],
             ["limpar_erros_resolvidos", "Limpar erros"],
             ["gerar_pacote_codex", "Pacote Codex"],
             ["enviar_relatorio_telegram", "Relatorio Telegram"],
