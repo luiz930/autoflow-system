@@ -1907,6 +1907,89 @@ class AppRegressionTests(unittest.TestCase):
             upsert_mock.assert_called_once()
             erro_mock.assert_called_once()
 
+    def test_upsert_retorno_cliente_nao_depende_de_on_conflict(self):
+        class CursorFake:
+            def __init__(self):
+                self.sqls = []
+                self.params = []
+                self.rowcount = 1
+
+            def execute(self, sql, params=None):
+                self.sqls.append(sql)
+                self.params.append(params)
+
+        class ConnFake:
+            def __init__(self):
+                self.cursor_fake = CursorFake()
+                self.committed = False
+                self.closed = False
+
+            def cursor(self):
+                return self.cursor_fake
+
+            def commit(self):
+                self.committed = True
+
+            def close(self):
+                self.closed = True
+
+        conn = ConnFake()
+        with app_module.app.test_request_context("/retornos/atualizar"):
+            session["empresa_id"] = 4
+            with patch.object(app_module, "conectar", return_value=conn), \
+                 patch.object(app_module, "agora_iso", return_value="2026-05-08T10:00:00"):
+                app_module.upsert_retorno_cliente(
+                    "abc1234",
+                    "sem_interesse",
+                    observacao="pausar",
+                    usuario={"usuario": "luiz", "nome": "Luiz"},
+                )
+
+        sql_total = "\n".join(conn.cursor_fake.sqls)
+        self.assertIn("UPDATE retornos_clientes", sql_total)
+        self.assertNotIn("ON CONFLICT", sql_total)
+        self.assertEqual(len(conn.cursor_fake.sqls), 1)
+        self.assertEqual(conn.cursor_fake.params[0][-2:], (4, "ABC1234"))
+        self.assertTrue(conn.committed)
+        self.assertTrue(conn.closed)
+
+    def test_upsert_retorno_cliente_insere_quando_update_nao_afeta_linha(self):
+        class CursorFake:
+            def __init__(self):
+                self.sqls = []
+                self.params = []
+                self.rowcount = 0
+
+            def execute(self, sql, params=None):
+                self.sqls.append(sql)
+                self.params.append(params)
+                self.rowcount = 0 if len(self.sqls) == 1 else 1
+
+        class ConnFake:
+            def __init__(self):
+                self.cursor_fake = CursorFake()
+
+            def cursor(self):
+                return self.cursor_fake
+
+            def commit(self):
+                return None
+
+            def close(self):
+                return None
+
+        conn = ConnFake()
+        with app_module.app.test_request_context("/retornos/atualizar"):
+            session["empresa_id"] = 5
+            with patch.object(app_module, "conectar", return_value=conn), \
+                 patch.object(app_module, "agora_iso", return_value="2026-05-08T10:00:00"):
+                app_module.upsert_retorno_cliente("XYZ9876", "contatado")
+
+        self.assertEqual(len(conn.cursor_fake.sqls), 2)
+        self.assertIn("UPDATE retornos_clientes", conn.cursor_fake.sqls[0])
+        self.assertIn("INSERT INTO retornos_clientes", conn.cursor_fake.sqls[1])
+        self.assertEqual(conn.cursor_fake.params[1][0:2], (5, "XYZ9876"))
+
     def test_pagina_auto_suporte_renderiza_painel_proprio(self):
         status_auto = {
             "ok": True,

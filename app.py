@@ -13459,41 +13459,67 @@ def upsert_retorno_cliente(
 ):
     usuario_info = usuario or resumo_usuario_logado()
     conn = conectar()
-    c = conn.cursor()
-    empresa_id = empresa_atual_id()
-    c.execute("""
-        INSERT INTO retornos_clientes (
-            empresa_id, placa, status, observacao, proximo_contato_em, ultimo_contato_em,
-            ultima_acao, reagendado_dias, usuario, usuario_nome, criado_em, atualizado_em
+    try:
+        c = conn.cursor()
+        empresa_id = empresa_atual_id()
+        placa_norm = normalizar_texto_campo(placa).upper()
+        agora_atual = agora_iso()
+        valores = (
+            normalizar_status_retorno(status),
+            normalizar_texto_campo(observacao),
+            normalizar_texto_campo(proximo_contato_em),
+            normalizar_texto_campo(ultimo_contato_em),
+            normalizar_texto_campo(ultima_acao),
+            int(reagendado_dias or 0),
+            normalizar_texto_campo(usuario_info.get("usuario")),
+            normalizar_texto_campo(usuario_info.get("nome")),
+            agora_atual,
+            empresa_id,
+            placa_norm,
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(placa) DO UPDATE SET
-            empresa_id=excluded.empresa_id,
-            status=excluded.status,
-            observacao=excluded.observacao,
-            proximo_contato_em=excluded.proximo_contato_em,
-            ultimo_contato_em=excluded.ultimo_contato_em,
-            ultima_acao=excluded.ultima_acao,
-            reagendado_dias=excluded.reagendado_dias,
-            usuario=excluded.usuario,
-            usuario_nome=excluded.usuario_nome,
-            atualizado_em=excluded.atualizado_em
-    """, (
-        empresa_id,
-        normalizar_texto_campo(placa).upper(),
-        normalizar_status_retorno(status),
-        normalizar_texto_campo(observacao),
-        normalizar_texto_campo(proximo_contato_em),
-        normalizar_texto_campo(ultimo_contato_em),
-        normalizar_texto_campo(ultima_acao),
-        int(reagendado_dias or 0),
-        normalizar_texto_campo(usuario_info.get("usuario")),
-        normalizar_texto_campo(usuario_info.get("nome")),
-        agora_iso(),
-        agora_iso(),
-    ))
-    conn.commit()
-    conn.close()
+        c.execute(
+            """
+            UPDATE retornos_clientes
+            SET status=?,
+                observacao=?,
+                proximo_contato_em=?,
+                ultimo_contato_em=?,
+                ultima_acao=?,
+                reagendado_dias=?,
+                usuario=?,
+                usuario_nome=?,
+                atualizado_em=?
+            WHERE empresa_id=? AND UPPER(TRIM(placa))=?
+            """,
+            valores,
+        )
+        if int(c.rowcount or 0) <= 0:
+            c.execute(
+                """
+                INSERT INTO retornos_clientes (
+                    empresa_id, placa, status, observacao, proximo_contato_em, ultimo_contato_em,
+                    ultima_acao, reagendado_dias, usuario, usuario_nome, criado_em, atualizado_em
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    empresa_id,
+                    placa_norm,
+                    valores[0],
+                    valores[1],
+                    valores[2],
+                    valores[3],
+                    valores[4],
+                    valores[5],
+                    valores[6],
+                    valores[7],
+                    agora_atual,
+                    agora_atual,
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 def obter_mapeamento_sync_por_form(form):
     return {
