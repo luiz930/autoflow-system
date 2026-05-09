@@ -5,11 +5,12 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.view.View;
+import android.view.Window;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
@@ -36,6 +37,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        configureSystemBars();
 
         webView = findViewById(R.id.webView);
         progressBar = findViewById(R.id.progressBar);
@@ -52,13 +54,22 @@ public class MainActivity extends Activity {
 
     private String buildInitialUrl() {
         String baseUrl = getString(R.string.app_base_url).trim();
-        if (baseUrl.endsWith("/app-banco")) {
-            return baseUrl;
+        if (baseUrl.contains("?")) {
+            return baseUrl + "&source=android_app";
         }
         if (baseUrl.endsWith("/")) {
-            return baseUrl + "app-banco";
+            return baseUrl + "?source=android_app";
         }
-        return baseUrl + "/app-banco";
+        return baseUrl + "/?source=android_app";
+    }
+
+    private void configureSystemBars() {
+        Window window = getWindow();
+        window.setStatusBarColor(Color.parseColor("#0b0b0b"));
+        window.setNavigationBarColor(Color.parseColor("#0b0b0b"));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            window.getDecorView().setSystemUiVisibility(0);
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")

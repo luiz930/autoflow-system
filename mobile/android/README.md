@@ -2,7 +2,7 @@
 
 APK Android do sistema Wagen Estetica.
 
-O app nao conecta diretamente no Supabase. Ele abre `/app-banco` no sistema Flask em WebView e usa as APIs autenticadas do servidor. Assim, a senha do banco continua protegida no backend.
+O app nao conecta diretamente no Supabase. Ele abre o proprio sistema Flask em WebView, com `?source=android_app`, e usa as mesmas telas, sidebar, login, sessao e regras de usuario do site. Assim, a senha do banco continua protegida no backend.
 
 ## URL do servidor
 
@@ -41,4 +41,4 @@ mobile/android/app/build/outputs/apk/debug/app-debug.apk
 
 ## Build no GitHub
 
-O workflow `Build Android APK` gera o APK como artefato em cada execucao manual.
+O workflow `Build Android APK` gera o APK como artefato em cada push que alterar `mobile/android/**` ou em execucao manual.
