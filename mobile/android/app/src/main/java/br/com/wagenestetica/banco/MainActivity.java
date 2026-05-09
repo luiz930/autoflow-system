@@ -24,6 +24,12 @@ import android.widget.Toast;
 
 import androidx.core.content.FileProvider;
 
+import com.google.android.gms.tasks.Tasks;
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.storage.FirebaseStorage;
+
 import org.mindrot.jbcrypt.BCrypt;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -40,8 +46,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.util.HashMap;
 import java.util.Date;
 import java.util.Locale;
+import java.util.Map;
 
 public class MainActivity extends Activity {
     private static final int CAMERA_REQUEST = 2401;
@@ -55,6 +63,7 @@ public class MainActivity extends Activity {
     private static final int DANGER = Color.rgb(239, 68, 68);
 
     private final SupabaseClient supabase = new SupabaseClient();
+    private final FirebaseClient firebase = new FirebaseClient();
     private SharedPreferences preferences;
     private LinearLayout root;
     private LinearLayout sidebar;
@@ -71,10 +80,11 @@ public class MainActivity extends Activity {
         configureSystemBars();
         requestRuntimePermissions();
         preferences = getSharedPreferences("supabase", MODE_PRIVATE);
+        firebase.configure(this);
         loadSupabaseConfig();
 
         if (!supabase.isConfigured()) {
-            showConfigSetup();
+            showFirebaseSetup();
             return;
         }
         showLogin();
@@ -203,6 +213,22 @@ public class MainActivity extends Activity {
         box.addView(anonKey);
         box.addView(save);
         box.addView(paragraph("Use a anon public key. Nao use service role key nem senha do banco no aplicativo."));
+        setContentView(wrap(box));
+    }
+
+    private void showFirebaseSetup() {
+        LinearLayout box = page("Firebase conectado");
+        box.addView(paragraph(firebase.statusText()));
+        Button test = button("Testar Firestore", GOLD);
+        test.setOnClickListener(v -> runAsync(() -> {
+            String id = firebase.writePing("setup", 1, "");
+            runOnUiThread(() -> toast("Firebase OK: sync_ping/" + id));
+        }));
+        Button supabaseLegacy = button("Configurar Supabase legado", SURFACE_SOFT);
+        supabaseLegacy.setOnClickListener(v -> showConfigSetup());
+        box.addView(test);
+        box.addView(paragraph("O Firebase ja esta no APK via google-services.json. O banco atual do site continua separado; a proxima etapa e criar a sincronizacao controlada entre app e site."));
+        box.addView(supabaseLegacy);
         setContentView(wrap(box));
     }
 
@@ -390,6 +416,16 @@ public class MainActivity extends Activity {
 
     private void showConfig() {
         LinearLayout page = page("Conexao");
+        page.addView(section("Firebase"));
+        page.addView(paragraph(firebase.statusText()));
+        Button testFirebase = button("Testar Firestore", GOLD);
+        testFirebase.setOnClickListener(v -> runAsync(() -> {
+            String id = firebase.writePing("config", empresaAtual(), currentUser == null ? "" : currentUser.usuario);
+            runOnUiThread(() -> toast("Firebase OK: sync_ping/" + id));
+        }));
+        page.addView(testFirebase);
+
+        page.addView(section("Supabase legado"));
         EditText url = input("SUPABASE_URL");
         EditText anonKey = input("SUPABASE_ANON_KEY");
         url.setText(supabase.getBaseUrl());
@@ -402,8 +438,7 @@ public class MainActivity extends Activity {
         page.addView(url);
         page.addView(anonKey);
         page.addView(save);
-        page.addView(paragraph("Este APK nao usa Flask. Ele chama PostgREST e Storage diretamente e autentica pelo usuario do sistema."));
-        page.addView(paragraph("Para dados reais, configure RLS/policies no Supabase. Use anon key, nunca service role key."));
+        page.addView(paragraph("O Firebase sera usado para o app e para a fila de sincronizacao. Supabase fica apenas como configuracao legada enquanto migramos o fluxo do app."));
         setContent(page);
     }
 
@@ -591,6 +626,63 @@ public class MainActivity extends Activity {
 
     private interface Task {
         void run() throws Exception;
+    }
+
+    private static class FirebaseClient {
+        private boolean configured;
+        private String error = "";
+        private FirebaseAuth auth;
+        private FirebaseFirestore firestore;
+        private FirebaseStorage storage;
+
+        void configure(Activity activity) {
+            try {
+                FirebaseApp app = FirebaseApp.initializeApp(activity);
+                configured = app != null || !FirebaseApp.getApps(activity).isEmpty();
+                if (configured) {
+                    auth = FirebaseAuth.getInstance();
+                    firestore = FirebaseFirestore.getInstance();
+                    storage = FirebaseStorage.getInstance();
+                }
+            } catch (Exception e) {
+                configured = false;
+                error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            }
+        }
+
+        String statusText() {
+            if (!configured) {
+                String detalhe = error.isEmpty() ? "" : " Detalhe: " + error;
+                return "Firebase nao inicializou. Confira se app/google-services.json existe e se o package name e br.com.wagenestetica.banco." + detalhe;
+            }
+            String bucket = "";
+            try {
+                bucket = storage == null ? "" : storage.getReference().getBucket();
+            } catch (Exception ignored) {
+                bucket = "";
+            }
+            return bucket.isEmpty()
+                ? "Firebase inicializado. Firestore pronto para teste."
+                : "Firebase inicializado. Storage bucket: " + bucket;
+        }
+
+        String writePing(String origem, int empresaId, String usuario) throws Exception {
+            if (!configured || firestore == null) {
+                throw new Exception("Firebase nao esta configurado no APK.");
+            }
+            if (auth != null && auth.getCurrentUser() == null) {
+                Tasks.await(auth.signInAnonymously());
+            }
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("origem", origem);
+            payload.put("empresa_id", empresaId);
+            payload.put("usuario", usuario == null ? "" : usuario);
+            payload.put("criado_em", new Date());
+            payload.put("app", "android");
+            com.google.firebase.firestore.DocumentReference ref = firestore.collection("sync_ping").document();
+            Tasks.await(ref.set(payload));
+            return ref.getId();
+        }
     }
 
     private static class AppUser {

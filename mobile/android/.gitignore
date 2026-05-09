@@ -2,5 +2,6 @@
 local.properties
 build/
 app/build/
+app/google-services.json
 *.jks
 *.keystore
