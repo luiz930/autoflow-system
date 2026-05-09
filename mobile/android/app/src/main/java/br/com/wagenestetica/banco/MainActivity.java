@@ -24,6 +24,7 @@ import android.widget.Toast;
 
 import androidx.core.content.FileProvider;
 
+import org.mindrot.jbcrypt.BCrypt;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -62,6 +63,7 @@ public class MainActivity extends Activity {
     private String activeScreen = "dashboard";
     private String lastServiceId = "";
     private File pendingPhoto;
+    private AppUser currentUser;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -140,7 +142,7 @@ public class MainActivity extends Activity {
     private void renderSidebar() {
         sidebar.removeAllViews();
         TextView brand = text("Wagen Estetica", 20, GOLD, true);
-        TextView subtitle = text("App Android nativo", 12, MUTED, false);
+        TextView subtitle = text(currentUser == null ? "App Android nativo" : currentUser.nome + " / " + currentUser.perfil, 12, MUTED, false);
         sidebar.addView(brand);
         sidebar.addView(subtitle);
         sidebar.addView(spacer(18));
@@ -151,7 +153,10 @@ public class MainActivity extends Activity {
         addNav("config", "Conexao");
         sidebar.addView(new View(this), new LinearLayout.LayoutParams(1, 0, 1));
         Button logout = button("Sair", DANGER);
-        logout.setOnClickListener(v -> showLogin());
+        logout.setOnClickListener(v -> {
+            currentUser = null;
+            showLogin();
+        });
         sidebar.addView(logout);
     }
 
@@ -202,22 +207,22 @@ public class MainActivity extends Activity {
     }
 
     private void showLogin() {
-        LinearLayout box = page("Entrar no Supabase");
-        EditText email = input("Email");
+        LinearLayout box = page("Acesso ao sistema");
+        EditText usuario = input("Usuario");
         EditText password = input("Senha");
         password.setInputType(0x00000081);
         Button login = button("Entrar", GOLD);
         login.setOnClickListener(v -> runAsync(() -> {
-            supabase.login(email.getText().toString(), password.getText().toString());
+            currentUser = supabase.loginUsuario(usuario.getText().toString(), password.getText().toString());
             runOnUiThread(() -> {
                 buildShell();
                 navigate("dashboard");
             });
         }));
-        box.addView(email);
+        box.addView(usuario);
         box.addView(password);
         box.addView(login);
-        box.addView(paragraph("Este login usa Supabase Auth. As permissoes de dados devem ser controladas por RLS no Supabase."));
+        box.addView(paragraph("Use o mesmo usuario e senha cadastrados no site."));
         setContentView(wrap(box));
     }
 
@@ -230,9 +235,10 @@ public class MainActivity extends Activity {
         setContentView(root);
         setContent(page);
         runAsync(() -> {
-            int clientes = supabase.count("clientes");
-            int veiculos = supabase.count("veiculos");
-            int andamento = supabase.countFiltered("servicos", "status", "EM ANDAMENTO");
+            int empresaId = empresaAtual();
+            int clientes = supabase.countByEmpresa("clientes", empresaId);
+            int veiculos = supabase.countByEmpresa("veiculos", empresaId);
+            int andamento = supabase.countFilteredByEmpresa("servicos", empresaId, "status", "EM ANDAMENTO");
             runOnUiThread(() -> {
                 grid.removeAllViews();
                 grid.addView(metric("Clientes", String.valueOf(clientes)));
@@ -252,7 +258,7 @@ public class MainActivity extends Activity {
         lista.setOrientation(LinearLayout.VERTICAL);
         salvar.setOnClickListener(v -> runAsync(() -> {
             JSONObject cliente = new JSONObject();
-            cliente.put("empresa_id", 1);
+            cliente.put("empresa_id", empresaAtual());
             cliente.put("nome", value(nome, "Sem nome"));
             cliente.put("telefone", telefone.getText().toString().trim());
             cliente.put("placa_principal", placa.getText().toString().trim().toUpperCase(Locale.ROOT));
@@ -270,7 +276,7 @@ public class MainActivity extends Activity {
         page.addView(lista);
         setContent(page);
         runAsync(() -> {
-            JSONArray dados = supabase.list("clientes", "id,nome,telefone,placa_principal", "id.desc", 20);
+            JSONArray dados = supabase.listByEmpresa("clientes", empresaAtual(), "id,nome,telefone,placa_principal", "id.desc", 20);
             runOnUiThread(() -> renderRows(lista, dados, new String[]{"id", "nome", "telefone", "placa_principal"}));
         });
     }
@@ -308,18 +314,18 @@ public class MainActivity extends Activity {
         page.addView(lista);
         setContent(page);
         runAsync(() -> {
-            JSONArray dados = supabase.list("servicos", "id,status,entrada,valor,veiculo_id", "id.desc", 20);
+            JSONArray dados = supabase.listByEmpresa("servicos", empresaAtual(), "id,status,entrada,valor,veiculo_id", "id.desc", 20);
             runOnUiThread(() -> renderRows(lista, dados, new String[]{"id", "status", "entrada", "valor", "veiculo_id"}));
         });
     }
 
     private int criarOuAtualizarVeiculo(String placa, String modelo, String cor) throws Exception {
-        JSONArray existentes = supabase.filter("veiculos", "id", "placa", placa, 1);
+        JSONArray existentes = supabase.filterByEmpresa("veiculos", "id", empresaAtual(), "placa", placa, 1);
         if (existentes.length() > 0) {
             return existentes.getJSONObject(0).getInt("id");
         }
         JSONObject veiculo = new JSONObject();
-        veiculo.put("empresa_id", 1);
+        veiculo.put("empresa_id", empresaAtual());
         veiculo.put("placa", placa);
         veiculo.put("modelo", modelo);
         veiculo.put("cor", cor);
@@ -366,10 +372,10 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == CAMERA_REQUEST && resultCode == RESULT_OK && pendingPhoto != null) {
             runAsync(() -> {
-                String path = "empresa_1/" + pendingPhoto.getName();
+                String path = "empresa_" + empresaAtual() + "/" + pendingPhoto.getName();
                 supabase.uploadFile("fotos", path, pendingPhoto, "image/jpeg");
                 JSONObject foto = new JSONObject();
-                foto.put("empresa_id", 1);
+                foto.put("empresa_id", empresaAtual());
                 foto.put("servico_id", parseInt(lastServiceId, 0));
                 foto.put("tipo", "app_android");
                 foto.put("caminho", path);
@@ -396,9 +402,13 @@ public class MainActivity extends Activity {
         page.addView(url);
         page.addView(anonKey);
         page.addView(save);
-        page.addView(paragraph("Este APK nao usa Flask. Ele chama Supabase Auth, PostgREST e Storage diretamente."));
-        page.addView(paragraph("Para dados reais, configure RLS no Supabase. Use anon key, nunca service role key."));
+        page.addView(paragraph("Este APK nao usa Flask. Ele chama PostgREST e Storage diretamente e autentica pelo usuario do sistema."));
+        page.addView(paragraph("Para dados reais, configure RLS/policies no Supabase. Use anon key, nunca service role key."));
         setContent(page);
+    }
+
+    private int empresaAtual() {
+        return currentUser == null ? 1 : currentUser.empresaId;
     }
 
     private LinearLayout wrap(View child) {
@@ -583,15 +593,29 @@ public class MainActivity extends Activity {
         void run() throws Exception;
     }
 
+    private static class AppUser {
+        final int id;
+        final int empresaId;
+        final String usuario;
+        final String nome;
+        final String perfil;
+
+        AppUser(JSONObject row) {
+            id = row.optInt("id", 0);
+            empresaId = Math.max(1, row.optInt("empresa_id", 1));
+            usuario = row.optString("usuario", "");
+            nome = row.optString("nome", usuario);
+            perfil = row.optString("perfil", "funcionario");
+        }
+    }
+
     private static class SupabaseClient {
         private String baseUrl = "";
         private String anonKey = "";
-        private String accessToken = "";
 
         void configure(String url, String key) {
             baseUrl = trimTrailingSlash(url);
             anonKey = key == null ? "" : key.trim();
-            accessToken = "";
         }
 
         boolean isConfigured() {
@@ -610,40 +634,53 @@ public class MainActivity extends Activity {
             return !anonKey.isEmpty();
         }
 
-        void login(String email, String password) throws Exception {
-            JSONObject body = new JSONObject();
-            body.put("email", email.trim());
-            body.put("password", password);
-            JSONObject result = new JSONObject(request("POST", "/auth/v1/token?grant_type=password", body.toString(), false, "application/json"));
-            accessToken = result.getString("access_token");
+        AppUser loginUsuario(String usuario, String password) throws Exception {
+            String usuarioNormalizado = usuario == null ? "" : usuario.trim();
+            if (usuarioNormalizado.isEmpty() || password == null || password.isEmpty()) {
+                throw new Exception("Informe usuario e senha.");
+            }
+            String select = "id,empresa_id,usuario,nome,perfil,ativo,senha";
+            String path = "/rest/v1/usuarios?select=" + url(select) + "&usuario=eq." + url(usuarioNormalizado) + "&limit=1";
+            JSONArray rows = new JSONArray(request("GET", path, null, false, "application/json"));
+            if (rows.length() == 0) {
+                throw new Exception("Usuario ou senha invalidos.");
+            }
+            JSONObject row = rows.getJSONObject(0);
+            if (row.optInt("ativo", 1) == 0) {
+                throw new Exception("Usuario inativo.");
+            }
+            if (!verificarSenha(password, row.optString("senha", ""))) {
+                throw new Exception("Usuario ou senha invalidos.");
+            }
+            return new AppUser(row);
         }
 
-        int count(String table) throws Exception {
-            HttpResult result = requestRaw("GET", "/rest/v1/" + table + "?select=id", null, true, "application/json", "exact");
+        int countByEmpresa(String table, int empresaId) throws Exception {
+            HttpResult result = requestRaw("GET", "/rest/v1/" + table + "?select=id&empresa_id=eq." + empresaId, null, false, "application/json", "exact");
             return parseCount(result.contentRange);
         }
 
-        int countFiltered(String table, String field, String value) throws Exception {
-            HttpResult result = requestRaw("GET", "/rest/v1/" + table + "?select=id&" + field + "=eq." + url(value), null, true, "application/json", "exact");
+        int countFilteredByEmpresa(String table, int empresaId, String field, String value) throws Exception {
+            HttpResult result = requestRaw("GET", "/rest/v1/" + table + "?select=id&empresa_id=eq." + empresaId + "&" + field + "=eq." + url(value), null, false, "application/json", "exact");
             return parseCount(result.contentRange);
         }
 
-        JSONArray list(String table, String select, String order, int limit) throws Exception {
-            String path = "/rest/v1/" + table + "?select=" + url(select) + "&order=" + url(order) + "&limit=" + limit;
-            return new JSONArray(request("GET", path, null, true, "application/json"));
+        JSONArray listByEmpresa(String table, int empresaId, String select, String order, int limit) throws Exception {
+            String path = "/rest/v1/" + table + "?select=" + url(select) + "&empresa_id=eq." + empresaId + "&order=" + url(order) + "&limit=" + limit;
+            return new JSONArray(request("GET", path, null, false, "application/json"));
         }
 
-        JSONArray filter(String table, String select, String field, String value, int limit) throws Exception {
-            String path = "/rest/v1/" + table + "?select=" + url(select) + "&" + field + "=eq." + url(value) + "&limit=" + limit;
-            return new JSONArray(request("GET", path, null, true, "application/json"));
+        JSONArray filterByEmpresa(String table, String select, int empresaId, String field, String value, int limit) throws Exception {
+            String path = "/rest/v1/" + table + "?select=" + url(select) + "&empresa_id=eq." + empresaId + "&" + field + "=eq." + url(value) + "&limit=" + limit;
+            return new JSONArray(request("GET", path, null, false, "application/json"));
         }
 
         void insert(String table, JSONObject payload) throws Exception {
-            request("POST", "/rest/v1/" + table, payload.toString(), true, "application/json");
+            request("POST", "/rest/v1/" + table, payload.toString(), false, "application/json");
         }
 
         JSONObject insertReturning(String table, JSONObject payload) throws Exception {
-            HttpResult result = requestRaw("POST", "/rest/v1/" + table + "?select=*", payload.toString(), true, "application/json", null);
+            HttpResult result = requestRaw("POST", "/rest/v1/" + table + "?select=*", payload.toString(), false, "application/json", null);
             JSONArray rows = new JSONArray(result.body);
             if (rows.length() == 0) {
                 throw new Exception("Supabase nao retornou o registro criado.");
@@ -652,7 +689,7 @@ public class MainActivity extends Activity {
         }
 
         void uploadFile(String bucket, String path, File file, String mimeType) throws Exception {
-            HttpURLConnection conn = open("POST", "/storage/v1/object/" + bucket + "/" + path, true);
+            HttpURLConnection conn = open("POST", "/storage/v1/object/" + bucket + "/" + path, false);
             conn.setRequestProperty("Content-Type", mimeType);
             conn.setRequestProperty("x-upsert", "true");
             conn.setDoOutput(true);
@@ -694,7 +731,7 @@ public class MainActivity extends Activity {
             HttpURLConnection conn = (HttpURLConnection) new URL(baseUrl + path).openConnection();
             conn.setRequestMethod(method);
             conn.setRequestProperty("apikey", anonKey);
-            conn.setRequestProperty("Authorization", "Bearer " + (auth && !accessToken.isEmpty() ? accessToken : anonKey));
+            conn.setRequestProperty("Authorization", "Bearer " + anonKey);
             conn.setConnectTimeout(15000);
             conn.setReadTimeout(30000);
             return conn;
@@ -745,6 +782,24 @@ public class MainActivity extends Activity {
 
         private static String url(String value) {
             return Uri.encode(value == null ? "" : value);
+        }
+
+        private static boolean verificarSenha(String password, String saved) {
+            if (saved == null || saved.trim().isEmpty()) {
+                return false;
+            }
+            String hash = saved.trim();
+            if (hash.startsWith("$2b$") || hash.startsWith("$2y$")) {
+                hash = "$2a$" + hash.substring(4);
+            }
+            if (hash.startsWith("$2a$")) {
+                try {
+                    return BCrypt.checkpw(password, hash);
+                } catch (Exception ignored) {
+                    return false;
+                }
+            }
+            return password.equals(saved);
         }
     }
 

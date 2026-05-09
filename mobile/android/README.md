@@ -57,9 +57,15 @@ O APK sai em:
 mobile/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Login do app
+
+O login do app usa a tabela `usuarios` do proprio sistema (`usuario` e `senha`), nao Supabase Auth. Isso permite entrar com os mesmos usuarios ja usados no site.
+
+Como o app fala direto com Supabase usando `anon key`, o Supabase precisa permitir a leitura/autenticacao necessaria via RLS/policies ou uma funcao RPC propria. Nao use email principal do Supabase para operar o app.
+
 ## Telas nativas iniciais
 
-- Login Supabase Auth.
+- Login com usuario/senha do sistema.
 - Painel com contagens.
 - Cadastro e lista de clientes.
 - Cadastro e lista de atendimentos.

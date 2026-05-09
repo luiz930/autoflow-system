@@ -14,8 +14,8 @@ android {
         applicationId "br.com.wagenestetica.banco"
         minSdk 23
         targetSdk 35
-        versionCode 2
-        versionName "0.2.0-native"
+        versionCode 3
+        versionName "0.3.0-native-users"
 
         def supabaseUrl = (project.findProperty("supabaseUrl") ?: "").toString().trim()
         def supabaseAnonKey = (project.findProperty("supabaseAnonKey") ?: "").toString().trim()
@@ -26,4 +26,5 @@ android {
 
 dependencies {
     implementation "androidx.core:core:1.13.1"
+    implementation "org.mindrot:jbcrypt:0.4"
 }
