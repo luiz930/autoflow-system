@@ -17170,6 +17170,32 @@ AUTO_SUPORTE_ACOES_AUTONOMAS = {
     "limpar_erros_resolvidos",
     "gerar_pacote_codex",
 }
+AUTO_SUPORTE_ACOES_EXIGEM_CONFIRMACAO = {
+    "desativar_planilhas_com_erro": {
+        "confirmacao": "PAUSAR PLANILHAS",
+        "risco": "Pode interromper sincronizacoes de clientes ate alguem reativar.",
+    },
+    "corrigir_classificacao_clientes": {
+        "confirmacao": "CORRIGIR CLASSIFICACAO",
+        "risco": "Altera atendimentos marcados como NOVO para RETORNO quando ha historico.",
+    },
+    "limpar_erros_resolvidos": {
+        "confirmacao": "LIMPAR ERROS RESOLVIDOS",
+        "risco": "Remove evidencias ja resolvidas da Central de erros.",
+    },
+    "limpar_todos_erros": {
+        "confirmacao": "LIMPAR TODOS OS ERROS",
+        "risco": "Remove todas as evidencias da Central de erros, inclusive abertas.",
+    },
+    "enviar_relatorio_telegram": {
+        "confirmacao": "ENVIAR RELATORIO",
+        "risco": "Envia resumo tecnico para um destino externo no Telegram.",
+    },
+    "enviar_alerta_telegram": {
+        "confirmacao": "ENVIAR ALERTA",
+        "risco": "Envia mensagem externa para o Telegram configurado.",
+    },
+}
 AUTO_SUPORTE_AUTONOMIA_COOLDOWN_SEGUNDOS = 15 * 60
 AUTO_SUPORTE_AUTONOMIA_LIMITE_ACOES = 3
 AUTO_SUPORTE_MODO_AUTONOMIA_PADRAO = "seguro"
@@ -17794,13 +17820,22 @@ def montar_acoes_bloqueadas_auto_suporte(status_payload):
             "acao": acao,
             "label": ACOES_AUTO_SUPORTE.get(acao, acao),
             "motivo": normalizar_texto_campo(item.get("titulo") or item.get("mensagem") or "Exige confirmacao manual."),
-            "seguranca": "Requer confirmacao manual porque pode alterar dados, enviar mensagem externa ou ocultar evidencias.",
+            "seguranca": f"Requer confirmacao manual. {risco_acao_auto_suporte(acao).get('seguranca') or ''}".strip(),
+            "confirmacao": risco_acao_auto_suporte(acao).get("confirmacao") or "",
         })
         vistos.add(acao)
     return bloqueadas[:6]
 
 
 def risco_acao_auto_suporte(acao):
+    if acao in AUTO_SUPORTE_ACOES_EXIGEM_CONFIRMACAO:
+        dados = AUTO_SUPORTE_ACOES_EXIGEM_CONFIRMACAO[acao]
+        return {
+            "risco": "alto" if acao == "limpar_todos_erros" else "medio",
+            "reversivel": False,
+            "seguranca": dados["risco"],
+            "confirmacao": dados["confirmacao"],
+        }
     if acao in AUTO_SUPORTE_ACOES_AUTONOMAS:
         return {
             "risco": "baixo",
@@ -17812,6 +17847,17 @@ def risco_acao_auto_suporte(acao):
         "reversivel": False,
         "seguranca": "Exige confirmacao manual porque pode alterar dados, enviar mensagem externa ou ocultar evidencias.",
     }
+
+
+def validar_confirmacao_acao_auto_suporte(acao, confirmacao=""):
+    requisitos = AUTO_SUPORTE_ACOES_EXIGEM_CONFIRMACAO.get(acao)
+    if not requisitos:
+        return True
+    confirmacao = normalizar_texto_campo(confirmacao).upper()
+    esperado = normalizar_texto_campo(requisitos.get("confirmacao")).upper()
+    if confirmacao != esperado:
+        raise ValueError(f"Confirmacao obrigatoria: digite {requisitos.get('confirmacao')} para executar {ACOES_AUTO_SUPORTE.get(acao, acao)}.")
+    return True
 
 
 def montar_simulacao_autonomia_auto_suporte(status_payload, planejadas=None, bloqueadas=None, modo=None):
@@ -18461,11 +18507,12 @@ def status_auto_suporte():
     return resposta
 
 
-def executar_acao_auto_suporte(acao, observacao=""):
+def executar_acao_auto_suporte(acao, observacao="", confirmacao=""):
     acao = normalizar_texto_campo(acao)
     observacao = normalizar_texto_campo(observacao)
     if acao not in ACOES_AUTO_SUPORTE:
         raise ValueError("Acao de AutoSuporte nao permitida.")
+    validar_confirmacao_acao_auto_suporte(acao, confirmacao)
 
     detalhes = {"acao": acao, "observacao": observacao}
     mensagem = ""
@@ -18675,6 +18722,7 @@ def pagina_auto_suporte_acao():
         resultado = executar_acao_auto_suporte(
             request.form.get("acao"),
             observacao=request.form.get("observacao") or "",
+            confirmacao=request.form.get("confirmacao") or "",
         )
         session["diagnostico_feedback"] = {
             "tipo": "sucesso" if resultado.get("ok") else "erro",
@@ -18699,6 +18747,7 @@ def api_auto_suporte_acao():
         resultado = executar_acao_auto_suporte(
             payload.get("acao"),
             observacao=payload.get("observacao") or "",
+            confirmacao=payload.get("confirmacao") or "",
         )
         return jsonify(json.loads(json.dumps(resultado, ensure_ascii=False, default=str)))
     except Exception as erro:

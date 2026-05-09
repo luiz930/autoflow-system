@@ -116,6 +116,13 @@
         estado.logs = estado.logs.slice(0, 6);
     }
 
+    function obterConfirmacaoAcao(acao) {
+        const autonomia = estado.status && estado.status.autonomia ? estado.status.autonomia : {};
+        const bloqueadas = Array.isArray(autonomia.acoes_bloqueadas) ? autonomia.acoes_bloqueadas : [];
+        const item = bloqueadas.find((entrada) => entrada.acao === acao);
+        return item && item.confirmacao ? item : null;
+    }
+
     function abrirPainel() {
         estado.aberto = true;
         localStorage.setItem("wagen_auto_suporte_aberto", "1");
@@ -192,6 +199,17 @@
     }
 
     async function executarAcao(acao, label) {
+        const regraConfirmacao = obterConfirmacaoAcao(acao);
+        let confirmacao = "";
+        if (regraConfirmacao) {
+            const texto = window.prompt(`${regraConfirmacao.label || label}\n${regraConfirmacao.seguranca || "Acao sensivel."}\nDigite exatamente: ${regraConfirmacao.confirmacao}`);
+            confirmacao = texto || "";
+            if (confirmacao !== regraConfirmacao.confirmacao) {
+                adicionarLog(label, "Acao cancelada: confirmacao obrigatoria nao confere.", false);
+                abrirPainel();
+                return;
+            }
+        }
         adicionarLog(label, "Executando acao segura...", true);
         abrirPainel();
         try {
@@ -201,7 +219,7 @@
                     "Content-Type": "application/json",
                     "X-CSRF-Token": obterCsrfToken(),
                 },
-                body: JSON.stringify({ acao }),
+                body: JSON.stringify({ acao, confirmacao }),
             });
             const dados = await resposta.json();
             if (!resposta.ok || dados.erro) {

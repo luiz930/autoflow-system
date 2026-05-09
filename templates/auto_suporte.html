@@ -88,11 +88,13 @@
         <form method="post" action="/auto-suporte/acao">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="acao" value="limpar_todos_erros">
+            <input type="hidden" name="confirmacao" value="">
             <button type="submit" class="button-danger">Limpar erros</button>
         </form>
         <form method="post" action="/auto-suporte/acao">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="acao" value="corrigir_classificacao_clientes">
+            <input type="hidden" name="confirmacao" value="">
             <button type="submit">Corrigir novo/retorno</button>
         </form>
         <form method="post" action="/auto-suporte/acao">
@@ -186,7 +188,7 @@
                 <tr>
                     <td>{{ item.label or item.acao }}</td>
                     <td>{{ item.motivo }}</td>
-                    <td>{{ item.seguranca }}</td>
+                    <td>{{ item.seguranca }}{% if item.confirmacao %}<br><b>Confirmacao:</b> {{ item.confirmacao }}{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>

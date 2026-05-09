@@ -442,6 +442,41 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(status_code, 400)
         self.assertIn("nao permitida", resposta.get_json()["erro"])
 
+    def test_auto_suporte_exige_confirmacao_para_acao_sensivel(self):
+        with app_module.app.test_request_context("/api/auto-suporte/acao", method="POST", json={"acao": "limpar_todos_erros"}):
+            session["usuario"] = "admin"
+            session["usuario_perfil"] = "admin"
+            session["empresa_id"] = 1
+            with patch.object(app_module, "usuario_gerencia_configuracao_sistema", return_value=True):
+                response = app_module.api_auto_suporte_acao()
+
+        resposta, status_code = response
+        self.assertEqual(status_code, 400)
+        self.assertIn("Confirmacao obrigatoria", resposta.get_json()["erro"])
+
+    def test_auto_suporte_executa_acao_sensivel_com_confirmacao_correta(self):
+        with tempfile.TemporaryDirectory(prefix="auto_suporte_confirma_") as pasta:
+            caminho_erros = os.path.join(pasta, "erros.json")
+            caminho_historico = os.path.join(pasta, "historico.json")
+            with app_module.app.test_request_context(
+                "/api/auto-suporte/acao",
+                method="POST",
+                json={"acao": "limpar_todos_erros", "confirmacao": "LIMPAR TODOS OS ERROS"},
+            ):
+                session["usuario"] = "admin"
+                session["usuario_perfil"] = "admin"
+                session["empresa_id"] = 1
+                with patch.object(app_module, "usuario_gerencia_configuracao_sistema", return_value=True), \
+                     patch.object(app_module, "ERROS_PRODUCAO_ARQUIVO", caminho_erros), \
+                     patch.object(app_module, "AUTO_SUPORTE_HISTORICO_ARQUIVO", caminho_historico), \
+                     patch.object(app_module, "registrar_incidente_auto_suporte"), \
+                     patch.object(app_module, "status_auto_suporte", return_value={"ok": True, "falhas": []}):
+                    app_module.salvar_erros_producao([{"id": "erro", "resolvido": False}])
+                    response = app_module.api_auto_suporte_acao()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["detalhes"]["erros_removidos"], 1)
+
     def test_pre_deploy_json_retorna_checklist_sem_500(self):
         checklist = [{"nome": "HTTPS ativo", "ok": True, "detalhe": "OK", "acao": "OK"}]
 
@@ -1669,6 +1704,7 @@ class AppRegressionTests(unittest.TestCase):
         self.assertIn("enviar_alerta_telegram", bloqueadas)
         self.assertNotIn("limpar_caches", bloqueadas)
         self.assertIn("confirmacao", bloqueadas["desativar_planilhas_com_erro"]["seguranca"])
+        self.assertEqual(bloqueadas["desativar_planilhas_com_erro"]["confirmacao"], "PAUSAR PLANILHAS")
 
     def test_auto_suporte_modo_observador_simula_sem_executar(self):
         status_inicial = {
@@ -1920,7 +1956,7 @@ class AppRegressionTests(unittest.TestCase):
                  patch.object(app_module, "registrar_incidente_auto_suporte"), \
                  patch.object(app_module, "status_auto_suporte", return_value={"ok": True, "falhas": []}):
                 app_module.salvar_erros_producao(erros)
-                resultado = app_module.executar_acao_auto_suporte("limpar_erros_resolvidos")
+                resultado = app_module.executar_acao_auto_suporte("limpar_erros_resolvidos", confirmacao="LIMPAR ERROS RESOLVIDOS")
                 erros_restantes = app_module.carregar_erros_producao()
 
             self.assertTrue(resultado["ok"])
@@ -1942,7 +1978,7 @@ class AppRegressionTests(unittest.TestCase):
                      patch.object(app_module, "registrar_incidente_auto_suporte"), \
                      patch.object(app_module, "status_auto_suporte", return_value={"ok": True, "falhas": []}):
                     app_module.salvar_erros_producao(erros)
-                    resultado = app_module.executar_acao_auto_suporte("limpar_todos_erros")
+                    resultado = app_module.executar_acao_auto_suporte("limpar_todos_erros", confirmacao="LIMPAR TODOS OS ERROS")
                     erros_restantes = app_module.carregar_erros_producao()
                     historico = app_module.listar_historico_auto_suporte(limite=5)
 
