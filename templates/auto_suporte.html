@@ -12,6 +12,61 @@
 
 {% block content %}
 
+{% if modo_auto_suporte == "administrador" %}
+<div class="page-card {% if status_auto.diagnostico.nivel == 'critico' %}error-banner{% elif status_auto.diagnostico.nivel == 'alerta' %}warning-banner{% else %}success-banner{% endif %}">
+    <p class="pill-label">AutoSuporte simples</p>
+    <h2 class="section-title top-spacing">{{ status_auto.diagnostico.titulo }}</h2>
+    <p>{{ status_auto.diagnostico.frase }}</p>
+    <p class="muted-text">Acoes seguras para o administrador. Alteracoes sensiveis ficam restritas ao desenvolvedor.</p>
+</div>
+
+<div class="page-grid top-spacing">
+    <div class="page-card">
+        <p class="pill-label">Status</p>
+        <h2 class="section-title top-spacing">{{ "Tudo certo" if status_auto.ok else "Precisa revisar" }}</h2>
+        <p class="muted-text">{{ status_auto.falhas|length }} ponto(s) detectado(s).</p>
+    </div>
+    <div class="page-card">
+        <p class="pill-label">Erros abertos</p>
+        <h2 class="section-title top-spacing">{{ status_auto.erros_abertos|length }}</h2>
+        <p class="muted-text">Se houver erro aberto, gere o pacote para o desenvolvedor.</p>
+    </div>
+    <div class="page-card">
+        <p class="pill-label">Historico</p>
+        <h2 class="section-title top-spacing">{{ historico_auto_suporte|length }}</h2>
+        <p class="muted-text">Ultimas acoes feitas pelo bot.</p>
+    </div>
+</div>
+
+<div class="page-card top-spacing">
+    <p class="pill-label">Acoes diretas</p>
+    <div class="page-grid top-spacing">
+        {% for item in status_auto.acoes_simples %}
+        <form method="post" action="/auto-suporte/acao" class="success-banner" style="margin: 0; padding: 12px; border-radius: 8px;">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="acao" value="{{ item.acao }}">
+            <h3 class="section-title">{{ item.label }}</h3>
+            <p class="muted-text">{{ item.descricao }}</p>
+            <button type="submit">Executar</button>
+        </form>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="page-card top-spacing">
+    <p class="pill-label">Ultimas acoes</p>
+    <div class="stack-form stack-form--wide top-spacing">
+        {% for item in historico_auto_suporte[:6] %}
+        <div class="{% if item.severidade == 'error' %}error-banner{% elif item.severidade == 'warning' %}warning-banner{% else %}success-banner{% endif %}" style="padding: 12px; border-radius: 8px;">
+            <p><b>{{ item.titulo or item.evento }}</b></p>
+            <p class="muted-text">{{ item.quando }} - {{ item.mensagem }}</p>
+        </div>
+        {% else %}
+        <p class="muted-text">Nenhuma acao registrada ainda.</p>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
 <div class="page-card {% if status_auto.diagnostico.nivel == 'critico' %}error-banner{% elif status_auto.diagnostico.nivel == 'alerta' %}warning-banner{% else %}success-banner{% endif %}">
     <p class="pill-label">{{ status_auto.diagnostico.label }}</p>
     <h2 class="section-title top-spacing">{{ status_auto.diagnostico.titulo }}</h2>
@@ -318,4 +373,5 @@
     </div>
 </div>
 
+{% endif %}
 {% endblock %}

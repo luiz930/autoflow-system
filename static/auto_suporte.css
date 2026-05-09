@@ -98,6 +98,7 @@
     position: relative;
     flex: 0 0 46px;
     margin: 0;
+    transform: translateY(2px);
 }
 
 .auto-support-bot-antenna {
@@ -228,11 +229,15 @@
 .auto-support-panel .auto-support-close::before {
     content: "x";
     color: #e2e8f0;
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
     font-size: 18px;
     font-weight: 800;
     line-height: 1;
-    transform: translateY(-1px);
+    transform: none;
 }
 
 .auto-support-body {
@@ -447,6 +452,48 @@
 .auto-support-action:hover {
     border-color: rgba(250, 204, 21, .7);
     background: rgba(250, 204, 21, .18);
+}
+
+.auto-support-simple-actions {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.auto-support-simple-action {
+    width: 100%;
+    min-height: 56px !important;
+    border: 1px solid rgba(34, 197, 94, .34) !important;
+    border-radius: 10px !important;
+    background: rgba(15, 23, 42, .76) !important;
+    color: #f8fafc !important;
+    padding: 10px 12px !important;
+    display: flex !important;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 3px;
+    text-align: left;
+}
+
+.auto-support-simple-action:hover {
+    border-color: rgba(34, 197, 94, .72) !important;
+    background: rgba(34, 197, 94, .12) !important;
+}
+
+.auto-support-simple-title {
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.auto-support-simple-text {
+    color: #cbd5e1;
+    font-size: 12px;
+    line-height: 1.25;
+}
+
+.auto-support-quick-actions--simple {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .auto-support-mini-action {

@@ -444,8 +444,8 @@ class AppRegressionTests(unittest.TestCase):
 
     def test_auto_suporte_exige_confirmacao_para_acao_sensivel(self):
         with app_module.app.test_request_context("/api/auto-suporte/acao", method="POST", json={"acao": "limpar_todos_erros"}):
-            session["usuario"] = "admin"
-            session["usuario_perfil"] = "admin"
+            session["usuario"] = "dev"
+            session["usuario_perfil"] = "desenvolvedor"
             session["empresa_id"] = 1
             with patch.object(app_module, "usuario_gerencia_configuracao_sistema", return_value=True):
                 response = app_module.api_auto_suporte_acao()
@@ -453,6 +453,21 @@ class AppRegressionTests(unittest.TestCase):
         resposta, status_code = response
         self.assertEqual(status_code, 400)
         self.assertIn("Confirmacao obrigatoria", resposta.get_json()["erro"])
+
+    def test_auto_suporte_admin_nao_executa_acao_tecnica_sensivel(self):
+        with app_module.app.test_request_context(
+            "/api/auto-suporte/acao",
+            method="POST",
+            json={"acao": "limpar_todos_erros", "confirmacao": "LIMPAR TODOS OS ERROS"},
+        ):
+            session["usuario"] = "admin"
+            session["usuario_perfil"] = "admin"
+            session["empresa_id"] = 1
+            response = app_module.api_auto_suporte_acao()
+
+        resposta, status_code = response
+        self.assertEqual(status_code, 400)
+        self.assertIn("somente para o desenvolvedor", resposta.get_json()["erro"])
 
     def test_auto_suporte_executa_acao_sensivel_com_confirmacao_correta(self):
         with tempfile.TemporaryDirectory(prefix="auto_suporte_confirma_") as pasta:
@@ -463,8 +478,8 @@ class AppRegressionTests(unittest.TestCase):
                 method="POST",
                 json={"acao": "limpar_todos_erros", "confirmacao": "LIMPAR TODOS OS ERROS"},
             ):
-                session["usuario"] = "admin"
-                session["usuario_perfil"] = "admin"
+                session["usuario"] = "dev"
+                session["usuario_perfil"] = "desenvolvedor"
                 session["empresa_id"] = 1
                 with patch.object(app_module, "usuario_gerencia_configuracao_sistema", return_value=True), \
                      patch.object(app_module, "ERROS_PRODUCAO_ARQUIVO", caminho_erros), \
@@ -1746,6 +1761,7 @@ class AppRegressionTests(unittest.TestCase):
                 with patch.object(app_module, "AUTO_SUPORTE_ESTADO_ARQUIVO", estado), \
                      patch.object(app_module, "AUTO_SUPORTE_HISTORICO_ARQUIVO", historico), \
                      patch.object(app_module, "usuario_pode_usar_auto_suporte", return_value=True), \
+                     patch.object(app_module, "usuario_auto_suporte_tecnico", return_value=True), \
                      patch.object(app_module, "status_auto_suporte", side_effect=[status_inicial, {"ok": True, "sugestoes": [], "diagnostico": {"itens": []}}]):
                     response = app_module.api_auto_suporte_autonomia()
 
@@ -1779,6 +1795,7 @@ class AppRegressionTests(unittest.TestCase):
                 with patch.object(app_module, "AUTO_SUPORTE_ESTADO_ARQUIVO", estado), \
                      patch.object(app_module, "AUTO_SUPORTE_HISTORICO_ARQUIVO", historico), \
                      patch.object(app_module, "usuario_pode_usar_auto_suporte", return_value=True), \
+                     patch.object(app_module, "usuario_auto_suporte_tecnico", return_value=True), \
                      patch.object(app_module, "status_auto_suporte", side_effect=[status_inicial, {"ok": True, "sugestoes": [], "diagnostico": {"itens": []}}]), \
                      patch.object(app_module, "executar_acao_auto_suporte", return_value={"ok": True, "mensagem": "Caches limpos."}) as acao_mock:
                     response = app_module.api_auto_suporte_autonomia()
@@ -1944,6 +1961,9 @@ class AppRegressionTests(unittest.TestCase):
             self.assertTrue(status["auto_abrir"])
             self.assertTrue(status["historico"])
             self.assertEqual(status["historico"][0]["evento"], "diagnostico")
+            self.assertEqual(status["perfil"], "administrador")
+            self.assertEqual(status["modo_interface"], "simples")
+            self.assertTrue(status["acoes_simples"])
 
     def test_auto_suporte_acao_limpa_erros_resolvidos(self):
         with tempfile.TemporaryDirectory(prefix="auto_suporte_limpa_erros_") as pasta:
@@ -1972,7 +1992,8 @@ class AppRegressionTests(unittest.TestCase):
                 {"id": "resolvido", "resolvido": True},
             ]
             with app_module.app.test_request_context("/auto-suporte/acao"):
-                session["usuario"] = "admin"
+                session["usuario"] = "dev"
+                session["usuario_perfil"] = "desenvolvedor"
                 with patch.object(app_module, "ERROS_PRODUCAO_ARQUIVO", caminho_erros), \
                      patch.object(app_module, "AUTO_SUPORTE_HISTORICO_ARQUIVO", caminho_historico), \
                      patch.object(app_module, "registrar_incidente_auto_suporte"), \
@@ -2231,6 +2252,66 @@ class AppRegressionTests(unittest.TestCase):
         self.assertIn("AutoSuporte", html)
         self.assertIn("Saude do sistema para o dono", html)
         self.assertIn("Modo suporte remoto", html)
+
+    def test_pagina_auto_suporte_admin_renderiza_fluxo_simples(self):
+        status_auto = {
+            "ok": True,
+            "gerado_em": "2026-05-08T10:00:00",
+            "diagnostico": {
+                "nivel": "info",
+                "label": "Informativo",
+                "titulo": "Tudo operacional",
+                "frase": "Sem incidentes.",
+                "itens": [],
+            },
+            "falhas": [],
+            "erros_abertos": [],
+            "inconsistencias_negocio": [],
+            "sugestoes": [],
+            "tempo_resposta": [],
+        }
+        status_sistema = {
+            "gerado_em": "2026-05-08T10:00:00",
+            "resumo": {"ok": True, "falhas": []},
+            "itens": [],
+            "ultimo_erro": {},
+        }
+        with app_module.app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["usuario"] = "admin"
+                sess["usuario_perfil"] = "admin"
+                sess["empresa_id"] = 1
+                sess["senha_alteracao_obrigatoria"] = False
+            with patch.object(app_module, "sincronizar_sessao_usuario"), \
+                 patch.object(app_module, "status_auto_suporte", return_value=status_auto), \
+                 patch.object(app_module, "montar_status_sistema_dono", return_value=status_sistema), \
+                 patch.object(app_module, "listar_historico_auto_suporte", return_value=[]):
+                response = client.get("/auto-suporte")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("AutoSuporte simples", html)
+        self.assertIn("Acoes diretas", html)
+        self.assertIn("Melhorar carregamento", html)
+        self.assertNotIn("Modo suporte remoto", html)
+        self.assertNotIn("Limpar todos os erros", html)
+
+    def test_auto_suporte_funcionario_nao_acessa_nem_ve_widget(self):
+        with app_module.app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["usuario"] = "operador"
+                sess["usuario_perfil"] = "funcionario"
+                sess["usuario_id"] = 2
+                sess["empresa_id"] = 1
+                sess["senha_alteracao_obrigatoria"] = False
+            with patch.object(app_module, "sincronizar_sessao_usuario"):
+                status_response = client.get("/api/auto-suporte/status")
+                pagina_response = client.get("/auto-suporte")
+                home_response = client.get("/")
+
+        self.assertEqual(status_response.status_code, 403)
+        self.assertEqual(pagina_response.status_code, 302)
+        self.assertNotIn("auto_suporte.js", home_response.get_data(as_text=True))
 
     def test_fluxos_criticos_smoke_login_pwa_auto_suporte(self):
         regras = {str(rule) for rule in app_module.app.url_map.iter_rules()}

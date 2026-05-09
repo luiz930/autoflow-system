@@ -3832,12 +3832,14 @@ def inject_global_template_context():
             TEMPLATE_LICENCA_CACHE["testado_em"] = agora_cache_ts
             TEMPLATE_LICENCA_CACHE["empresa_id"] = empresa_id_cache
             TEMPLATE_LICENCA_CACHE["resultado"] = deepcopy(licenca_atual)
+    auto_suporte_perfil = perfil_auto_suporte() if session.get("usuario") else ""
     return {
         "app_version": obter_versao_sistema(),
         "csrf_token": lambda: issue_csrf_token(session),
         "licenca_atual": licenca_atual,
         "pode_gerenciar_empresas": usuario_gerencia_empresas() if session.get("usuario") else False,
-        "auto_suporte_disponivel": usuario_gerencia_configuracao_sistema() if session.get("usuario") else False,
+        "auto_suporte_disponivel": bool(auto_suporte_perfil),
+        "auto_suporte_perfil": auto_suporte_perfil,
         "pagina_menu_habilitada": pagina_menu_habilitada,
         "hud_usuario_config": obter_configuracao_hud_usuario() if session.get("usuario") else configuracao_hud_usuario_padrao(),
         **produto,
@@ -7611,6 +7613,16 @@ def rotulo_perfil_usuario(valor):
 
 def usuario_desenvolvedor():
     return normalizar_perfil_usuario(session.get("usuario_perfil")) == "desenvolvedor"
+
+def perfil_auto_suporte():
+    if usuario_desenvolvedor():
+        return "desenvolvedor"
+    if usuario_admin():
+        return "administrador"
+    return ""
+
+def usuario_auto_suporte_tecnico():
+    return perfil_auto_suporte() == "desenvolvedor"
 
 def usuario_gerencia_acessos():
     return usuario_admin() or usuario_desenvolvedor()
@@ -17158,6 +17170,19 @@ ACOES_AUTO_SUPORTE = {
     "marcar_fluxo_suspeito": "Marcar fluxo suspeito",
 }
 
+AUTO_SUPORTE_ACOES_ADMIN = {
+    "limpar_caches",
+    "limpar_cache_rota_lenta",
+    "validar_ambiente",
+    "testar_banco",
+    "testar_backup",
+    "revalidar_pwa",
+    "revalidar_estaticos",
+    "resolver_erros_com_checks_ok",
+    "gerar_backup_suporte",
+    "gerar_pacote_codex",
+}
+
 AUTO_SUPORTE_ACOES_AUTONOMAS = {
     "limpar_caches",
     "limpar_cache_rota_lenta",
@@ -17228,7 +17253,17 @@ AUTO_SUPORTE_MODOS_AUTONOMIA = {
 
 
 def usuario_pode_usar_auto_suporte():
-    return bool(session.get("usuario") and usuario_gerencia_configuracao_sistema())
+    return bool(session.get("usuario") and perfil_auto_suporte())
+
+
+def validar_permissao_acao_auto_suporte(acao):
+    if not has_request_context():
+        return True
+    if usuario_auto_suporte_tecnico():
+        return True
+    if perfil_auto_suporte() == "administrador" and acao in AUTO_SUPORTE_ACOES_ADMIN:
+        return True
+    raise ValueError("Acao disponivel somente para o desenvolvedor.")
 
 
 def caminho_auto_suporte_json(caminho_relativo):
@@ -17858,6 +17893,44 @@ def validar_confirmacao_acao_auto_suporte(acao, confirmacao=""):
     if confirmacao != esperado:
         raise ValueError(f"Confirmacao obrigatoria: digite {requisitos.get('confirmacao')} para executar {ACOES_AUTO_SUPORTE.get(acao, acao)}.")
     return True
+
+
+def montar_acoes_simples_auto_suporte(status_payload=None):
+    status_payload = status_payload or {}
+    acoes = [
+        {
+            "acao": "limpar_caches",
+            "label": "Melhorar carregamento",
+            "descricao": "Limpa caches leves da interface e recarrega dados da tela.",
+        },
+        {
+            "acao": "testar_banco",
+            "label": "Testar banco",
+            "descricao": "Confere se o banco online esta respondendo.",
+        },
+        {
+            "acao": "testar_backup",
+            "label": "Testar backup",
+            "descricao": "Confere se existe backup recente configurado.",
+        },
+        {
+            "acao": "revalidar_pwa",
+            "label": "Revalidar app",
+            "descricao": "Verifica manifest, service worker e instalacao PWA.",
+        },
+        {
+            "acao": "gerar_pacote_codex",
+            "label": "Enviar ao desenvolvedor",
+            "descricao": "Gera um pacote tecnico para mandar no Codex.",
+        },
+    ]
+    if any(item.get("classe") == "lento" or item.get("alerta_2s") for item in status_payload.get("tempo_resposta") or []):
+        acoes.insert(1, {
+            "acao": "limpar_cache_rota_lenta",
+            "label": "Corrigir tela lenta",
+            "descricao": "Limpa o cache especifico da rota que ficou lenta.",
+        })
+    return acoes
 
 
 def montar_simulacao_autonomia_auto_suporte(status_payload, planejadas=None, bloqueadas=None, modo=None):
@@ -18502,6 +18575,9 @@ def status_auto_suporte():
         "mensagem": diagnostico.get("frase") or ("Sistema sem incidentes criticos." if not falhas else "AutoSuporte encontrou pontos para revisar."),
     }
     resposta["autonomia"] = montar_autonomia_auto_suporte(status_payload=resposta)
+    resposta["perfil"] = perfil_auto_suporte() if has_request_context() else "desenvolvedor"
+    resposta["modo_interface"] = "tecnico" if resposta["perfil"] == "desenvolvedor" else "simples"
+    resposta["acoes_simples"] = montar_acoes_simples_auto_suporte(resposta)
     avaliar_alertas_auto_suporte(resposta)
     resposta["historico"] = listar_historico_auto_suporte(limite=10)
     return resposta
@@ -18512,6 +18588,7 @@ def executar_acao_auto_suporte(acao, observacao="", confirmacao=""):
     observacao = normalizar_texto_campo(observacao)
     if acao not in ACOES_AUTO_SUPORTE:
         raise ValueError("Acao de AutoSuporte nao permitida.")
+    validar_permissao_acao_auto_suporte(acao)
     validar_confirmacao_acao_auto_suporte(acao, confirmacao)
 
     detalhes = {"acao": acao, "observacao": observacao}
@@ -18679,12 +18756,16 @@ def pagina_auto_suporte():
 
     status_auto = status_auto_suporte()
     status_auto.setdefault("autonomia", montar_autonomia_auto_suporte())
+    status_auto.setdefault("perfil", perfil_auto_suporte())
+    status_auto.setdefault("modo_interface", "tecnico" if status_auto.get("perfil") == "desenvolvedor" else "simples")
+    status_auto.setdefault("acoes_simples", montar_acoes_simples_auto_suporte(status_auto))
     status_sistema = montar_status_sistema_dono()
     historico = listar_historico_auto_suporte(limite=80)
     return render_template(
         "auto_suporte.html",
         status_auto=status_auto,
         status_sistema=status_sistema,
+        modo_auto_suporte=perfil_auto_suporte(),
         saude_dono=montar_saude_sistema_dono_auto_suporte(status_sistema, status_auto),
         historico_auto_suporte=historico,
         incidentes_por_dia=agrupar_historico_auto_suporte_por_dia(historico),
@@ -18699,6 +18780,9 @@ def auto_suporte_json():
         return jsonify({"erro": "nao_autorizado"}), 403
     status_auto = status_auto_suporte()
     status_auto.setdefault("autonomia", montar_autonomia_auto_suporte())
+    status_auto.setdefault("perfil", perfil_auto_suporte())
+    status_auto.setdefault("modo_interface", "tecnico" if status_auto.get("perfil") == "desenvolvedor" else "simples")
+    status_auto.setdefault("acoes_simples", montar_acoes_simples_auto_suporte(status_auto))
     status_sistema = montar_status_sistema_dono()
     historico = listar_historico_auto_suporte(limite=80)
     payload = {
@@ -18759,6 +18843,8 @@ def api_auto_suporte_acao():
 def api_auto_suporte_autonomia():
     if not usuario_pode_usar_auto_suporte():
         return jsonify({"erro": "nao_autorizado"}), 403
+    if not usuario_auto_suporte_tecnico():
+        return jsonify({"erro": "disponivel_somente_para_desenvolvedor"}), 403
 
     payload = request.get_json(silent=True) or request.form or {}
     try:

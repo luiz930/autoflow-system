@@ -146,7 +146,8 @@
                 renderizar();
             }
             const modo = estado.status && estado.status.autonomia ? estado.status.autonomia.modo : "seguro";
-            if (estado.status && estado.status.ok === false && !["manual", "observador"].includes(modo)) {
+            const tecnico = estado.status && estado.status.modo_interface === "tecnico";
+            if (tecnico && estado.status && estado.status.ok === false && !["manual", "observador"].includes(modo)) {
                 executarAutonomia();
             }
         } catch (erro) {
@@ -396,6 +397,46 @@
         return bloco;
     }
 
+    function renderizarAcoesSimples(status) {
+        const acoesSimples = Array.isArray(status.acoes_simples) ? status.acoes_simples : [];
+        const bloco = criarElemento("div", "auto-support-simple-actions");
+        bloco.appendChild(criarElemento("p", "auto-support-section-title", "Acoes diretas"));
+        acoesSimples.forEach((item) => {
+            const btn = criarElemento("button", "auto-support-simple-action");
+            btn.type = "button";
+            btn.appendChild(criarElemento("span", "auto-support-simple-title", item.label || "Executar"));
+            btn.appendChild(criarElemento("small", "auto-support-simple-text", item.descricao || "Acao segura do AutoSuporte."));
+            btn.addEventListener("click", () => executarAcao(item.acao, item.label || "Acao direta"));
+            bloco.appendChild(btn);
+        });
+        return bloco;
+    }
+
+    function renderizarPainelSimples(status, body) {
+        const statusBox = criarElemento("div", "auto-support-status");
+        statusBox.setAttribute("data-ok", status.ok === false ? "false" : "true");
+        statusBox.appendChild(criarElemento("p", "auto-support-message", status.mensagem || "AutoSuporte pronto para acoes seguras."));
+        statusBox.appendChild(criarElemento("p", "auto-support-log-message", textoFalhas(status).replace(/\n/g, " ")));
+        body.appendChild(statusBox);
+        body.appendChild(renderizarDiagnostico(status));
+        body.appendChild(renderizarAcoesSimples(status));
+
+        const atalhos = criarElemento("div", "auto-support-quick-actions auto-support-quick-actions--simple");
+        const pacote = criarElemento("button", "auto-support-primary-action", "Pacote Codex");
+        pacote.type = "button";
+        pacote.addEventListener("click", carregarPacoteCodex);
+        const central = criarElemento("a", "auto-support-primary-link", "Abrir painel");
+        central.href = "/auto-suporte";
+        const ocultar = criarElemento("button", "auto-support-primary-action", "Silenciar hoje");
+        ocultar.type = "button";
+        ocultar.addEventListener("click", ocultarPorHoje);
+        atalhos.appendChild(pacote);
+        atalhos.appendChild(central);
+        atalhos.appendChild(ocultar);
+        body.appendChild(atalhos);
+        body.appendChild(renderizarHistorico(status));
+    }
+
     function renderizar() {
         let raiz = document.querySelector("[data-auto-suporte-widget]");
         if (!raiz) {
@@ -408,6 +449,7 @@
 
         const status = estado.status || {};
         const diagnostico = status.diagnostico || {};
+        const tecnico = status.modo_interface !== "simples";
         const bubble = criarElemento("button", "auto-support-bubble");
         bubble.type = "button";
         bubble.title = "AutoSuporte";
@@ -433,8 +475,8 @@
 
         const header = criarElemento("div", "auto-support-header");
         const headerText = criarElemento("div");
-        headerText.appendChild(criarElemento("p", "auto-support-kicker", `[${(diagnostico.label || (status.ok === false ? "WARN" : "OK")).toUpperCase()}] AUTO-REPARO`));
-        headerText.appendChild(criarElemento("h3", "auto-support-title", "AutoSuporte Seguro"));
+        headerText.appendChild(criarElemento("p", "auto-support-kicker", tecnico ? `[${(diagnostico.label || (status.ok === false ? "WARN" : "OK")).toUpperCase()}] AUTO-REPARO` : "AUTOSUPORTE"));
+        headerText.appendChild(criarElemento("h3", "auto-support-title", tecnico ? "AutoSuporte Seguro" : "Ajuda rapida"));
         const close = criarElemento("button", "auto-support-close", "x");
         close.type = "button";
         close.addEventListener("click", fecharPainel);
@@ -442,6 +484,15 @@
         header.appendChild(close);
 
         const body = criarElemento("div", "auto-support-body");
+        if (!tecnico) {
+            renderizarPainelSimples(status, body);
+            panel.appendChild(header);
+            panel.appendChild(body);
+            raiz.appendChild(panel);
+            raiz.appendChild(bubble);
+            return;
+        }
+
         const statusBox = criarElemento("div", "auto-support-status");
         statusBox.setAttribute("data-ok", status.ok === false ? "false" : "true");
         statusBox.appendChild(criarElemento("p", "auto-support-message", status.mensagem || "AutoSuporte pronto para acoes seguras."));
