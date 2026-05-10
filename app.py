@@ -3798,6 +3798,24 @@ def obter_versao_sistema(permitir_sem_sessao=False):
     return APP_VERSION
 
 
+def obter_contexto_licenca_empresa_cached(empresa_id=None, force=False):
+    empresa_id_cache = normalize_empresa_id(empresa_id or empresa_atual_id())
+    agora_cache_ts = time.time()
+    if (
+        not force
+        and TEMPLATE_LICENCA_CACHE.get("resultado") is not None
+        and TEMPLATE_LICENCA_CACHE.get("empresa_id") == empresa_id_cache
+        and agora_cache_ts - float(TEMPLATE_LICENCA_CACHE.get("testado_em") or 0.0) < TEMPLATE_LICENCA_CACHE_TTL
+    ):
+        return deepcopy(TEMPLATE_LICENCA_CACHE["resultado"])
+
+    licenca = carregar_contexto_licenca_empresa_seguro(empresa_id_cache)
+    TEMPLATE_LICENCA_CACHE["testado_em"] = agora_cache_ts
+    TEMPLATE_LICENCA_CACHE["empresa_id"] = empresa_id_cache
+    TEMPLATE_LICENCA_CACHE["resultado"] = deepcopy(licenca)
+    return licenca
+
+
 @app.context_processor
 def inject_global_template_context():
     empresa_id_cache = empresa_atual_id() if session.get("usuario") else 0
@@ -3821,17 +3839,7 @@ def inject_global_template_context():
     produto["brand_text_rgb"] = cor_hex_para_rgb_css(produto.get("brand_text_color"), "#f9fafb")
     licenca_atual = {}
     if session.get("usuario"):
-        if (
-            TEMPLATE_LICENCA_CACHE.get("resultado") is not None
-            and TEMPLATE_LICENCA_CACHE.get("empresa_id") == empresa_id_cache
-            and agora_cache_ts - float(TEMPLATE_LICENCA_CACHE.get("testado_em") or 0.0) < TEMPLATE_LICENCA_CACHE_TTL
-        ):
-            licenca_atual = deepcopy(TEMPLATE_LICENCA_CACHE["resultado"])
-        else:
-            licenca_atual = carregar_contexto_licenca_empresa_seguro()
-            TEMPLATE_LICENCA_CACHE["testado_em"] = agora_cache_ts
-            TEMPLATE_LICENCA_CACHE["empresa_id"] = empresa_id_cache
-            TEMPLATE_LICENCA_CACHE["resultado"] = deepcopy(licenca_atual)
+        licenca_atual = obter_contexto_licenca_empresa_cached(empresa_id_cache)
     auto_suporte_perfil = perfil_auto_suporte() if session.get("usuario") else ""
     return {
         "app_version": obter_versao_sistema(),
@@ -3963,6 +3971,12 @@ CLIENTES_CONTEXT_CACHE = {
     "resultado": None,
 }
 CLIENTES_CONTEXT_CACHE_TTL = 45
+BASE_DADOS_CACHE = {
+    "testado_em": 0.0,
+    "chave": "",
+    "resultado": None,
+}
+BASE_DADOS_CACHE_TTL = 45
 HISTORICO_CONTEXT_CACHE = {
     "testado_em": 0.0,
     "chave": "",
@@ -4054,6 +4068,18 @@ BACKUP_VALIDACAO_CACHE = {
     "chave": "",
     "resultado": None,
 }
+AUTO_SUPORTE_STATUS_CACHE = {
+    "testado_em": 0.0,
+    "chave": "",
+    "resultado": None,
+}
+AUTO_SUPORTE_STATUS_CACHE_TTL = 45
+AUTO_SUPORTE_PACOTE_CACHE = {
+    "testado_em": 0.0,
+    "chave": "",
+    "resultado": None,
+}
+AUTO_SUPORTE_PACOTE_CACHE_TTL = 60
 SCHEMA_BANCO_ONLINE_GARANTIDO = False
 SCHEMA_SQLITE_LOCAL_GARANTIDO = False
 BANCO_ONLINE_BLOQUEADO_ATE_TS = 0.0
@@ -4091,6 +4117,9 @@ def limpar_caches_interface():
     CLIENTES_CONTEXT_CACHE["testado_em"] = 0.0
     CLIENTES_CONTEXT_CACHE["chave"] = ""
     CLIENTES_CONTEXT_CACHE["resultado"] = None
+    BASE_DADOS_CACHE["testado_em"] = 0.0
+    BASE_DADOS_CACHE["chave"] = ""
+    BASE_DADOS_CACHE["resultado"] = None
     HISTORICO_CONTEXT_CACHE["testado_em"] = 0.0
     HISTORICO_CONTEXT_CACHE["chave"] = ""
     HISTORICO_CONTEXT_CACHE["resultado"] = None
@@ -4108,6 +4137,7 @@ def limpar_caches_interface():
     BACKUP_VALIDACAO_CACHE["testado_em"] = 0.0
     BACKUP_VALIDACAO_CACHE["chave"] = ""
     BACKUP_VALIDACAO_CACHE["resultado"] = None
+    limpar_cache_auto_suporte()
     TEMPLATE_PRODUTO_CACHE["testado_em"] = 0.0
     TEMPLATE_PRODUTO_CACHE["empresa_id"] = 0
     TEMPLATE_PRODUTO_CACHE["resultado"] = None
@@ -4132,6 +4162,9 @@ def limpar_cache_configuracao_empresa():
     CONFIG_EMPRESA_CACHE["testado_em"] = 0.0
     CONFIG_EMPRESA_CACHE["empresa_id"] = 0
     CONFIG_EMPRESA_CACHE["resultado"] = None
+    TEMPLATE_LICENCA_CACHE["testado_em"] = 0.0
+    TEMPLATE_LICENCA_CACHE["empresa_id"] = 0
+    TEMPLATE_LICENCA_CACHE["resultado"] = None
     VERSAO_SISTEMA_CACHE["testado_em"] = 0.0
     VERSAO_SISTEMA_CACHE["empresa_id"] = 0
     VERSAO_SISTEMA_CACHE["resultado"] = ""
@@ -4144,6 +4177,9 @@ def limpar_cache_clientes():
     CLIENTES_CONTEXT_CACHE["testado_em"] = 0.0
     CLIENTES_CONTEXT_CACHE["chave"] = ""
     CLIENTES_CONTEXT_CACHE["resultado"] = None
+    BASE_DADOS_CACHE["testado_em"] = 0.0
+    BASE_DADOS_CACHE["chave"] = ""
+    BASE_DADOS_CACHE["resultado"] = None
 
 
 def limpar_caches_operacionais_leves():
@@ -4165,6 +4201,25 @@ def limpar_cache_painel():
     PAINEL_CONTEXT_CACHE["testado_em"] = 0.0
     PAINEL_CONTEXT_CACHE["chave"] = ""
     PAINEL_CONTEXT_CACHE["resultado"] = None
+
+
+def chave_cache_auto_suporte():
+    if not has_request_context():
+        return "sistema|desenvolvedor|1"
+    return "|".join([
+        str(session.get("usuario") or ""),
+        str(session.get("usuario_perfil") or ""),
+        str(session.get("empresa_id") or empresa_atual_id() or ""),
+    ])
+
+
+def limpar_cache_auto_suporte():
+    AUTO_SUPORTE_STATUS_CACHE["testado_em"] = 0.0
+    AUTO_SUPORTE_STATUS_CACHE["chave"] = ""
+    AUTO_SUPORTE_STATUS_CACHE["resultado"] = None
+    AUTO_SUPORTE_PACOTE_CACHE["testado_em"] = 0.0
+    AUTO_SUPORTE_PACOTE_CACHE["chave"] = ""
+    AUTO_SUPORTE_PACOTE_CACHE["resultado"] = None
 
 
 def limpar_cache_banco_online():
@@ -8103,12 +8158,12 @@ def carregar_contexto_licenca_empresa_seguro(empresa_id=None):
 
 
 def bloquear_criacao_usuario_por_licenca():
-    licenca = carregar_contexto_licenca_empresa_seguro()
+    licenca = obter_contexto_licenca_empresa_cached()
     return licenca.get("bloqueada") or licenca.get("excedeu_usuarios")
 
 
 def bloquear_criacao_atendimento_por_licenca():
-    licenca = carregar_contexto_licenca_empresa_seguro()
+    licenca = obter_contexto_licenca_empresa_cached()
     return licenca.get("bloqueada") or licenca.get("excedeu_atendimentos")
 
 
@@ -13890,6 +13945,28 @@ def montar_resumo_base_dados(registros):
         "com_modelo": sum(1 for item in registros if item.get("modelo")),
     }
 
+
+def obter_payload_base_dados(force=False):
+    chave_cache = f"{empresa_atual_id()}"
+    agora_cache_ts = time.time()
+    if (
+        not force
+        and BASE_DADOS_CACHE.get("resultado") is not None
+        and BASE_DADOS_CACHE.get("chave") == chave_cache
+        and agora_cache_ts - float(BASE_DADOS_CACHE.get("testado_em") or 0.0) < BASE_DADOS_CACHE_TTL
+    ):
+        return deepcopy(BASE_DADOS_CACHE["resultado"])
+
+    registros = listar_registros_clientes()
+    payload = {
+        "dados": registros,
+        "resumo": montar_resumo_base_dados(registros),
+    }
+    BASE_DADOS_CACHE["testado_em"] = agora_cache_ts
+    BASE_DADOS_CACHE["chave"] = chave_cache
+    BASE_DADOS_CACHE["resultado"] = deepcopy(payload)
+    return payload
+
 def ler_dataframe_arquivo_planilha(arquivo):
     filename = secure_filename(arquivo.filename or "")
 
@@ -14677,7 +14754,7 @@ def exigir_licenca_operacional():
     if not session.get("usuario"):
         return
 
-    licenca = carregar_contexto_licenca_empresa_seguro()
+    licenca = obter_contexto_licenca_empresa_cached()
     if not licenca.get("bloqueada"):
         return
 
@@ -18500,7 +18577,17 @@ def montar_git_info_auto_suporte():
     }
 
 
-def montar_pacote_codex_auto_suporte():
+def montar_pacote_codex_auto_suporte(force=False):
+    chave_cache = chave_cache_auto_suporte()
+    agora_cache_ts = time.time()
+    if (
+        not force
+        and AUTO_SUPORTE_PACOTE_CACHE.get("resultado") is not None
+        and AUTO_SUPORTE_PACOTE_CACHE.get("chave") == chave_cache
+        and agora_cache_ts - float(AUTO_SUPORTE_PACOTE_CACHE.get("testado_em") or 0.0) < AUTO_SUPORTE_PACOTE_CACHE_TTL
+    ):
+        return deepcopy(AUTO_SUPORTE_PACOTE_CACHE["resultado"])
+
     status_sistema = executar_com_fallback_producao(
         montar_status_sistema_dono,
         {"resumo": {"ok": False, "falhas": ["status_indisponivel"]}, "itens": []},
@@ -18563,6 +18650,9 @@ def montar_pacote_codex_auto_suporte():
     }
     pacote["erros_abertos"] = listar_erros_producao(apenas_abertos=True, limite=8)
     pacote["texto_para_codex"] = formatar_pacote_codex_texto(pacote)
+    AUTO_SUPORTE_PACOTE_CACHE["testado_em"] = agora_cache_ts
+    AUTO_SUPORTE_PACOTE_CACHE["chave"] = chave_cache
+    AUTO_SUPORTE_PACOTE_CACHE["resultado"] = deepcopy(pacote)
     return pacote
 
 
@@ -18625,7 +18715,17 @@ def enviar_alerta_telegram_auto_suporte(texto):
     return chat_id
 
 
-def status_auto_suporte():
+def status_auto_suporte(force=False):
+    chave_cache = chave_cache_auto_suporte()
+    agora_cache_ts = time.time()
+    if (
+        not force
+        and AUTO_SUPORTE_STATUS_CACHE.get("resultado") is not None
+        and AUTO_SUPORTE_STATUS_CACHE.get("chave") == chave_cache
+        and agora_cache_ts - float(AUTO_SUPORTE_STATUS_CACHE.get("testado_em") or 0.0) < AUTO_SUPORTE_STATUS_CACHE_TTL
+    ):
+        return deepcopy(AUTO_SUPORTE_STATUS_CACHE["resultado"])
+
     status = montar_status_sistema_dono()
     fluxos = executar_check_auto_suporte(
         detectar_fluxos_suspeitos_auto_suporte,
@@ -18687,6 +18787,9 @@ def status_auto_suporte():
     resposta["acoes_simples"] = montar_acoes_simples_auto_suporte(resposta)
     avaliar_alertas_auto_suporte(resposta)
     resposta["historico"] = listar_historico_auto_suporte(limite=10)
+    AUTO_SUPORTE_STATUS_CACHE["testado_em"] = agora_cache_ts
+    AUTO_SUPORTE_STATUS_CACHE["chave"] = chave_cache
+    AUTO_SUPORTE_STATUS_CACHE["resultado"] = deepcopy(resposta)
     return resposta
 
 
@@ -18697,6 +18800,7 @@ def executar_acao_auto_suporte(acao, observacao="", confirmacao=""):
         raise ValueError("Acao de AutoSuporte nao permitida.")
     validar_permissao_acao_auto_suporte(acao)
     validar_confirmacao_acao_auto_suporte(acao, confirmacao)
+    limpar_cache_auto_suporte()
 
     detalhes = {"acao": acao, "observacao": observacao}
     mensagem = ""
@@ -18842,7 +18946,7 @@ def executar_acao_auto_suporte(acao, observacao="", confirmacao=""):
         "titulo": ACOES_AUTO_SUPORTE[acao],
         "mensagem": mensagem,
         "detalhes": detalhes,
-        "status": status_auto_suporte(),
+        "status": status_auto_suporte(force=True),
     }
 
 
@@ -21950,13 +22054,12 @@ def base_dados():
     if not session.get("usuario"):
         return redirect("/login")
 
-    registros = listar_registros_clientes()
-    resumo = montar_resumo_base_dados(registros)
+    payload = obter_payload_base_dados()
 
     return render_template(
         "base_dados.html",
-        registros=registros,
-        resumo=resumo,
+        registros=payload["dados"],
+        resumo=payload["resumo"],
         feedback=session.pop("base_dados_feedback", None),
     )
 
@@ -21979,6 +22082,7 @@ def base_dados_upload():
             raise ValueError("Nao encontrei uma coluna de placa na planilha enviada.")
 
         estatisticas = importar_clientes_dataframe(df, mapeamento)
+        limpar_cache_clientes()
         mensagem = f"Upload '{filename}' importado com sucesso. {resumir_importacao_clientes(estatisticas)}"
         definir_feedback_base_dados("sucesso", mensagem)
         salvar_notificacao(mensagem, "sucesso")
@@ -22005,9 +22109,7 @@ def api_base_dados():
     if not session.get("usuario"):
         return jsonify({"erro": "nao autorizado"}), 401
 
-    registros = listar_registros_clientes()
-    resumo = montar_resumo_base_dados(registros)
-    return jsonify({"dados": registros, "resumo": resumo})
+    return jsonify(obter_payload_base_dados())
 
 @app.route("/api/base_dados/salvar", methods=["POST"])
 @app.route("/api/salvar_base", methods=["POST"])
@@ -22021,13 +22123,13 @@ def api_salvar_base():
     try:
         estatisticas = salvar_linhas_base_dados(linhas)
         mensagem = resumir_salvamento_base_dados(estatisticas)
-        registros = listar_registros_clientes()
-        resumo = montar_resumo_base_dados(registros)
+        limpar_cache_clientes()
+        payload = obter_payload_base_dados(force=True)
         return jsonify({
             "status": "ok",
             "mensagem": mensagem,
-            "dados": registros,
-            "resumo": resumo,
+            "dados": payload["dados"],
+            "resumo": payload["resumo"],
         })
     except Exception as e:
         return jsonify({
