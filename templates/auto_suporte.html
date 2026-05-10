@@ -2,7 +2,7 @@
 
 {% block title %}AutoSuporte{% endblock %}
 {% block titulo %}AutoSuporte{% endblock %}
-{% block subtitulo %}Central do bot, diagnostico inteligente, historico e reparos seguros{% endblock %}
+{% block subtitulo %}Diagnostico, reparos seguros e evidencias tecnicas{% endblock %}
 
 {% block actions %}
 <a href="/auto-suporte.json" class="button-link"><button type="button">Exportar JSON</button></a>
@@ -14,427 +14,333 @@
 {% set plano_auto = status_auto.get('plano_acao', {}) if status_auto else {} %}
 {% set narrativa_auto = status_auto.get('narrativa', {}) if status_auto else {} %}
 
-{% if narrativa_auto %}
-<div class="page-card auto-suporte-narrativa {% if narrativa_auto.prioridade == 'alta' %}error-banner{% elif narrativa_auto.prioridade == 'media' %}warning-banner{% else %}success-banner{% endif %}">
-    <p class="pill-label">Leitura inteligente</p>
-    <h2 class="section-title top-spacing">{{ narrativa_auto.titulo }}</h2>
-    <div class="stack-form stack-form--wide top-spacing">
+{% if modo_auto_suporte == "administrador" %}
+<section class="auto-suporte-dev-shell">
+    <div class="page-card {% if status_auto.diagnostico.nivel == 'critico' %}error-banner{% elif status_auto.diagnostico.nivel == 'alerta' %}warning-banner{% else %}success-banner{% endif %}">
+        <p class="pill-label">Resumo</p>
+        <h2 class="section-title top-spacing">{{ status_auto.diagnostico.titulo }}</h2>
+        <p>{{ status_auto.diagnostico.frase }}</p>
+        <p class="muted-text">Acoes seguras para administrador. Alteracoes sensiveis ficam restritas ao desenvolvedor.</p>
+    </div>
+
+    {% if narrativa_auto %}
+    <div class="page-card auto-suporte-narrativa top-spacing">
+        <p class="pill-label">O que o AutoSuporte entendeu</p>
         {% for linha in narrativa_auto.linhas %}
         <p>{{ linha }}</p>
         {% endfor %}
     </div>
-    <p class="muted-text">Status: {{ narrativa_auto.status }} | Gerado em {{ narrativa_auto.gerado_em }}</p>
-</div>
-{% endif %}
-
-{% if modo_auto_suporte == "administrador" %}
-<div class="page-card {% if status_auto.diagnostico.nivel == 'critico' %}error-banner{% elif status_auto.diagnostico.nivel == 'alerta' %}warning-banner{% else %}success-banner{% endif %}">
-    <p class="pill-label">AutoSuporte simples</p>
-    <h2 class="section-title top-spacing">{{ status_auto.diagnostico.titulo }}</h2>
-    <p>{{ status_auto.diagnostico.frase }}</p>
-    <p class="muted-text">Acoes seguras para o administrador. Alteracoes sensiveis ficam restritas ao desenvolvedor.</p>
-</div>
-
-{% if plano_auto %}
-<div class="page-card top-spacing">
-    <p class="pill-label">Plano de acao</p>
-    <h2 class="section-title top-spacing">{{ plano_auto.titulo }}</h2>
-    <p>{{ plano_auto.mensagem }}</p>
-    <div class="stack-form stack-form--wide top-spacing">
-        {% for item in plano_auto.itens %}
-        <div class="{% if plano_auto.prioridade == 'alta' %}error-banner{% elif plano_auto.prioridade == 'media' %}warning-banner{% else %}success-banner{% endif %}" style="padding: 12px; border-radius: 8px;">
-            <p>{{ item }}</p>
-        </div>
-        {% endfor %}
-    </div>
-    {% if plano_auto.acao and plano_auto.executavel %}
-    <form method="post" action="/auto-suporte/acao" class="top-spacing {% if plano_auto.confirmacao %}auto-suporte-confirmacao-form{% endif %}" data-confirmacao="{{ plano_auto.confirmacao }}" data-label="{{ plano_auto.acao_label }}">
-        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="acao" value="{{ plano_auto.acao }}">
-        <input type="hidden" name="confirmacao" value="">
-        <button type="submit">{{ plano_auto.cta_label }}</button>
-    </form>
     {% endif %}
-</div>
-{% endif %}
 
-<div class="page-grid top-spacing">
-    <div class="page-card">
-        <p class="pill-label">Status</p>
-        <h2 class="section-title top-spacing">{{ "Tudo certo" if status_auto.ok else "Precisa revisar" }}</h2>
-        <p class="muted-text">{{ status_auto.falhas|length }} ponto(s) detectado(s).</p>
-    </div>
-    <div class="page-card">
-        <p class="pill-label">Erros abertos</p>
-        <h2 class="section-title top-spacing">{{ status_auto.erros_abertos|length }}</h2>
-        <p class="muted-text">Se houver erro aberto, gere o pacote para o desenvolvedor.</p>
-    </div>
-    <div class="page-card">
-        <p class="pill-label">Historico</p>
-        <h2 class="section-title top-spacing">{{ historico_auto_suporte|length }}</h2>
-        <p class="muted-text">Ultimas acoes feitas pelo bot.</p>
-    </div>
-</div>
-
-<div class="page-card top-spacing">
-    <p class="pill-label">Acoes diretas</p>
-    <div class="page-grid top-spacing">
-        {% for item in status_auto.acoes_simples %}
-        <form method="post" action="/auto-suporte/acao" class="success-banner" style="margin: 0; padding: 12px; border-radius: 8px;">
+    {% if plano_auto %}
+    <div class="page-card top-spacing">
+        <p class="pill-label">Proxima acao</p>
+        <h2 class="section-title top-spacing">{{ plano_auto.titulo }}</h2>
+        <p>{{ plano_auto.mensagem }}</p>
+        {% if plano_auto.acao and plano_auto.executavel %}
+        <form method="post" action="/auto-suporte/acao" class="top-spacing {% if plano_auto.confirmacao %}auto-suporte-confirmacao-form{% endif %}" data-confirmacao="{{ plano_auto.confirmacao }}" data-label="{{ plano_auto.acao_label }}">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="acao" value="{{ item.acao }}">
-            <h3 class="section-title">{{ item.label }}</h3>
-            <p class="muted-text">{{ item.descricao }}</p>
-            <button type="submit">Executar</button>
+            <input type="hidden" name="acao" value="{{ plano_auto.acao }}">
+            <input type="hidden" name="confirmacao" value="">
+            <button type="submit">{{ plano_auto.cta_label }}</button>
         </form>
-        {% endfor %}
+        {% endif %}
     </div>
-</div>
+    {% endif %}
 
-<div class="page-card top-spacing">
-    <p class="pill-label">Ultimas acoes</p>
-    <div class="stack-form stack-form--wide top-spacing">
-        {% for item in historico_auto_suporte[:6] %}
-        <div class="{% if item.severidade == 'error' %}error-banner{% elif item.severidade == 'warning' %}warning-banner{% else %}success-banner{% endif %}" style="padding: 12px; border-radius: 8px;">
-            <p><b>{{ item.titulo or item.evento }}</b></p>
-            <p class="muted-text">{{ item.quando }} - {{ item.mensagem }}</p>
+    <div class="page-card top-spacing">
+        <p class="pill-label">Acoes diretas</p>
+        <div class="auto-suporte-action-grid top-spacing">
+            {% for item in status_auto.acoes_simples %}
+            <form method="post" action="/auto-suporte/acao" class="auto-suporte-action-card">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="acao" value="{{ item.acao }}">
+                <b>{{ item.label }}</b>
+                <span>{{ item.descricao }}</span>
+                <button type="submit">Executar</button>
+            </form>
+            {% endfor %}
         </div>
-        {% else %}
-        <p class="muted-text">Nenhuma acao registrada ainda.</p>
-        {% endfor %}
     </div>
-</div>
+</section>
 {% else %}
-<div class="page-card {% if status_auto.diagnostico.nivel == 'critico' %}error-banner{% elif status_auto.diagnostico.nivel == 'alerta' %}warning-banner{% else %}success-banner{% endif %}">
-    <p class="pill-label">{{ status_auto.diagnostico.label }}</p>
-    <h2 class="section-title top-spacing">{{ status_auto.diagnostico.titulo }}</h2>
-    <p>{{ status_auto.diagnostico.frase }}</p>
-    <p class="muted-text">Gerado em {{ status_auto.gerado_em }}.</p>
-</div>
-
-{% if plano_auto %}
-<div class="page-card top-spacing">
-    <p class="pill-label">Plano de acao</p>
-    <h2 class="section-title top-spacing">{{ plano_auto.titulo }}</h2>
-    <p>{{ plano_auto.mensagem }}</p>
-    <p class="muted-text">Prioridade {{ plano_auto.prioridade }}{% if plano_auto.acao_label %} - proxima acao: {{ plano_auto.acao_label }}{% endif %}</p>
-    <div class="page-grid top-spacing">
-        {% for item in plano_auto.itens %}
-        <div class="{% if plano_auto.prioridade == 'alta' %}error-banner{% elif plano_auto.prioridade == 'media' %}warning-banner{% else %}success-banner{% endif %}" style="padding: 12px; border-radius: 8px;">
-            <p>{{ item }}</p>
-        </div>
-        {% endfor %}
-    </div>
-    {% if plano_auto.acao and plano_auto.executavel %}
-    <form method="post" action="/auto-suporte/acao" class="top-spacing {% if plano_auto.confirmacao %}auto-suporte-confirmacao-form{% endif %}" data-confirmacao="{{ plano_auto.confirmacao }}" data-label="{{ plano_auto.acao_label }}">
-        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="acao" value="{{ plano_auto.acao }}">
-        <input type="hidden" name="confirmacao" value="">
-        <button type="submit">{{ plano_auto.cta_label }}</button>
-    </form>
-    {% endif %}
-</div>
-{% endif %}
-
-<div class="page-grid top-spacing">
-    <div class="page-card">
-        <p class="pill-label">Erros abertos</p>
-        <h2 class="section-title top-spacing">{{ status_auto.erros_abertos|length }}</h2>
-        <p class="muted-text">Falhas tecnicas aguardando revisao.</p>
-    </div>
-    <div class="page-card">
-        <p class="pill-label">Inconsistencias</p>
-        <h2 class="section-title top-spacing">{{ status_auto.inconsistencias_negocio|length }}</h2>
-        <p class="muted-text">Regras de negocio que precisam de atencao.</p>
-    </div>
-    <div class="page-card">
-        <p class="pill-label">Sugestoes</p>
-        <h2 class="section-title top-spacing">{{ status_auto.sugestoes|length }}</h2>
-        <p class="muted-text">Acoes seguras sugeridas pelo bot.</p>
-    </div>
-    <div class="page-card">
-        <p class="pill-label">Historico</p>
-        <h2 class="section-title top-spacing">{{ historico_auto_suporte|length }}</h2>
-        <p class="muted-text">Eventos recentes registrados pelo AutoSuporte.</p>
-    </div>
-    <div class="page-card">
-        <p class="pill-label">Autonomia</p>
-        <h2 class="section-title top-spacing">{{ status_auto.autonomia.acoes_permitidas|length }}</h2>
-        <p class="muted-text">Reparos simples liberados para execucao automatica.</p>
-    </div>
-</div>
-
-<div class="page-card top-spacing">
-    <p class="pill-label">Acoes seguras</p>
-    <div class="actions-row actions-row--left top-spacing">
-        <form method="post" action="/auto-suporte/acao">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="acao" value="limpar_caches">
-            <button type="submit">Limpar caches</button>
-        </form>
-        <form method="post" action="/auto-suporte/acao">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="acao" value="testar_banco">
-            <button type="submit">Testar banco</button>
-        </form>
-        <form method="post" action="/auto-suporte/acao">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="acao" value="testar_backup">
-            <button type="submit">Testar backup</button>
-        </form>
-        <form method="post" action="/auto-suporte/acao">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="acao" value="testar_telegram">
-            <button type="submit">Testar Telegram</button>
-        </form>
-        <form method="post" action="/auto-suporte/acao">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="acao" value="revalidar_pwa">
-            <button type="submit">Revalidar PWA</button>
-        </form>
-        <form method="post" action="/auto-suporte/acao">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="acao" value="gerar_backup_suporte">
-            <button type="submit">Backup suporte</button>
-        </form>
-        <form method="post" action="/auto-suporte/acao">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="acao" value="gerar_pacote_codex">
-            <button type="submit">Gerar pacote Codex</button>
-        </form>
-        <form method="post" action="/auto-suporte/acao" class="auto-suporte-confirmacao-form" data-confirmacao="LIMPAR TODOS OS ERROS" data-label="Limpar todos os erros">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="acao" value="limpar_todos_erros">
-            <input type="hidden" name="confirmacao" value="">
-            <button type="submit" class="button-danger">Limpar erros</button>
-        </form>
-        <form method="post" action="/auto-suporte/acao" class="auto-suporte-confirmacao-form" data-confirmacao="CORRIGIR CLASSIFICACAO" data-label="Corrigir classificacao de clientes">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="acao" value="corrigir_classificacao_clientes">
-            <input type="hidden" name="confirmacao" value="">
-            <button type="submit">Corrigir novo/retorno</button>
-        </form>
-        <form method="post" action="/auto-suporte/acao">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="acao" value="registrar_incidente">
-            <input type="hidden" name="observacao" value="Modo suporte remoto solicitado pela pagina AutoSuporte.">
-            <button type="submit">Modo suporte remoto</button>
-        </form>
-    </div>
-</div>
-
-<div class="page-card top-spacing">
-    <p class="pill-label">Auto-reparo seguro</p>
-    <div class="page-grid top-spacing">
+<section class="auto-suporte-dev-shell">
+    <div class="auto-suporte-dev-hero {% if status_auto.diagnostico.nivel == 'critico' %}auto-suporte-dev-hero--danger{% elif status_auto.diagnostico.nivel == 'alerta' %}auto-suporte-dev-hero--warning{% endif %}">
         <div>
-            <p><b>Modo atual:</b> {{ status_auto.autonomia.modo_label }}</p>
-            <p class="muted-text">{{ status_auto.autonomia.modo_descricao }}</p>
-            <p><b>Limite por ciclo:</b> {{ status_auto.autonomia.limite_por_ciclo }}</p>
-            <p><b>Cooldown:</b> {{ status_auto.autonomia.cooldown_segundos // 60 }} min</p>
-            <p class="muted-text">Ultimo ciclo: {{ status_auto.autonomia.ultimo_ciclo or "Ainda nao executado" }}</p>
+            <p class="pill-label">Leitura atual</p>
+            <h2>{{ status_auto.diagnostico.titulo }}</h2>
+            <p>{{ status_auto.diagnostico.frase }}</p>
+            <span class="muted-text">Gerado em {{ status_auto.gerado_em }}</span>
         </div>
+        <div class="auto-suporte-dev-status">
+            <span>{{ status_auto.diagnostico.label }}</span>
+            <strong>{{ "OK" if status_auto.ok else "Revisar" }}</strong>
+        </div>
+    </div>
+
+    {% if narrativa_auto %}
+    <div class="page-card auto-suporte-narrativa top-spacing">
+        <p class="pill-label">O que esta acontecendo</p>
+        <div class="auto-suporte-dev-list">
+            {% for linha in narrativa_auto.linhas %}
+            <p>{{ linha }}</p>
+            {% endfor %}
+        </div>
+        <p class="muted-text">Modo: {{ narrativa_auto.status }} | Prioridade: {{ narrativa_auto.prioridade }}</p>
+    </div>
+    {% endif %}
+
+    <div class="auto-suporte-dev-kpis top-spacing">
+        <div class="page-card">
+            <p class="pill-label">Erros</p>
+            <h2 class="section-title top-spacing">{{ status_auto.erros_abertos|length }}</h2>
+            <p class="muted-text">Falhas tecnicas abertas.</p>
+        </div>
+        <div class="page-card">
+            <p class="pill-label">Regras</p>
+            <h2 class="section-title top-spacing">{{ status_auto.inconsistencias_negocio|length }}</h2>
+            <p class="muted-text">Inconsistencias de negocio.</p>
+        </div>
+        <div class="page-card">
+            <p class="pill-label">Sugestoes</p>
+            <h2 class="section-title top-spacing">{{ status_auto.sugestoes|length }}</h2>
+            <p class="muted-text">Acoes recomendadas.</p>
+        </div>
+        <div class="page-card">
+            <p class="pill-label">Auto-reparo</p>
+            <h2 class="section-title top-spacing">{{ status_auto.autonomia.acoes_permitidas|length }}</h2>
+            <p class="muted-text">{{ status_auto.autonomia.modo_label }}</p>
+        </div>
+    </div>
+
+    {% if plano_auto %}
+    <div class="page-card top-spacing auto-suporte-next-step">
         <div>
-            <p><b>Niveis de autonomia</b></p>
-            <div class="actions-row actions-row--left top-spacing">
-                {% for modo in status_auto.autonomia.modos %}
-                <span class="pill-label">{{ modo.label }}</span>
-                {% endfor %}
-            </div>
-            <p class="top-spacing"><b>Acoes autonomas</b></p>
-            <div class="actions-row actions-row--left top-spacing">
-                {% for acao in status_auto.autonomia.acoes_permitidas %}
-                <span class="pill-label">{{ acao.label }}</span>
-                {% endfor %}
-            </div>
+            <p class="pill-label">Proxima melhor acao</p>
+            <h2 class="section-title top-spacing">{{ plano_auto.titulo }}</h2>
+            <p>{{ plano_auto.mensagem }}</p>
+            <p class="muted-text">Prioridade {{ plano_auto.prioridade }}{% if plano_auto.acao_label %} | Acao: {{ plano_auto.acao_label }}{% endif %}</p>
         </div>
-    </div>
-    {% if status_auto.autonomia.simulacao %}
-    <div class="page-grid top-spacing">
-        <div class="warning-banner" style="padding: 12px; border-radius: 8px;">
-            <p><b>Modo simulacao</b></p>
-            {% for item in status_auto.autonomia.simulacao.detectado %}
-            <p class="muted-text">{{ item }}</p>
-            {% else %}
-            <p class="muted-text">Nenhuma falha pendente detectada.</p>
-            {% endfor %}
-        </div>
-        <div class="success-banner" style="padding: 12px; border-radius: 8px;">
-            <p><b>Antes de executar</b></p>
-            {% for item in status_auto.autonomia.simulacao.pretende_fazer %}
-            <p class="muted-text">{{ item.label }} - risco {{ item.risco }} - {{ "reversivel" if item.reversivel else "exige confirmacao" }}</p>
-            {% else %}
-            <p class="muted-text">Nenhuma acao automatica planejada.</p>
-            {% endfor %}
-        </div>
+        {% if plano_auto.acao and plano_auto.executavel %}
+        <form method="post" action="/auto-suporte/acao" class="{% if plano_auto.confirmacao %}auto-suporte-confirmacao-form{% endif %}" data-confirmacao="{{ plano_auto.confirmacao }}" data-label="{{ plano_auto.acao_label }}">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="acao" value="{{ plano_auto.acao }}">
+            <input type="hidden" name="confirmacao" value="">
+            <button type="submit">{{ plano_auto.cta_label }}</button>
+        </form>
+        {% endif %}
     </div>
     {% endif %}
-    {% if status_auto.autonomia.ultimo_resultado %}
-    <div class="table-wrap top-spacing">
-        <table>
-            <thead>
-                <tr>
-                    <th>Acao</th>
-                    <th>Status</th>
-                    <th>Mensagem</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in status_auto.autonomia.ultimo_resultado %}
-                <tr>
-                    <td>{{ item.label or item.acao }}</td>
-                    <td>{{ "OK" if item.ok else "Falhou" }}</td>
-                    <td>{{ item.mensagem }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% endif %}
-    {% if status_auto.autonomia.acoes_bloqueadas %}
-    <div class="table-wrap top-spacing">
-        <table>
-            <thead>
-                <tr>
-                    <th>Acao manual</th>
-                    <th>Motivo</th>
-                    <th>Seguranca</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in status_auto.autonomia.acoes_bloqueadas %}
-                <tr>
-                    <td>{{ item.label or item.acao }}</td>
-                    <td>{{ item.motivo }}</td>
-                    <td>{{ item.seguranca }}{% if item.confirmacao %}<br><b>Confirmacao:</b> {{ item.confirmacao }}{% endif %}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% endif %}
-    {% if status_auto.autonomia.log %}
-    <div class="table-wrap top-spacing">
-        <table>
-            <thead>
-                <tr>
-                    <th>Quando</th>
-                    <th>Aba</th>
-                    <th>Usuario</th>
-                    <th>Mensagem</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in status_auto.autonomia.log %}
-                <tr>
-                    <td>{{ item.quando }}</td>
-                    <td>{{ item.categoria }}</td>
-                    <td>{{ item.usuario }}</td>
-                    <td>{{ item.mensagem or item.titulo }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% endif %}
-</div>
 
-<div class="page-grid top-spacing">
-    <div class="page-card">
-        <p class="pill-label">Saude do sistema para o dono</p>
-        <div class="list-grid top-spacing">
-            {% for item in saude_dono %}
-            <div class="{% if item.ok %}success-banner{% else %}error-banner{% endif %}" style="padding: 12px; border-radius: 8px;">
-                <p><b>{{ item.nome }}</b></p>
-                <p>{{ item.valor }}</p>
-                <p class="muted-text">{{ item.detalhe }}</p>
-            </div>
-            {% endfor %}
+    <div class="page-card top-spacing">
+        <p class="pill-label">Acoes principais</p>
+        <div class="auto-suporte-action-grid top-spacing">
+            <form method="post" action="/auto-suporte/acao" class="auto-suporte-action-card">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="acao" value="limpar_caches">
+                <b>Melhorar carregamento</b>
+                <span>Limpa caches leves e forca nova leitura das telas.</span>
+                <button type="submit">Executar</button>
+            </form>
+            <form method="post" action="/auto-suporte/acao" class="auto-suporte-action-card">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="acao" value="revalidar_rota_lenta">
+                <b>Revalidar rota lenta</b>
+                <span>Mede de novo a rota que esta mais lenta agora.</span>
+                <button type="submit">Revalidar</button>
+            </form>
+            <form method="post" action="/auto-suporte/acao" class="auto-suporte-action-card">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="acao" value="gerar_pacote_codex">
+                <b>Pacote Codex</b>
+                <span>Gera relatorio tecnico para investigacao.</span>
+                <button type="submit">Gerar</button>
+            </form>
+            <form method="post" action="/auto-suporte/acao" class="auto-suporte-action-card">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="acao" value="testar_banco">
+                <b>Testar banco</b>
+                <span>Confere conexao e resposta do banco ativo.</span>
+                <button type="submit">Testar</button>
+            </form>
         </div>
     </div>
 
-    <div class="page-card">
-        <p class="pill-label">Incidentes por dia</p>
-        <div class="stack-form stack-form--wide top-spacing">
-            {% for item in incidentes_por_dia %}
-            <div>
-                <div class="actions-row actions-row--between">
-                    <span>{{ item.dia }}</span>
-                    <b>{{ item.total }}</b>
+    <details class="page-card top-spacing auto-suporte-section" open>
+        <summary>Auto-reparo seguro</summary>
+        <div class="auto-suporte-section-body">
+            <div class="page-grid">
+                <div>
+                    <p><b>Modo atual:</b> {{ status_auto.autonomia.modo_label }}</p>
+                    <p class="muted-text">{{ status_auto.autonomia.modo_descricao }}</p>
+                    <p><b>Limite:</b> {{ status_auto.autonomia.limite_por_ciclo }} acao(oes) por ciclo</p>
+                    <p><b>Cooldown:</b> {{ status_auto.autonomia.cooldown_segundos // 60 }} min</p>
                 </div>
-                <div style="height: 8px; border-radius: 999px; background: rgba(148, 163, 184, .22); overflow: hidden;">
-                    <div style="height: 8px; width: {{ [item.total * 12, 100]|min }}%; background: var(--primary);"></div>
+                <div>
+                    <p><b>Acoes autonomas liberadas</b></p>
+                    <div class="actions-row actions-row--left top-spacing">
+                        {% for acao in status_auto.autonomia.acoes_permitidas %}
+                        <span class="pill-label">{{ acao.label }}</span>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
-            {% else %}
-            <p class="muted-text">Ainda nao ha incidentes registrados.</p>
-            {% endfor %}
-        </div>
-    </div>
-</div>
 
-<div class="page-grid top-spacing">
-    <div class="page-card">
-        <p class="pill-label">Diagnostico detalhado</p>
-        <div class="stack-form stack-form--wide top-spacing">
-            {% for item in status_auto.diagnostico.itens %}
-            <div class="{% if item.nivel == 'critico' %}error-banner{% elif item.nivel == 'alerta' %}warning-banner{% else %}success-banner{% endif %}" style="padding: 12px; border-radius: 8px;">
-                <p><b>{{ item.label }} - {{ item.titulo }}</b></p>
-                <p class="muted-text">{{ item.mensagem }}</p>
-                {% if item.acao %}
-                <p><b>Acao sugerida:</b> {{ item.acao }}</p>
-                {% endif %}
+            {% if status_auto.autonomia.simulacao %}
+            <div class="page-grid top-spacing">
+                <div class="warning-banner auto-suporte-soft-box">
+                    <p><b>Detectado</b></p>
+                    {% for item in status_auto.autonomia.simulacao.detectado %}
+                    <p class="muted-text">{{ item }}</p>
+                    {% else %}
+                    <p class="muted-text">Nenhuma falha pendente detectada.</p>
+                    {% endfor %}
+                </div>
+                <div class="success-banner auto-suporte-soft-box">
+                    <p><b>Planejado</b></p>
+                    {% for item in status_auto.autonomia.simulacao.pretende_fazer %}
+                    <p class="muted-text">{{ item.label }} | risco {{ item.risco }} | {{ "reversivel" if item.reversivel else "exige confirmacao" }}</p>
+                    {% else %}
+                    <p class="muted-text">Nenhuma acao automatica planejada.</p>
+                    {% endfor %}
+                </div>
             </div>
-            {% endfor %}
-        </div>
-    </div>
+            {% endif %}
 
-    <div class="page-card">
-        <p class="pill-label">Inconsistencias de negocio</p>
-        <div class="stack-form stack-form--wide top-spacing">
-            {% for item in status_auto.inconsistencias_negocio %}
-            <div class="warning-banner" style="padding: 12px; border-radius: 8px;">
-                <p><b>{{ item.titulo }}: {{ item.total }}</b></p>
-                <p class="muted-text">{{ item.mensagem }}</p>
+            {% if status_auto.autonomia.ultimo_resultado %}
+            <div class="table-wrap top-spacing">
+                <table>
+                    <thead><tr><th>Acao</th><th>Status</th><th>Mensagem</th></tr></thead>
+                    <tbody>
+                        {% for item in status_auto.autonomia.ultimo_resultado %}
+                        <tr>
+                            <td>{{ item.label or item.acao }}</td>
+                            <td>{{ "OK" if item.ok else "Falhou" }}</td>
+                            <td>{{ item.mensagem }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
-            {% else %}
-            <p class="muted-text">Nenhuma inconsistencia de negocio detectada agora.</p>
-            {% endfor %}
+            {% endif %}
         </div>
-    </div>
-</div>
+    </details>
 
-<div class="page-card top-spacing">
-    <p class="pill-label">Historico completo</p>
-    <div class="table-wrap top-spacing">
-        <table>
-            <thead>
-                <tr>
-                    <th>Quando</th>
-                    <th>Evento</th>
-                    <th>Severidade</th>
-                    <th>Usuario</th>
-                    <th>Mensagem</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in historico_auto_suporte %}
-                <tr>
-                    <td>{{ item.quando }}</td>
-                    <td>{{ item.titulo or item.evento }}</td>
-                    <td>{{ item.severidade }}</td>
-                    <td>{{ item.usuario or "-" }}</td>
-                    <td>{{ item.mensagem }}</td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="5">Nenhum historico registrado.</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
+    <details class="page-card top-spacing auto-suporte-section">
+        <summary>Acoes tecnicas e sensiveis</summary>
+        <div class="auto-suporte-section-body">
+            <div class="actions-row actions-row--left">
+                <form method="post" action="/auto-suporte/acao"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="acao" value="testar_backup"><button type="submit">Testar backup</button></form>
+                <form method="post" action="/auto-suporte/acao"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="acao" value="testar_telegram"><button type="submit">Testar Telegram</button></form>
+                <form method="post" action="/auto-suporte/acao"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="acao" value="revalidar_pwa"><button type="submit">Revalidar PWA</button></form>
+                <form method="post" action="/auto-suporte/acao"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="acao" value="gerar_backup_suporte"><button type="submit">Backup suporte</button></form>
+                <form method="post" action="/auto-suporte/acao"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="acao" value="registrar_incidente"><input type="hidden" name="observacao" value="Modo suporte remoto solicitado pela pagina AutoSuporte."><button type="submit">Modo suporte remoto</button></form>
+                <form method="post" action="/auto-suporte/acao" class="auto-suporte-confirmacao-form" data-confirmacao="LIMPAR TODOS OS ERROS" data-label="Limpar todos os erros"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="acao" value="limpar_todos_erros"><input type="hidden" name="confirmacao" value=""><button type="submit" class="button-danger">Limpar erros</button></form>
+                <form method="post" action="/auto-suporte/acao" class="auto-suporte-confirmacao-form" data-confirmacao="CORRIGIR CLASSIFICACAO" data-label="Corrigir classificacao de clientes"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="acao" value="corrigir_classificacao_clientes"><input type="hidden" name="confirmacao" value=""><button type="submit">Corrigir novo/retorno</button></form>
+            </div>
 
+            {% if status_auto.autonomia.acoes_bloqueadas %}
+            <div class="table-wrap top-spacing">
+                <table>
+                    <thead><tr><th>Bloqueada</th><th>Motivo</th><th>Seguranca</th></tr></thead>
+                    <tbody>
+                        {% for item in status_auto.autonomia.acoes_bloqueadas %}
+                        <tr>
+                            <td>{{ item.label or item.acao }}</td>
+                            <td>{{ item.motivo }}</td>
+                            <td>{{ item.seguranca }}{% if item.confirmacao %}<br><b>Confirmacao:</b> {{ item.confirmacao }}{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </details>
+
+    <details class="page-card top-spacing auto-suporte-section">
+        <summary>Evidencias tecnicas</summary>
+        <div class="auto-suporte-section-body">
+            <div class="page-grid">
+                <div>
+                    <p class="pill-label">Saude para o dono</p>
+                    <div class="list-grid top-spacing">
+                        {% for item in saude_dono %}
+                        <div class="{% if item.ok %}success-banner{% else %}error-banner{% endif %} auto-suporte-soft-box">
+                            <p><b>{{ item.nome }}</b></p>
+                            <p>{{ item.valor }}</p>
+                            <p class="muted-text">{{ item.detalhe }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div>
+                    <p class="pill-label">Diagnostico detalhado</p>
+                    <div class="stack-form stack-form--wide top-spacing">
+                        {% for item in status_auto.diagnostico.itens %}
+                        <div class="{% if item.nivel == 'critico' %}error-banner{% elif item.nivel == 'alerta' %}warning-banner{% else %}success-banner{% endif %} auto-suporte-soft-box">
+                            <p><b>{{ item.label }} - {{ item.titulo }}</b></p>
+                            <p class="muted-text">{{ item.mensagem }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="page-grid top-spacing">
+                <div>
+                    <p class="pill-label">Inconsistencias</p>
+                    {% for item in status_auto.inconsistencias_negocio %}
+                    <div class="warning-banner auto-suporte-soft-box top-spacing">
+                        <p><b>{{ item.titulo }}: {{ item.total }}</b></p>
+                        <p class="muted-text">{{ item.mensagem }}</p>
+                    </div>
+                    {% else %}
+                    <p class="muted-text top-spacing">Nenhuma inconsistencia de negocio detectada agora.</p>
+                    {% endfor %}
+                </div>
+                <div>
+                    <p class="pill-label">Incidentes por dia</p>
+                    <div class="stack-form stack-form--wide top-spacing">
+                        {% for item in incidentes_por_dia %}
+                        <div class="auto-suporte-progress-row">
+                            <span>{{ item.dia }}</span>
+                            <b>{{ item.total }}</b>
+                            <div><i style="width: {{ [item.total * 12, 100]|min }}%;"></i></div>
+                        </div>
+                        {% else %}
+                        <p class="muted-text">Ainda nao ha incidentes registrados.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </details>
+
+    <details class="page-card top-spacing auto-suporte-section">
+        <summary>Historico completo</summary>
+        <div class="auto-suporte-section-body table-wrap">
+            <table>
+                <thead>
+                    <tr><th>Quando</th><th>Evento</th><th>Severidade</th><th>Usuario</th><th>Mensagem</th></tr>
+                </thead>
+                <tbody>
+                    {% for item in historico_auto_suporte %}
+                    <tr>
+                        <td>{{ item.quando }}</td>
+                        <td>{{ item.titulo or item.evento }}</td>
+                        <td>{{ item.severidade }}</td>
+                        <td>{{ item.usuario or "-" }}</td>
+                        <td>{{ item.mensagem }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5">Nenhum historico registrado.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </details>
+</section>
 {% endif %}
 {% endblock %}
 
