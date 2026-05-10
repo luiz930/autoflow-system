@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from flask import request, session
+from flask import render_template_string, request, session
 
 import app as app_module
 from domains.clientes import consultar_sincronizacoes_clientes
@@ -370,6 +370,28 @@ class AppRegressionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertIn("/login", response.headers.get("Location", ""))
+
+    def test_base_nao_mostra_busca_global_em_configuracoes(self):
+        template = (
+            '{% extends "base.html" %}'
+            '{% block title %}Teste{% endblock %}'
+            '{% block titulo %}Teste{% endblock %}'
+            '{% block subtitulo %}Config{% endblock %}'
+        )
+        with app_module.app.test_request_context("/configuracoes/meu-acesso"):
+            session["usuario"] = "dev"
+            session["usuario_perfil"] = "desenvolvedor"
+            session["empresa_id"] = 1
+            html_config = render_template_string(template)
+        with app_module.app.test_request_context("/clientes"):
+            session["usuario"] = "dev"
+            session["usuario_perfil"] = "desenvolvedor"
+            session["empresa_id"] = 1
+            html_clientes = render_template_string(template)
+
+        self.assertNotIn('<form class="global-search"', html_config)
+        self.assertNotIn('id="globalSearchInput"', html_config)
+        self.assertIn('<form class="global-search"', html_clientes)
 
     def test_configuracoes_site_get_renders_for_logged_admin(self):
         with app_module.app.test_request_context("/configuracoes/site", method="GET"):
