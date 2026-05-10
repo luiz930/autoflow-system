@@ -1,6 +1,67 @@
 (function () {
     let deferredPrompt = null;
 
+    function buildNetworkBanner() {
+        if (document.getElementById("pwa-network-banner")) {
+            return document.getElementById("pwa-network-banner");
+        }
+        const banner = document.createElement("div");
+        banner.id = "pwa-network-banner";
+        banner.className = "pwa-network-banner";
+        banner.hidden = true;
+        document.body.appendChild(banner);
+        return banner;
+    }
+
+    function updateNetworkBanner() {
+        const banner = buildNetworkBanner();
+        const offline = navigator.onLine === false;
+        banner.hidden = !offline;
+        banner.textContent = offline ? "Sem conexao com o servidor. Alteracoes podem nao ser salvas." : "";
+        document.documentElement.toggleAttribute("data-offline", offline);
+    }
+
+    function protectFormSubmits() {
+        document.addEventListener("submit", (event) => {
+            if (event.defaultPrevented) {
+                return;
+            }
+            const form = event.target;
+            if (!(form instanceof HTMLFormElement) || form.dataset.submitLock === "off") {
+                return;
+            }
+            if (form.dataset.submitting === "true") {
+                event.preventDefault();
+                return;
+            }
+            form.dataset.submitting = "true";
+            form.setAttribute("aria-busy", "true");
+            form.querySelectorAll("button[type='submit'], input[type='submit']").forEach((control) => {
+                if (control.name) {
+                    return;
+                }
+                control.dataset.originalText = control.textContent || "";
+                control.disabled = true;
+                if (control.tagName === "BUTTON" && control.textContent.trim()) {
+                    control.textContent = "Aguarde...";
+                }
+            });
+            setTimeout(() => {
+                form.dataset.submitting = "false";
+                form.removeAttribute("aria-busy");
+                form.querySelectorAll("button[type='submit'], input[type='submit']").forEach((control) => {
+                    if (control.name) {
+                        return;
+                    }
+                    control.disabled = false;
+                    if (control.tagName === "BUTTON" && control.dataset.originalText) {
+                        control.textContent = control.dataset.originalText;
+                    }
+                });
+            }, 12000);
+        });
+    }
+
     function isStandalone() {
         return window.matchMedia("(display-mode: standalone)").matches
             || window.navigator.standalone === true;
@@ -62,4 +123,9 @@
         deferredPrompt = null;
         installButton.hidden = true;
     });
+
+    window.addEventListener("online", updateNetworkBanner);
+    window.addEventListener("offline", updateNetworkBanner);
+    updateNetworkBanner();
+    protectFormSubmits();
 })();

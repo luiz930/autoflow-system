@@ -1,6 +1,7 @@
-const CACHE_VERSION = "wagen-pwa-v1";
+const CACHE_VERSION = "wagen-pwa-v2";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const STATIC_ASSETS = [
+    "/offline",
     "/static/responsive.css",
     "/static/photo_upload.js",
     "/static/pwa_install.js",
@@ -43,6 +44,21 @@ self.addEventListener("fetch", (event) => {
     }
 
     const requestUrl = new URL(request.url);
+
+    if (request.mode === "navigate") {
+        event.respondWith(
+            fetch(request)
+                .then((response) => {
+                    if (response && response.ok) {
+                        const copy = response.clone();
+                        caches.open(STATIC_CACHE).then((cache) => cache.put(request, copy));
+                    }
+                    return response;
+                })
+                .catch(() => caches.match(request).then((cached) => cached || caches.match("/offline")))
+        );
+        return;
+    }
 
     if (!isSafeStaticRequest(requestUrl)) {
         return;

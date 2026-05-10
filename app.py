@@ -8176,6 +8176,8 @@ def endpoint_liberado_com_licenca_bloqueada(endpoint):
         "login",
         "logout",
         "healthz",
+        "offline",
+        "api_pwa_status",
         "configuracoes",
         "pagina_empresas",
         "salvar_empresa_admin",
@@ -14533,7 +14535,34 @@ def healthz():
         "ok": True,
         "init_db_executado": bool(INIT_DB_EXECUTADO),
         "modo_banco": modo_banco_preferido(),
+        "versao": obter_versao_sistema(permitir_sem_sessao=True),
     }
+
+
+@app.route("/offline")
+def offline():
+    return """
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sem conexao - Wagen Estetica</title>
+    <link rel="stylesheet" href="/static/responsive.css">
+</head>
+<body>
+    <main class="page-shell">
+        <section class="page-card">
+            <h1 class="section-title">Sem conexao</h1>
+            <p class="muted-text">O app esta aberto, mas nao conseguiu falar com o servidor agora.</p>
+            <div class="actions-row actions-row--left">
+                <a href="/" class="button-link"><button type="button">Tentar novamente</button></a>
+            </div>
+        </section>
+    </main>
+</body>
+</html>
+""", 200
 
 
 @app.errorhandler(Exception)
@@ -16490,6 +16519,12 @@ def montar_registro_erro_producao(erro, descricao=""):
     if has_request_context():
         usuario = normalizar_texto_campo(session.get("usuario") or session.get("usuario_nome"))
     quando = agora_iso()
+    mensagem = str(erro)
+    origem = "teste" if (
+        path.startswith("/rota-com-falha")
+        or "falha teste" in mensagem.lower()
+        or normalizar_texto_campo(descricao).endswith("_teste")
+    ) else "producao"
     return {
         "id": f"{int(time.time() * 1000)}-{secrets.token_hex(3)}",
         "quando": quando,
@@ -16497,8 +16532,9 @@ def montar_registro_erro_producao(erro, descricao=""):
         "path": path,
         "usuario": usuario,
         "tipo": erro.__class__.__name__,
-        "mensagem": str(erro),
+        "mensagem": mensagem,
         "stack": resumir_stack_erro(erro),
+        "origem": origem,
         "resolvido": False,
         "resolvido_em": "",
         "resolvido_por": "",
@@ -17022,6 +17058,10 @@ def scanner_rotas_central_tecnica():
                     "tamanho_kb": round(tamanho / 1024, 1),
                     "destino": destino,
                     "mensagem": f"HTTP {status}" + (f" -> {destino}" if destino else ""),
+                    "causa_provavel": causa_provavel_lentidao_rota(
+                        caminho,
+                        {"status": status, "tempo_ms": tempo_ms},
+                    ),
                 })
             except Exception as erro:
                 tempo_ms = int((time.perf_counter() - inicio) * 1000)
@@ -17038,8 +17078,35 @@ def scanner_rotas_central_tecnica():
                     "tamanho_kb": 0,
                     "destino": "",
                     "mensagem": str(erro),
+                    "causa_provavel": "Excecao durante revalidacao interna; revisar stack registrado.",
                 })
     return resultados
+
+
+def causa_provavel_lentidao_rota(rota, item=None):
+    rota = str(rota or "").strip()
+    item = item or {}
+    status = int(item.get("status") or 0)
+    ultimo_ms = int(item.get("ultimo_ms") or item.get("tempo_ms") or 0)
+    if status >= 500:
+        return "Erro de servidor: revisar stack da Central de erros e ultimo deploy."
+    if status in {301, 302, 303, 307, 308}:
+        return "Redirecionamento: validar sessao, senha obrigatoria, permissao ou licenca."
+    if ultimo_ms <= 1500:
+        return "Sem lentidao relevante na ultima medicao."
+    if rota in {"/financeiro", "/relatorios"}:
+        return "Consultas financeiras e agregacoes de relatorio podem estar pressionando o banco."
+    if rota == "/painel":
+        return "Painel operacional depende de servicos, fotos, extras e timers; cache ou resumo pode precisar aquecer."
+    if rota == "/clientes":
+        return "Listagem de clientes/sincronizacoes pode estar esperando banco online ou busca ampla."
+    if rota == "/configuracoes":
+        return "Configuracoes carrega licenca, empresa, HUD e permissoes; primeira carga tende a aquecer caches."
+    if rota == "/":
+        return "Home combina HUD, snapshot e contexto global; banco online lento afeta a primeira carga."
+    if rota == "/status-sistema":
+        return "Status executa checks de banco, backup, licenca e PWA."
+    return "Rota lenta: medir consultas SQL e dependencias externas antes de refatorar."
 
 
 def metricas_tempo_resposta_central_tecnica():
@@ -17063,6 +17130,7 @@ def metricas_tempo_resposta_central_tecnica():
         item["tendencia_label"] = rotulo_tendencia_resposta(item.get("tendencia"))
         item["alerta_2s"] = bool(item.get("alerta_2s") or int(item.get("ultimo_ms") or 0) > 2000)
         item["pioras_consecutivas"] = int(item.get("pioras_consecutivas") or 0)
+        item["causa_provavel"] = causa_provavel_lentidao_rota(item.get("rota"), item)
         itens.append(item)
     return itens
 
@@ -17228,6 +17296,7 @@ def montar_central_tecnica_desenvolvedor(filtro_erros="abertos"):
 ACOES_AUTO_SUPORTE = {
     "limpar_caches": "Limpar caches",
     "limpar_cache_rota_lenta": "Limpar cache da pagina lenta",
+    "revalidar_rota_lenta": "Revalidar rota lenta",
     "validar_ambiente": "Reiniciar validacao",
     "testar_banco": "Testar banco",
     "testar_backup": "Testar backup",
@@ -17250,6 +17319,7 @@ ACOES_AUTO_SUPORTE = {
 AUTO_SUPORTE_ACOES_ADMIN = {
     "limpar_caches",
     "limpar_cache_rota_lenta",
+    "revalidar_rota_lenta",
     "validar_ambiente",
     "testar_banco",
     "testar_backup",
@@ -17263,6 +17333,7 @@ AUTO_SUPORTE_ACOES_ADMIN = {
 AUTO_SUPORTE_ACOES_AUTONOMAS = {
     "limpar_caches",
     "limpar_cache_rota_lenta",
+    "revalidar_rota_lenta",
     "validar_ambiente",
     "testar_banco",
     "testar_backup",
@@ -17891,7 +17962,16 @@ def montar_sugestoes_auto_suporte(status_sistema, fluxos, planilhas_erro, tempo_
         sugestoes.append({"titulo": "Banco indisponivel", "mensagem": "Validar a conexao do banco online agora.", "acao": "testar_banco"})
     if any(item.get("classe") == "lento" for item in tempo_resposta):
         lento = next(item for item in tempo_resposta if item.get("classe") == "lento")
-        sugestoes.append({"titulo": "Pagina demorou", "mensagem": f"{lento.get('rota')} carregou em {lento.get('ultimo_ms')} ms.", "acao": "limpar_cache_rota_lenta"})
+        sugestoes.append({
+            "titulo": "Pagina demorou",
+            "mensagem": f"{lento.get('rota')} carregou em {lento.get('ultimo_ms')} ms. {lento.get('causa_provavel') or ''}".strip(),
+            "acao": "limpar_cache_rota_lenta",
+        })
+        sugestoes.append({
+            "titulo": "Revalidar rota",
+            "mensagem": "Mede novamente a rota lenta e confirma se voltou ao normal.",
+            "acao": "revalidar_rota_lenta",
+        })
     if not backup_item.get("ok"):
         sugestoes.append({"titulo": "Backup falhou", "mensagem": "Gerar um backup de suporte antes de investigar.", "acao": "gerar_backup_suporte"})
     if pwa_item and not pwa_item.get("ok"):
@@ -18018,6 +18098,11 @@ def montar_acoes_simples_auto_suporte(status_payload=None):
             "acao": "limpar_cache_rota_lenta",
             "label": "Corrigir tela lenta",
             "descricao": "Limpa o cache especifico da rota que ficou lenta.",
+        })
+        acoes.insert(2, {
+            "acao": "revalidar_rota_lenta",
+            "label": "Revalidar rota",
+            "descricao": "Mede novamente a rota lenta e confirma se normalizou.",
         })
     return acoes
 
@@ -18271,6 +18356,55 @@ def limpar_cache_rota_lenta_auto_suporte(tempo_resposta=None):
         limpar_caches_operacionais_leves()
         caches.append("operacionais_leves")
     return {"rota": rota, "caches_limpos": caches, "mensagem": f"Cache especifico da rota {rota} foi limpo."}
+
+
+def revalidar_rota_lenta_auto_suporte(rota=""):
+    rota = normalizar_texto_campo(rota)
+    rotas_validas = {item[1] for item in ROTAS_CENTRAL_TECNICA} | set(ROTAS_MONITORADAS_RESPOSTA)
+    if not rota or rota not in rotas_validas:
+        tempo_resposta = metricas_tempo_resposta_central_tecnica()
+        lentas = [item for item in tempo_resposta if item.get("classe") == "lento" or item.get("alerta_2s")]
+        rota = (
+            sorted(lentas, key=lambda item: int(item.get("ultimo_ms") or 0), reverse=True)[0].get("rota")
+            if lentas else
+            "/"
+        )
+
+    inicio = time.perf_counter()
+    try:
+        with app.test_client() as client:
+            resposta = client.get(rota)
+        tempo_ms = int((time.perf_counter() - inicio) * 1000)
+        status = int(resposta.status_code)
+        ok = status < 500
+        resolvidos = 0
+        if ok and tempo_ms <= 1500:
+            resolvidos = marcar_erros_auto_suporte_resolvidos(
+                {f"central_tecnica_rota_{rota}", "erro_global"},
+                usuario="auto_suporte_rota_ok",
+            )
+        return {
+            "ok": ok,
+            "rota": rota,
+            "status": status,
+            "tempo_ms": tempo_ms,
+            "classe": classificar_latencia_ms(tempo_ms),
+            "causa_provavel": causa_provavel_lentidao_rota(rota, {"status": status, "tempo_ms": tempo_ms}),
+            "erros_resolvidos": resolvidos,
+            "mensagem": f"Rota {rota} respondeu HTTP {status} em {tempo_ms} ms.",
+        }
+    except Exception as erro:
+        registrar_ultimo_erro_producao(erro, descricao=f"central_tecnica_rota_{rota}")
+        return {
+            "ok": False,
+            "rota": rota,
+            "status": "",
+            "tempo_ms": int((time.perf_counter() - inicio) * 1000),
+            "classe": "lento",
+            "causa_provavel": "Excecao durante revalidacao interna.",
+            "erros_resolvidos": 0,
+            "mensagem": str(erro),
+        }
 
 
 def revalidar_estaticos_auto_suporte():
@@ -18813,6 +18947,11 @@ def executar_acao_auto_suporte(acao, observacao="", confirmacao=""):
         resultado = limpar_cache_rota_lenta_auto_suporte()
         detalhes["cache_rota_lenta"] = resultado
         mensagem = resultado.get("mensagem") or "Cache especifico da rota lenta foi limpo."
+    elif acao == "revalidar_rota_lenta":
+        resultado = revalidar_rota_lenta_auto_suporte(observacao)
+        detalhes["rota_lenta"] = resultado
+        mensagem = resultado.get("mensagem") or "Rota lenta revalidada."
+        severidade = "info" if resultado.get("ok") else "warning"
     elif acao == "validar_ambiente":
         checklist = montar_pre_deploy_checklist()
         falhas = [item["nome"] for item in checklist if not item.get("ok")]
