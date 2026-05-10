@@ -1,4 +1,7 @@
 (function iniciarAutoSuporte() {
+    if (window.location.pathname === "/auto-suporte") {
+        return;
+    }
     if (window.__autoSuporteIniciado) {
         return;
     }

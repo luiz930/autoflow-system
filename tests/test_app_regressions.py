@@ -2276,13 +2276,13 @@ class AppRegressionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
-        self.assertIn("AutoSuporte", html)
-        self.assertIn("Evidencias tecnicas", html)
-        self.assertIn("Saude para o dono", html)
-        self.assertIn("Auto-reparo seguro", html)
-        self.assertIn("Modo suporte remoto", html)
-        self.assertIn('data-confirmacao="LIMPAR TODOS OS ERROS"', html)
-        self.assertIn('data-confirmacao="CORRIGIR CLASSIFICACAO"', html)
+        self.assertIn("AutoSuporte IA", html)
+        self.assertIn("IA guiada", html)
+        self.assertIn("O que voce autoriza a IA fazer agora", html)
+        self.assertIn("Acoes sensiveis", html)
+        self.assertIn("Registrar incidente", html)
+        self.assertIn("LIMPAR TODOS OS ERROS", html)
+        self.assertIn("CORRIGIR CLASSIFICACAO", html)
 
     def test_pagina_auto_suporte_admin_renderiza_fluxo_simples(self):
         status_auto = {
@@ -2321,11 +2321,11 @@ class AppRegressionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
-        self.assertIn("Resumo", html)
-        self.assertIn("Alteracoes sensiveis ficam restritas ao desenvolvedor", html)
-        self.assertIn("Acoes diretas", html)
+        self.assertIn("AutoSuporte IA", html)
+        self.assertIn("O que voce autoriza a IA fazer agora", html)
+        self.assertIn("Melhorar velocidade", html)
         self.assertIn("Melhorar carregamento", html)
-        self.assertNotIn("Modo suporte remoto", html)
+        self.assertNotIn("Acoes sensiveis", html)
         self.assertNotIn("Limpar todos os erros", html)
 
     def test_auto_suporte_funcionario_nao_acessa_nem_ve_widget(self):

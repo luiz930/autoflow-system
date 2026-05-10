@@ -18469,6 +18469,144 @@ def montar_acoes_simples_auto_suporte(status_payload=None):
     return acoes
 
 
+def montar_dialogo_ia_auto_suporte(status_payload=None, saude_dono=None, historico=None):
+    status_payload = status_payload or {}
+    saude_dono = list(saude_dono or [])
+    historico = list(historico or [])
+    diagnostico = status_payload.get("diagnostico") or {}
+    narrativa = status_payload.get("narrativa") or {}
+    plano = status_payload.get("plano_acao") or {}
+    autonomia = status_payload.get("autonomia") or {}
+    perfil = normalizar_texto_campo(status_payload.get("perfil")) or (perfil_auto_suporte() if has_request_context() else "desenvolvedor")
+    desenvolvedor = perfil == "desenvolvedor"
+    catalogo = {
+        item.get("id"): item
+        for item in (status_payload.get("acoes") or montar_acoes_auto_suporte_payload())
+        if isinstance(item, dict) and item.get("id")
+    }
+    acoes_permitidas = set(ACOES_AUTO_SUPORTE if desenvolvedor else AUTO_SUPORTE_ACOES_ADMIN)
+
+    def acao_dialogo(acao_id, label=None, descricao=None):
+        acao_id = normalizar_texto_campo(acao_id)
+        if not acao_id or acao_id not in acoes_permitidas:
+            return None
+        labels_guiados = {
+            "limpar_caches": "Melhorar carregamento",
+            "limpar_cache_rota_lenta": "Limpar cache da rota lenta",
+            "gerar_pacote_codex": "Preparar pacote Codex",
+            "gerar_backup_suporte": "Criar backup de suporte",
+            "validar_ambiente": "Revalidar ambiente",
+        }
+        dados = dict(catalogo.get(acao_id) or {"id": acao_id, "label": ACOES_AUTO_SUPORTE.get(acao_id, acao_id)})
+        dados["label"] = normalizar_texto_campo(label or labels_guiados.get(acao_id) or dados.get("label") or ACOES_AUTO_SUPORTE.get(acao_id, acao_id))
+        dados["descricao"] = normalizar_texto_campo(descricao or dados.get("seguranca") or "")
+        dados["confirmacao"] = normalizar_texto_campo(dados.get("confirmacao"))
+        dados["confirmacao_obrigatoria"] = bool(dados.get("confirmacao_obrigatoria") or dados["confirmacao"])
+        return dados
+
+    def filtrar_acoes(ids):
+        return [item for item in (acao_dialogo(acao_id) for acao_id in ids) if item]
+
+    titulo = normalizar_texto_campo(diagnostico.get("titulo")) or "Sistema em verificacao"
+    frase = normalizar_texto_campo(diagnostico.get("frase")) or normalizar_texto_campo(status_payload.get("mensagem")) or "Vou ler os sinais do sistema e sugerir a proxima acao."
+    linhas_narrativa = [
+        normalizar_texto_campo(linha)
+        for linha in (narrativa.get("linhas") or [])
+        if normalizar_texto_campo(linha)
+    ][:3]
+    if not linhas_narrativa:
+        linhas_narrativa = [frase]
+
+    abertura = [
+        f"Estou lendo o AutoSuporte como {('desenvolvedor' if desenvolvedor else 'administrador')}.",
+        f"Diagnostico atual: {titulo}.",
+        *linhas_narrativa,
+    ]
+    if plano.get("titulo"):
+        abertura.append(f"Minha proxima recomendacao e: {normalizar_texto_campo(plano.get('titulo'))}.")
+
+    opcoes = [
+        {
+            "id": "diagnostico",
+            "label": "Diagnosticar",
+            "titulo": "Vou conferir a saude principal.",
+            "resposta": [
+                "Primeiro eu valido banco, backup, app instalado e arquivos estaticos.",
+                "Essas acoes nao alteram dados importantes; elas apenas medem e atualizam a leitura do suporte.",
+            ],
+            "acoes": filtrar_acoes(["validar_ambiente", "testar_banco", "testar_backup", "revalidar_pwa", "revalidar_estaticos"]),
+        },
+        {
+            "id": "performance",
+            "label": "Melhorar velocidade",
+            "titulo": "Vou atacar carregamento lento.",
+            "resposta": [
+                "Posso limpar caches leves, limpar a rota lenta especifica e medir de novo a tela mais pesada.",
+                "Se o banco online estiver lento, eu mostro isso como causa provavel em vez de esconder o problema.",
+            ],
+            "acoes": filtrar_acoes(["limpar_caches", "limpar_cache_rota_lenta", "revalidar_rota_lenta"]),
+        },
+        {
+            "id": "relatorio",
+            "label": "Preparar relatorio",
+            "titulo": "Vou organizar evidencias para manutencao.",
+            "resposta": [
+                "Eu gero um pacote tecnico com o estado atual, erros recentes, rotas lentas e contexto para o Codex.",
+                "Tambem posso criar um backup de suporte antes de qualquer investigacao mais sensivel.",
+            ],
+            "acoes": filtrar_acoes(["gerar_pacote_codex", "gerar_backup_suporte"]),
+        },
+    ]
+
+    if desenvolvedor:
+        opcoes.extend([
+            {
+                "id": "reparo",
+                "label": "Reparo seguro",
+                "titulo": "Vou executar somente correcoes reversiveis.",
+                "resposta": [
+                    f"O modo atual de auto-reparo e {normalizar_texto_campo(autonomia.get('modo_label')) or 'Seguro'}.",
+                    "Eu priorizo checks, limpeza de cache e erros ja resolvidos antes de tocar em qualquer dado sensivel.",
+                ],
+                "acoes": filtrar_acoes(["resolver_erros_com_checks_ok", "limpar_erros_resolvidos", "validar_ambiente"]),
+            },
+            {
+                "id": "sensivel",
+                "label": "Acoes sensiveis",
+                "titulo": "Vou separar tudo que exige confirmacao.",
+                "resposta": [
+                    "Essas acoes podem alterar dados, limpar evidencias ou enviar mensagem externa.",
+                    "Eu so libero o botao depois de pedir a frase de confirmacao configurada no backend.",
+                ],
+                "acoes": filtrar_acoes([
+                    "corrigir_classificacao_clientes",
+                    "desativar_planilhas_com_erro",
+                    "limpar_todos_erros",
+                    "enviar_relatorio_telegram",
+                    "enviar_alerta_telegram",
+                    "registrar_incidente",
+                ]),
+            },
+        ])
+
+    opcoes = [opcao for opcao in opcoes if opcao.get("acoes")]
+    return {
+        "perfil": perfil,
+        "status": "ok" if status_payload.get("ok") else "revisar",
+        "nivel": normalizar_texto_campo(diagnostico.get("nivel")) or "info",
+        "titulo": titulo,
+        "frase": frase,
+        "abertura": abertura,
+        "opcoes": opcoes,
+        "indicadores": [
+            {"label": "Erros abertos", "valor": len(status_payload.get("erros_abertos") or [])},
+            {"label": "Regras", "valor": len(status_payload.get("inconsistencias_negocio") or [])},
+            {"label": "Historico", "valor": len(historico)},
+            {"label": "Saude OK", "valor": len([item for item in saude_dono if item.get("ok")])},
+        ],
+    }
+
+
 def montar_simulacao_autonomia_auto_suporte(status_payload, planejadas=None, bloqueadas=None, modo=None):
     status_payload = status_payload or {}
     planejadas = list(planejadas if planejadas is not None else planejar_acoes_autonomas_auto_suporte(status_payload))
@@ -19542,17 +19680,22 @@ def pagina_auto_suporte():
     status_auto.setdefault("autonomia", montar_autonomia_auto_suporte())
     status_auto.setdefault("perfil", perfil_auto_suporte())
     status_auto.setdefault("modo_interface", "tecnico" if status_auto.get("perfil") == "desenvolvedor" else "simples")
+    status_auto.setdefault("acoes", montar_acoes_auto_suporte_payload())
     status_auto.setdefault("acoes_simples", montar_acoes_simples_auto_suporte(status_auto))
+    status_auto.setdefault("plano_acao", montar_plano_acao_auto_suporte(status_auto))
+    status_auto.setdefault("narrativa", montar_narrativa_auto_suporte(status_auto))
     status_sistema = montar_status_sistema_dono()
     historico = listar_historico_auto_suporte(limite=80)
+    saude_dono = montar_saude_sistema_dono_auto_suporte(status_sistema, status_auto)
     return render_template(
         "auto_suporte.html",
         status_auto=status_auto,
         status_sistema=status_sistema,
         modo_auto_suporte=perfil_auto_suporte(),
-        saude_dono=montar_saude_sistema_dono_auto_suporte(status_sistema, status_auto),
+        saude_dono=saude_dono,
         historico_auto_suporte=historico,
         incidentes_por_dia=agrupar_historico_auto_suporte_por_dia(historico),
+        dialogo_ia=montar_dialogo_ia_auto_suporte(status_auto, saude_dono, historico),
     )
 
 
