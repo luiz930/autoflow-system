@@ -2582,6 +2582,9 @@ function aplicarEstadoClima(data) {
             : "";
         climaTexto = `${data.icone || ""} ${data.clima}${tempTexto}`.trim();
         sugestaoTexto = data.sugestao || "";
+        if (data.deferido) {
+            setTimeout(atualizarClima, 900);
+        }
         return;
     }
 
@@ -2719,7 +2722,6 @@ async function atualizarHomeSnapshot() {
 
 // CLIMA
 async function atualizarClima() {
-    return;
     if (document.hidden) {
         return;
     }

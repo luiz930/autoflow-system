@@ -131,6 +131,9 @@
         </a>
     </div>
 
+    <details class="painel-mobile-details top-spacing">
+        <summary>Editar operacional, fotos e cobrancas</summary>
+
     <form action="/painel/servico/{{ s.id }}/operacional" method="POST" enctype="multipart/form-data" class="stack-form stack-form--wide top-spacing">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="field-grid">
@@ -212,6 +215,8 @@
         <p class="muted-text top-spacing">Nenhuma cobranca extra registrada neste atendimento ainda.</p>
         {% endif %}
     </div>
+
+    </details>
 
 </div>
 {% endfor %}

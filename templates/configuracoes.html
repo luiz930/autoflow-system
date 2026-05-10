@@ -439,6 +439,45 @@
 </div>
 
 <div class="page-card top-spacing">
+    <p class="pill-label">Consultas SQL</p>
+    <h2 class="section-title top-spacing">O que mais custou no banco</h2>
+    <div style="overflow:auto;">
+        <table class="data-table" style="min-width:880px;">
+            <thead>
+                <tr>
+                    <th>Pagina</th>
+                    <th>Consulta</th>
+                    <th>Ultimo</th>
+                    <th>Media</th>
+                    <th>Pico</th>
+                    <th>Amostras</th>
+                    <th>Origem</th>
+                    <th>Cache</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in central_tecnica.metricas_sql.ranking %}
+                <tr>
+                    <td><code>{{ item.pagina }}</code></td>
+                    <td>{{ item.nome }}</td>
+                    <td>{% if item.ultimo_ms > 1500 %}<span style="color:#fca5a5;">{{ item.ultimo_ms }} ms</span>{% else %}{{ item.ultimo_ms }} ms{% endif %}</td>
+                    <td>{{ item.media_ms }} ms</td>
+                    <td>{% if item.max_ms > 1500 %}<span style="color:#fca5a5;">{{ item.max_ms }} ms</span>{% else %}{{ item.max_ms }} ms{% endif %}</td>
+                    <td>{{ item.amostras }}</td>
+                    <td>{{ item.origem }}</td>
+                    <td>{{ item.cache_hits }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="muted-text">Abra /financeiro, /painel ou /clientes para coletar as primeiras medicoes por consulta.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="page-card top-spacing">
     <p class="pill-label">Ranking de lentidao</p>
     <h2 class="section-title top-spacing">Rotas mais lentas agora</h2>
     <div style="overflow:auto;">

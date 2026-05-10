@@ -3903,6 +3903,9 @@ METRICAS_TEMPO_RESPOSTA = {
     }
     for rota in ROTAS_MONITORADAS_RESPOSTA
 }
+SQL_METRICAS_CONSULTAS = []
+SQL_METRICAS_LIMITE = 120
+SQL_METRICAS_LOCK = Lock()
 init_db_lock = Lock()
 INIT_DB_EXECUTADO = False
 bootstrap_init_thread_started = False
@@ -5183,6 +5186,80 @@ def salvar_cache_consulta(cache, chave, resultado):
     cache["testado_em"] = time.time()
     cache["chave"] = str(chave or "")
     cache["resultado"] = copiar_estrutura_cache(resultado)
+
+
+def registrar_metrica_consulta_sql(pagina, nome, tempo_ms, origem="banco", detalhes="", cache_hit=False):
+    try:
+        pagina = normalizar_texto_campo(pagina) or "-"
+        nome = normalizar_texto_campo(nome) or "consulta"
+        tempo_ms = int(max(0, tempo_ms or 0))
+        registro = {
+            "pagina": pagina,
+            "nome": nome,
+            "tempo_ms": tempo_ms,
+            "origem": normalizar_texto_campo(origem) or "banco",
+            "detalhes": normalizar_texto_campo(detalhes),
+            "cache_hit": bool(cache_hit),
+            "classe": classificar_latencia_ms(tempo_ms),
+            "quando": agora_iso(),
+        }
+        with SQL_METRICAS_LOCK:
+            SQL_METRICAS_CONSULTAS.insert(0, registro)
+            del SQL_METRICAS_CONSULTAS[SQL_METRICAS_LIMITE:]
+    except Exception:
+        pass
+
+
+def medir_consulta_sql(pagina, nome, func, origem="banco", detalhes=""):
+    inicio = time.perf_counter()
+    try:
+        return func()
+    finally:
+        registrar_metrica_consulta_sql(
+            pagina,
+            nome,
+            int((time.perf_counter() - inicio) * 1000),
+            origem=origem,
+            detalhes=detalhes,
+        )
+
+
+def obter_metricas_consultas_sql(limite=40):
+    with SQL_METRICAS_LOCK:
+        registros = [dict(item) for item in SQL_METRICAS_CONSULTAS[: int(limite or 40)]]
+
+    agregados = {}
+    for item in registros:
+        chave = f"{item.get('pagina')}|{item.get('nome')}"
+        resumo = agregados.setdefault(
+            chave,
+            {
+                "pagina": item.get("pagina"),
+                "nome": item.get("nome"),
+                "amostras": 0,
+                "ultimo_ms": 0,
+                "max_ms": 0,
+                "media_ms": 0,
+                "total_ms": 0,
+                "origem": item.get("origem"),
+                "cache_hits": 0,
+                "ultima_medicao": item.get("quando"),
+            },
+        )
+        resumo["amostras"] += 1
+        resumo["ultimo_ms"] = item.get("tempo_ms") or 0
+        resumo["max_ms"] = max(int(resumo.get("max_ms") or 0), int(item.get("tempo_ms") or 0))
+        resumo["total_ms"] += int(item.get("tempo_ms") or 0)
+        resumo["cache_hits"] += 1 if item.get("cache_hit") else 0
+        resumo["media_ms"] = int(resumo["total_ms"] / resumo["amostras"]) if resumo["amostras"] else 0
+        resumo["classe"] = classificar_latencia_ms(resumo["ultimo_ms"])
+
+    ranking = sorted(agregados.values(), key=lambda item: int(item.get("max_ms") or 0), reverse=True)
+    return {
+        "recentes": registros,
+        "ranking": ranking[:20],
+        "total_registros": len(registros),
+    }
 
 
 def conectar_somente_leitura():
@@ -8471,6 +8548,7 @@ def carregar_contexto_relatorios(periodo_atual=None, detalhado=False):
         RELATORIOS_CONTEXT_CACHE_TTL,
     )
     if contexto_cache is not None:
+        registrar_metrica_consulta_sql("/financeiro", "snapshot_relatorios", 0, origem="cache", cache_hit=True)
         return contexto_cache
     agora_atual = agora()
     hoje = agora_atual.date()
@@ -8479,27 +8557,39 @@ def carregar_contexto_relatorios(periodo_atual=None, detalhado=False):
 
     def carregar_relatorios_raw(conn):
         c = conn.cursor()
-        c.execute(
-            """
-            SELECT
-                servicos.*,
-                tipos_servico.nome AS tipo_nome,
-                veiculos.placa,
-                veiculos.modelo,
-                clientes.nome AS cliente_nome
-            FROM servicos
-            LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
-            LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id AND veiculos.empresa_id=?
-            LEFT JOIN clientes ON veiculos.cliente_id = clientes.id AND clientes.empresa_id=?
-            WHERE servicos.empresa_id=?
-            ORDER BY servicos.id DESC
-            """,
-            (empresa_id, empresa_id, empresa_id),
+        servicos = medir_consulta_sql(
+            "/financeiro",
+            "servicos_financeiro_join",
+            lambda: (
+                c.execute(
+                    """
+                    SELECT
+                        servicos.*,
+                        tipos_servico.nome AS tipo_nome,
+                        veiculos.placa,
+                        veiculos.modelo,
+                        clientes.nome AS cliente_nome
+                    FROM servicos
+                    LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
+                    LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id AND veiculos.empresa_id=?
+                    LEFT JOIN clientes ON veiculos.cliente_id = clientes.id AND clientes.empresa_id=?
+                    WHERE servicos.empresa_id=?
+                    ORDER BY servicos.id DESC
+                    """,
+                    (empresa_id, empresa_id, empresa_id),
+                ),
+                [dict(row) for row in c.fetchall()],
+            )[1],
+            detalhes="servicos + tipos + veiculos + clientes",
         )
-        servicos = [dict(row) for row in c.fetchall()]
         enriquecer_perfil_cliente_atendimento(servicos)
         if detalhado:
-            orcamentos, notas = consultar_documentos_relatorios_cursor(c, empresa_id)
+            orcamentos, notas = medir_consulta_sql(
+                "/financeiro",
+                "documentos_financeiros",
+                lambda: consultar_documentos_relatorios_cursor(c, empresa_id),
+                detalhes="orcamentos + notas_fiscais",
+            )
         else:
             orcamentos, notas = [], []
         return {
@@ -10085,7 +10175,7 @@ def montar_resultado_clima_normalizado(payload):
     }
 
 
-def obter_resultado_clima_api():
+def obter_resultado_clima_api(permitir_rede=True):
     configuracao = obter_configuracao_empresa()
     fallback = {
         "clima": "Clima indisponivel",
@@ -10108,6 +10198,15 @@ def obter_resultado_clima_api():
 
     if cache and agora_ts - ultimo_teste < CLIMA_CACHE_TTL:
         return dict(cache)
+
+    if not permitir_rede:
+        return {
+            "clima": "Carregando clima",
+            "temp": "",
+            "icone": "\U0001F324\uFE0F",
+            "sugestao": "",
+            "deferido": True,
+        }
 
     try:
         sessao_http = requests.Session()
@@ -14469,6 +14568,7 @@ def carregar_contexto_clientes(busca="", limpar=False, detalhar_sincronizacoes=F
         CLIENTES_CONTEXT_CACHE_TTL,
     )
     if contexto_cache is not None:
+        registrar_metrica_consulta_sql("/clientes", "snapshot_clientes", 0, origem="cache", cache_hit=True)
         return (
             contexto_cache.get("clientes", []),
             contexto_cache.get("sincronizacoes", []),
@@ -14476,8 +14576,18 @@ def carregar_contexto_clientes(busca="", limpar=False, detalhar_sincronizacoes=F
 
     contexto_lido = executar_leitura_resiliente(
         lambda conn: {
-            "clientes": listar_registros_clientes(busca_aplicada, conn=conn),
-            "sincronizacoes_raw": consultar_sincronizacoes_clientes_domain(conn.cursor(), empresa_id)
+            "clientes": medir_consulta_sql(
+                "/clientes",
+                "lista_base_clientes",
+                lambda: listar_registros_clientes(busca_aplicada, conn=conn),
+                detalhes="veiculos + clientes",
+            ),
+            "sincronizacoes_raw": medir_consulta_sql(
+                "/clientes",
+                "sincronizacoes_clientes",
+                lambda: consultar_sincronizacoes_clientes_domain(conn.cursor(), empresa_id),
+                detalhes="sincronizacoes_clientes",
+            )
             if detalhar_sincronizacoes
             else [],
         },
@@ -14853,48 +14963,158 @@ def buscar_global_sistema(termo, limite=8):
     try:
         conn = conectar()
         c = conn.cursor()
-        c.execute(
-            """
-            SELECT
-                veiculos.placa,
-                veiculos.modelo,
-                clientes.nome AS cliente_nome,
-                clientes.telefone AS cliente_telefone
-            FROM veiculos
-            LEFT JOIN clientes ON clientes.id = veiculos.cliente_id
-            WHERE COALESCE(veiculos.empresa_id, 1)=?
-              AND (
-                  UPPER(COALESCE(veiculos.placa, '')) LIKE UPPER(?)
-                  OR UPPER(COALESCE(veiculos.modelo, '')) LIKE UPPER(?)
-                  OR UPPER(COALESCE(clientes.nome, '')) LIKE UPPER(?)
-                  OR UPPER(COALESCE(clientes.telefone, '')) LIKE UPPER(?)
-              )
-            ORDER BY
-                CASE WHEN UPPER(COALESCE(veiculos.placa, '')) = UPPER(?) THEN 0 ELSE 1 END,
-                clientes.nome ASC,
-                veiculos.placa ASC
-            LIMIT ?
-            """,
-            (empresa_id, termo_like, termo_like, termo_like, termo_like, termo, int(limite)),
-        )
         resultados = []
-        for row in c.fetchall():
-            item = row_para_dict(row)
+        vistos = set()
+
+        def adicionar_resultado(tipo, titulo, subtitulo="", placa="", url="/"):
+            chave = f"{tipo}|{placa}|{titulo}|{subtitulo}"
+            if chave in vistos or len(resultados) >= int(limite):
+                return
+            vistos.add(chave)
+            resultados.append({
+                "tipo": tipo,
+                "titulo": titulo,
+                "subtitulo": subtitulo,
+                "placa": placa,
+                "cliente": titulo if tipo == "veiculo" else "",
+                "telefone": "",
+                "modelo": "",
+                "url": url,
+            })
+
+        veiculos = medir_consulta_sql(
+            "/api/busca-global",
+            "busca_veiculos_clientes",
+            lambda: (
+                c.execute(
+                    """
+                    SELECT
+                        veiculos.placa,
+                        veiculos.modelo,
+                        clientes.nome AS cliente_nome,
+                        clientes.telefone AS cliente_telefone
+                    FROM veiculos
+                    LEFT JOIN clientes ON clientes.id = veiculos.cliente_id
+                    WHERE COALESCE(veiculos.empresa_id, 1)=?
+                      AND (
+                          UPPER(COALESCE(veiculos.placa, '')) LIKE UPPER(?)
+                          OR UPPER(COALESCE(veiculos.modelo, '')) LIKE UPPER(?)
+                          OR UPPER(COALESCE(clientes.nome, '')) LIKE UPPER(?)
+                          OR UPPER(COALESCE(clientes.telefone, '')) LIKE UPPER(?)
+                      )
+                    ORDER BY
+                        CASE WHEN UPPER(COALESCE(veiculos.placa, '')) = UPPER(?) THEN 0 ELSE 1 END,
+                        clientes.nome ASC,
+                        veiculos.placa ASC
+                    LIMIT ?
+                    """,
+                    (empresa_id, termo_like, termo_like, termo_like, termo_like, termo, int(limite)),
+                ),
+                [row_para_dict(row) for row in c.fetchall()],
+            )[1],
+        )
+        for item in veiculos:
             placa = normalizar_texto_campo(item.get("placa")).upper()
             cliente = normalizar_texto_campo(item.get("cliente_nome")) or "Cliente sem nome"
             telefone = normalizar_texto_campo(item.get("cliente_telefone"))
             modelo = normalizar_texto_campo(item.get("modelo"))
             partes = [valor for valor in [placa, modelo, telefone] if valor]
-            resultados.append({
-                "tipo": "veiculo",
-                "titulo": cliente,
-                "subtitulo": " | ".join(partes),
-                "placa": placa,
-                "cliente": cliente,
-                "telefone": telefone,
-                "modelo": modelo,
-                "url": f"/?placa={quote(placa)}" if placa else "/",
-            })
+            adicionar_resultado("veiculo", cliente, " | ".join(partes), placa, f"/?placa={quote(placa)}" if placa else "/")
+
+        if len(resultados) < int(limite):
+            historico = medir_consulta_sql(
+                "/api/busca-global",
+                "busca_historico_servicos",
+                lambda: (
+                    c.execute(
+                        """
+                        SELECT servicos.id, servicos.status, servicos.entrega, veiculos.placa, clientes.nome AS cliente_nome, tipos_servico.nome AS tipo_nome
+                        FROM servicos
+                        LEFT JOIN veiculos ON servicos.veiculo_id = veiculos.id
+                        LEFT JOIN clientes ON veiculos.cliente_id = clientes.id
+                        LEFT JOIN tipos_servico ON servicos.tipo_id = tipos_servico.id
+                        WHERE COALESCE(servicos.empresa_id, 1)=?
+                          AND (
+                              UPPER(COALESCE(veiculos.placa, '')) LIKE UPPER(?)
+                              OR UPPER(COALESCE(clientes.nome, '')) LIKE UPPER(?)
+                              OR UPPER(COALESCE(tipos_servico.nome, '')) LIKE UPPER(?)
+                          )
+                        ORDER BY servicos.id DESC
+                        LIMIT ?
+                        """,
+                        (empresa_id, termo_like, termo_like, termo_like, int(limite)),
+                    ),
+                    [row_para_dict(row) for row in c.fetchall()],
+                )[1],
+            )
+            for item in historico:
+                placa = normalizar_texto_campo(item.get("placa")).upper()
+                titulo = f"Servico: {item.get('tipo_nome') or 'Atendimento'}"
+                subtitulo = " | ".join([valor for valor in [placa, item.get("cliente_nome"), item.get("status")] if valor])
+                adicionar_resultado("servico", titulo, subtitulo, placa, f"/historico/servico/{item.get('id')}/editar?redirect_to=/historico")
+
+        if len(resultados) < int(limite):
+            try:
+                retornos = medir_consulta_sql(
+                    "/api/busca-global",
+                    "busca_retornos",
+                    lambda: (
+                        c.execute(
+                            """
+                            SELECT retornos_clientes.id, retornos_clientes.placa, retornos_clientes.status, retornos_clientes.proximo_contato_em, clientes.nome AS cliente_nome
+                            FROM retornos_clientes
+                            LEFT JOIN veiculos ON veiculos.placa = retornos_clientes.placa AND COALESCE(veiculos.empresa_id, 1)=?
+                            LEFT JOIN clientes ON clientes.id = veiculos.cliente_id
+                            WHERE (
+                                UPPER(COALESCE(retornos_clientes.placa, '')) LIKE UPPER(?)
+                                OR UPPER(COALESCE(clientes.nome, '')) LIKE UPPER(?)
+                            )
+                            ORDER BY retornos_clientes.id DESC
+                            LIMIT ?
+                            """,
+                            (empresa_id, termo_like, termo_like, int(limite)),
+                        ),
+                        [row_para_dict(row) for row in c.fetchall()],
+                    )[1],
+                )
+                for item in retornos:
+                    placa = normalizar_texto_campo(item.get("placa")).upper()
+                    subtitulo = " | ".join([valor for valor in [placa, item.get("cliente_nome"), item.get("status")] if valor])
+                    adicionar_resultado("retorno", "Retorno de cliente", subtitulo, placa, "/retornos")
+            except Exception:
+                pass
+
+        if len(resultados) < int(limite):
+            try:
+                orcamentos = medir_consulta_sql(
+                    "/api/busca-global",
+                    "busca_orcamentos",
+                    lambda: (
+                        c.execute(
+                            """
+                            SELECT id, numero, cliente_nome, placa, modelo, total, status
+                            FROM orcamentos
+                            WHERE COALESCE(empresa_id, 1)=?
+                              AND (
+                                  UPPER(COALESCE(cliente_nome, '')) LIKE UPPER(?)
+                                  OR UPPER(COALESCE(placa, '')) LIKE UPPER(?)
+                                  OR UPPER(COALESCE(modelo, '')) LIKE UPPER(?)
+                              )
+                            ORDER BY numero DESC
+                            LIMIT ?
+                            """,
+                            (empresa_id, termo_like, termo_like, termo_like, int(limite)),
+                        ),
+                        [row_para_dict(row) for row in c.fetchall()],
+                    )[1],
+                )
+                for item in orcamentos:
+                    placa = normalizar_texto_campo(item.get("placa")).upper()
+                    numero = formatar_numero_documento(item.get("numero"))
+                    subtitulo = " | ".join([valor for valor in [placa, item.get("cliente_nome"), item.get("status")] if valor])
+                    adicionar_resultado("orcamento", f"Orcamento {numero}", subtitulo, placa, "/orcamento")
+            except Exception:
+                pass
         return resultados
     except Exception as erro:
         registrar_ultimo_erro_producao(erro, descricao="busca_global_sistema")
@@ -15844,7 +16064,7 @@ def api_home_snapshot():
 
     resultado = {
         "hud": obter_payload_hud(),
-        "clima": obter_resultado_clima_api(),
+        "clima": obter_resultado_clima_api(permitir_rede=False),
         "sync": obter_payload_status_sync(),
     }
     HOME_SNAPSHOT_CACHE["testado_em"] = agora_cache_ts
@@ -17342,14 +17562,25 @@ def caches_central_tecnica():
 
 def montar_central_tecnica_desenvolvedor(filtro_erros="abertos"):
     filtro_erros = normalizar_filtro_erros_producao(filtro_erros)
-    status = montar_status_sistema_dono()
-    banco = estado_banco_central_tecnica()
-    rotas = scanner_rotas_central_tecnica()
-    caches = caches_central_tecnica()
+    status = medir_consulta_sql("/configuracoes/desenvolvedor", "status_sistema", montar_status_sistema_dono, origem="check")
+    banco = medir_consulta_sql("/configuracoes/desenvolvedor", "estado_banco", estado_banco_central_tecnica, origem="check")
+    rotas = medir_consulta_sql("/configuracoes/desenvolvedor", "scanner_rotas", scanner_rotas_central_tecnica, origem="check")
+    caches = medir_consulta_sql("/configuracoes/desenvolvedor", "caches_memoria", caches_central_tecnica, origem="memoria")
     tempo_resposta = metricas_tempo_resposta_central_tecnica()
-    contagem_erros = contar_erros_producao_por_status()
-    erros_abertos = listar_erros_producao(apenas_abertos=True, limite=12)
-    erros_recentes = listar_erros_producao(limite=12, filtro=filtro_erros)
+    contagem_erros = medir_consulta_sql("/configuracoes/desenvolvedor", "contagem_erros", contar_erros_producao_por_status, origem="arquivo")
+    erros_abertos = medir_consulta_sql(
+        "/configuracoes/desenvolvedor",
+        "erros_abertos",
+        lambda: listar_erros_producao(apenas_abertos=True, limite=12),
+        origem="arquivo",
+    )
+    erros_recentes = medir_consulta_sql(
+        "/configuracoes/desenvolvedor",
+        "erros_recentes",
+        lambda: listar_erros_producao(limite=12, filtro=filtro_erros),
+        origem="arquivo",
+    )
+    metricas_sql = obter_metricas_consultas_sql(limite=60)
     falhas_rotas = [item for item in rotas if not item.get("ok")]
     rotas_lentas = [item for item in rotas if item.get("tempo_classe") == "lento"]
     rotas_alerta_2s = [item for item in rotas if item.get("alerta_2s")]
@@ -17397,6 +17628,7 @@ def montar_central_tecnica_desenvolvedor(filtro_erros="abertos"):
         "rotas": rotas,
         "caches": caches,
         "tempo_resposta": tempo_resposta,
+        "metricas_sql": metricas_sql,
         "ranking_rotas_lentas": ranking_rotas_lentas,
         "erros_abertos": erros_abertos,
         "erros_recentes": erros_recentes,
@@ -19693,6 +19925,8 @@ def configuracoes(secao="meu-acesso"):
                 "rotas": [],
                 "caches": [],
                 "tempo_resposta": metricas_tempo_resposta_central_tecnica(),
+                "metricas_sql": obter_metricas_consultas_sql(limite=60),
+                "ranking_rotas_lentas": [],
                 "erros_abertos": listar_erros_producao(apenas_abertos=True, limite=12),
                 "erros_recentes": listar_erros_producao(limite=12, filtro=filtro_erros),
                 "erros_filtro": normalizar_filtro_erros_producao(filtro_erros),
@@ -22508,35 +22742,74 @@ def api_operacional_voz():
 
 def _carregar_dados_painel(conn):
     c = conn.cursor()
-    servicos_db = [dict(row) for row in consultar_servicos_em_andamento_domain(c, empresa_atual_id())]
     empresa_id = empresa_atual_id()
+    servicos_db = medir_consulta_sql(
+        "/painel",
+        "servicos_em_andamento",
+        lambda: [dict(row) for row in consultar_servicos_em_andamento_domain(c, empresa_id)],
+        detalhes="servicos + veiculos + clientes",
+    )
+    pendentes_perfil = [
+        servico
+        for servico in servicos_db
+        if not normalizar_texto_campo(servico.get("perfil_cliente_atendimento"))
+        and converter_inteiro(servico.get("veiculo_id"), 0)
+        and converter_inteiro(servico.get("id"), 0)
+    ]
+    historico_por_servico = {}
+    if pendentes_perfil:
+        ids = [converter_inteiro(servico.get("id"), 0) for servico in pendentes_perfil]
+        placeholders = ",".join(["?"] * len(ids))
+
+        def carregar_historico_perfil():
+            c.execute(
+                f"""
+                SELECT atual.id AS servico_id, COUNT(anteriores.id) AS anteriores
+                FROM servicos atual
+                LEFT JOIN servicos anteriores
+                  ON anteriores.empresa_id=atual.empresa_id
+                 AND anteriores.veiculo_id=atual.veiculo_id
+                 AND anteriores.id < atual.id
+                WHERE atual.empresa_id=?
+                  AND atual.id IN ({placeholders})
+                GROUP BY atual.id
+                """,
+                (empresa_id, *ids),
+            )
+            return {
+                converter_inteiro(row["servico_id"], 0): converter_inteiro(row["anteriores"], 0)
+                for row in c.fetchall()
+            }
+
+        historico_por_servico = medir_consulta_sql(
+            "/painel",
+            "perfil_novo_retorno_agregado",
+            carregar_historico_perfil,
+            detalhes="substitui N consultas por 1 agregacao",
+        )
+
     for servico in servicos_db:
         if normalizar_texto_campo(servico.get("perfil_cliente_atendimento")):
             continue
-        veiculo_id = converter_inteiro(servico.get("veiculo_id"), 0)
         servico_id = converter_inteiro(servico.get("id"), 0)
-        if not veiculo_id or not servico_id:
+        if not servico_id:
             servico["perfil_cliente_atendimento"] = "NOVO"
             continue
-        c.execute(
-            """
-            SELECT COUNT(*)
-            FROM servicos
-            WHERE empresa_id=? AND veiculo_id=? AND id < ?
-            """,
-            (empresa_id, veiculo_id, servico_id),
-        )
-        anteriores = converter_inteiro(c.fetchone()[0], 0)
+        anteriores = historico_por_servico.get(servico_id, 0)
         servico["perfil_cliente_atendimento"] = "RETORNO" if anteriores > 0 else "NOVO"
     agora_cache_ts = time.time()
     produtos_cache = PRODUTOS_PNEU_CACHE.get("resultado")
     if produtos_cache is not None and (
         agora_cache_ts - float(PRODUTOS_PNEU_CACHE.get("testado_em") or 0.0) < PRODUTOS_PNEU_CACHE_TTL
     ):
+        registrar_metrica_consulta_sql("/painel", "produtos_pneu", 0, origem="cache", cache_hit=True)
         produtos_pneu = list(produtos_cache)
     else:
-        c.execute("SELECT nome FROM produtos_pneu ORDER BY nome")
-        produtos_pneu = [row[0] for row in c.fetchall()]
+        produtos_pneu = medir_consulta_sql(
+            "/painel",
+            "produtos_pneu",
+            lambda: (c.execute("SELECT nome FROM produtos_pneu ORDER BY nome"), [row[0] for row in c.fetchall()])[1],
+        )
         PRODUTOS_PNEU_CACHE["testado_em"] = agora_cache_ts
         PRODUTOS_PNEU_CACHE["resultado"] = list(produtos_pneu)
     ids_servicos = [row["id"] for row in servicos_db]
@@ -22563,6 +22836,8 @@ def painel():
         chave_cache,
         PAINEL_CONTEXT_CACHE_TTL,
     )
+    if leitura_painel is not None:
+        registrar_metrica_consulta_sql("/painel", "snapshot_painel", 0, origem="cache", cache_hit=True)
     if leitura_painel is None:
         leitura_painel = executar_leitura_resiliente(
             lambda conn: _carregar_dados_painel(conn),

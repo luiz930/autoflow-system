@@ -269,6 +269,17 @@ body.responsive-page {
     padding: 12px;
 }
 
+.painel-mobile-details {
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    padding-top: 10px;
+}
+
+.painel-mobile-details summary {
+    cursor: pointer;
+    color: var(--text);
+    font-weight: 700;
+}
+
 .actions-row--left {
     justify-content: flex-start;
 }
@@ -1322,6 +1333,19 @@ iframe {
 
     .painel-service-card .page-card--soft {
         padding: 10px;
+    }
+
+    .painel-mobile-details {
+        border: 1px solid rgba(250, 204, 21, 0.2);
+        border-radius: 8px;
+        padding: 10px;
+        background: rgba(15, 23, 42, 0.35);
+    }
+
+    .painel-mobile-details summary {
+        min-height: 40px;
+        display: flex;
+        align-items: center;
     }
 
     .painel-quick-actions {

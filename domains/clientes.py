@@ -31,9 +31,10 @@ def consultar_registros_clientes(cursor, empresa_id, busca=""):
                 veiculos.placa LIKE ?
                 OR veiculos.modelo LIKE ?
                 OR clientes.nome LIKE ?
+                OR clientes.telefone LIKE ?
             )
         """
-        params.extend([termo, termo, termo])
+        params.extend([termo, termo, termo, termo])
 
     sql += " ORDER BY veiculos.id DESC"
     cursor.execute(sql, tuple(params))
