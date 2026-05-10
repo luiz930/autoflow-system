@@ -19,8 +19,8 @@
 </div>
 {% endif %}
 
-<div class="page-card page-card--soft">
-    <div class="actions-row actions-row--left">
+<div class="page-card page-card--soft painel-mobile-toolbar">
+    <div class="actions-row actions-row--left painel-quick-actions">
         <button type="button" id="vozToggleButton">Avisos por voz: ativados</button>
         <button type="button" id="vozTesteButton">Testar voz</button>
     </div>
@@ -29,7 +29,7 @@
 
 {% if servicos %}
 <div class="page-grid top-spacing">
-    <div class="page-card page-card--soft">
+    <div class="page-card page-card--soft painel-resumo-card">
         <p class="pill-label">Resumo do fluxo</p>
         <p><b>Em atendimento:</b> {{ resumo_fluxo.total }}</p>
         <p><b>Na lavagem:</b> {{ resumo_fluxo.lavagem }}</p>
@@ -53,7 +53,7 @@
 <div class="page-grid top-spacing">
 {% for s in servicos_bloco %}
 <div
-    class="page-card js-servico-card"
+    class="page-card painel-service-card js-servico-card"
     data-servico-id="{{ s.id }}"
     data-placa="{{ s.placa }}"
     data-modelo="{{ s.modelo }}"
@@ -119,7 +119,7 @@
         </div>
     </div>
 
-    <div class="actions-row actions-row--left top-spacing">
+    <div class="actions-row actions-row--left top-spacing painel-quick-actions">
         <a href="/prioridade/{{ s.id }}/up" class="button-link">
             <button type="button">Subir</button>
         </a>
@@ -183,7 +183,7 @@
             </div>
         </div>
 
-        <div class="actions-row actions-row--left">
+        <div class="actions-row actions-row--left painel-quick-actions">
             <button type="submit" name="acao" value="salvar">Salvar operacional</button>
             <button type="submit" name="acao" value="finalizar">Abrir checklist de finalizacao</button>
         </div>

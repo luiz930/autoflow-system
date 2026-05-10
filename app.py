@@ -3924,6 +3924,12 @@ HOME_SNAPSHOT_CACHE = {
     "resultado": None,
 }
 HOME_SNAPSHOT_CACHE_TTL = 45
+DASHBOARD_DIA_CACHE = {
+    "testado_em": 0.0,
+    "chave": "",
+    "resultado": None,
+}
+DASHBOARD_DIA_CACHE_TTL = 45
 NOTIFICACOES_CACHE = {
     "testado_em": 0.0,
     "usuario": "",
@@ -4096,6 +4102,9 @@ def limpar_caches_interface():
     HOME_SNAPSHOT_CACHE["testado_em"] = 0.0
     HOME_SNAPSHOT_CACHE["usuario"] = ""
     HOME_SNAPSHOT_CACHE["resultado"] = None
+    DASHBOARD_DIA_CACHE["testado_em"] = 0.0
+    DASHBOARD_DIA_CACHE["chave"] = ""
+    DASHBOARD_DIA_CACHE["resultado"] = None
     NOTIFICACOES_CACHE["testado_em"] = 0.0
     NOTIFICACOES_CACHE["usuario"] = ""
     NOTIFICACOES_CACHE["resultado"] = None
@@ -4189,6 +4198,9 @@ def limpar_caches_operacionais_leves():
     HOME_SNAPSHOT_CACHE["testado_em"] = 0.0
     HOME_SNAPSHOT_CACHE["usuario"] = ""
     HOME_SNAPSHOT_CACHE["resultado"] = None
+    DASHBOARD_DIA_CACHE["testado_em"] = 0.0
+    DASHBOARD_DIA_CACHE["chave"] = ""
+    DASHBOARD_DIA_CACHE["resultado"] = None
     STATUS_SYNC_CACHE["testado_em"] = 0.0
     STATUS_SYNC_CACHE["usuario"] = ""
     STATUS_SYNC_CACHE["resultado"] = None
@@ -4210,6 +4222,9 @@ def chave_cache_auto_suporte():
         str(session.get("usuario") or ""),
         str(session.get("usuario_perfil") or ""),
         str(session.get("empresa_id") or empresa_atual_id() or ""),
+        str(AUTO_SUPORTE_HISTORICO_ARQUIVO),
+        str(AUTO_SUPORTE_ESTADO_ARQUIVO),
+        str(ERROS_PRODUCAO_ARQUIVO),
     ])
 
 
@@ -14810,6 +14825,7 @@ def buscar_cliente_api(placa):
 
     conn = conectar()
     c = conn.cursor()
+    empresa_id = empresa_atual_id()
 
     c.execute("""
         SELECT 
@@ -14820,7 +14836,8 @@ def buscar_cliente_api(placa):
         FROM veiculos
         LEFT JOIN clientes ON clientes.id = veiculos.cliente_id
         WHERE veiculos.placa=?
-    """, (placa.upper(),))
+          AND COALESCE(veiculos.empresa_id, 1)=?
+    """, (placa.upper(), empresa_id))
 
     dados = c.fetchone()
     conn.close()
@@ -14835,6 +14852,83 @@ def buscar_cliente_api(placa):
         "modelo": dados["modelo"],
         "placa": dados["placa"]
     }
+
+
+def buscar_global_sistema(termo, limite=8):
+    termo = normalizar_texto_campo(termo)
+    if len(termo) < 2:
+        return []
+
+    termo_like = f"%{termo}%"
+    empresa_id = empresa_atual_id()
+    conn = None
+    try:
+        conn = conectar()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT
+                veiculos.placa,
+                veiculos.modelo,
+                clientes.nome AS cliente_nome,
+                clientes.telefone AS cliente_telefone
+            FROM veiculos
+            LEFT JOIN clientes ON clientes.id = veiculos.cliente_id
+            WHERE COALESCE(veiculos.empresa_id, 1)=?
+              AND (
+                  UPPER(COALESCE(veiculos.placa, '')) LIKE UPPER(?)
+                  OR UPPER(COALESCE(veiculos.modelo, '')) LIKE UPPER(?)
+                  OR UPPER(COALESCE(clientes.nome, '')) LIKE UPPER(?)
+                  OR UPPER(COALESCE(clientes.telefone, '')) LIKE UPPER(?)
+              )
+            ORDER BY
+                CASE WHEN UPPER(COALESCE(veiculos.placa, '')) = UPPER(?) THEN 0 ELSE 1 END,
+                clientes.nome ASC,
+                veiculos.placa ASC
+            LIMIT ?
+            """,
+            (empresa_id, termo_like, termo_like, termo_like, termo_like, termo, int(limite)),
+        )
+        resultados = []
+        for row in c.fetchall():
+            item = row_para_dict(row)
+            placa = normalizar_texto_campo(item.get("placa")).upper()
+            cliente = normalizar_texto_campo(item.get("cliente_nome")) or "Cliente sem nome"
+            telefone = normalizar_texto_campo(item.get("cliente_telefone"))
+            modelo = normalizar_texto_campo(item.get("modelo"))
+            partes = [valor for valor in [placa, modelo, telefone] if valor]
+            resultados.append({
+                "tipo": "veiculo",
+                "titulo": cliente,
+                "subtitulo": " | ".join(partes),
+                "placa": placa,
+                "cliente": cliente,
+                "telefone": telefone,
+                "modelo": modelo,
+                "url": f"/?placa={quote(placa)}" if placa else "/",
+            })
+        return resultados
+    except Exception as erro:
+        registrar_ultimo_erro_producao(erro, descricao="busca_global_sistema")
+        return []
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+
+@app.route("/api/busca-global")
+def api_busca_global():
+    if not session.get("usuario"):
+        return jsonify({"erro": "nao autorizado"}), 401
+    termo = (request.args.get("q") or "").strip()
+    return jsonify({
+        "ok": True,
+        "termo": termo,
+        "resultados": buscar_global_sistema(termo),
+    })
 
 @app.route("/orcamento")
 def pagina_orcamento():
@@ -15746,6 +15840,138 @@ def obter_payload_status_sync():
 def status_sync():
     return jsonify(obter_payload_status_sync())
 
+
+def valor_escalar_consulta(cursor, sql, parametros=(), campo="total", padrao=0):
+    cursor.execute(sql, parametros)
+    row = row_para_dict(cursor.fetchone())
+    if not row:
+        return padrao
+    return row.get(campo, padrao)
+
+
+def obter_dashboard_dia():
+    usuario_cache = str(session.get("usuario") or "")
+    empresa_id = empresa_atual_id()
+    hoje_iso = agora().date().isoformat()
+    chave_cache = f"{usuario_cache}|{empresa_id}|{hoje_iso}"
+    leitura_cache = obter_cache_consulta(DASHBOARD_DIA_CACHE, chave_cache, DASHBOARD_DIA_CACHE_TTL)
+    if leitura_cache is not None:
+        return leitura_cache
+
+    inicio = time.perf_counter()
+    resultado = {
+        "servicos_em_andamento": 0,
+        "faturamento_dia": "0,00",
+        "faturamento_dia_num": 0.0,
+        "entregas_atrasadas": 0,
+        "retornos_pendentes": 0,
+        "alertas": [],
+        "consultas_ms": {},
+        "gerado_em": agora_iso(),
+    }
+    conn = None
+    try:
+        conn = conectar()
+        c = conn.cursor()
+        agora_referencia = agora().isoformat(timespec="seconds")
+        inicio_dia = f"{hoje_iso}%"
+
+        consulta_inicio = time.perf_counter()
+        resultado["servicos_em_andamento"] = int(valor_escalar_consulta(
+            c,
+            """
+            SELECT COUNT(*) AS total
+            FROM servicos
+            WHERE COALESCE(empresa_id, 1)=?
+              AND UPPER(COALESCE(status, ''))='EM ANDAMENTO'
+            """,
+            (empresa_id,),
+        ) or 0)
+        resultado["consultas_ms"]["servicos_em_andamento"] = int((time.perf_counter() - consulta_inicio) * 1000)
+
+        consulta_inicio = time.perf_counter()
+        faturamento = valor_escalar_consulta(
+            c,
+            """
+            SELECT COALESCE(SUM(COALESCE(valor, 0)), 0) AS total
+            FROM servicos
+            WHERE COALESCE(empresa_id, 1)=?
+              AND UPPER(COALESCE(status, ''))='FINALIZADO'
+              AND COALESCE(entrega, '') LIKE ?
+            """,
+            (empresa_id, inicio_dia),
+        ) or 0
+        faturamento_num = float(faturamento or 0)
+        resultado["faturamento_dia_num"] = round(faturamento_num, 2)
+        resultado["faturamento_dia"] = formatar_valor_monetario(faturamento_num)
+        resultado["consultas_ms"]["faturamento_dia"] = int((time.perf_counter() - consulta_inicio) * 1000)
+
+        consulta_inicio = time.perf_counter()
+        resultado["entregas_atrasadas"] = int(valor_escalar_consulta(
+            c,
+            """
+            SELECT COUNT(*) AS total
+            FROM servicos
+            WHERE COALESCE(empresa_id, 1)=?
+              AND UPPER(COALESCE(status, ''))='EM ANDAMENTO'
+              AND COALESCE(entrega_prevista, '') <> ''
+              AND entrega_prevista < ?
+            """,
+            (empresa_id, agora_referencia),
+        ) or 0)
+        resultado["consultas_ms"]["entregas_atrasadas"] = int((time.perf_counter() - consulta_inicio) * 1000)
+
+        consulta_inicio = time.perf_counter()
+        resultado["retornos_pendentes"] = int(valor_escalar_consulta(
+            c,
+            """
+            SELECT COUNT(*) AS total
+            FROM retornos_clientes
+            WHERE LOWER(COALESCE(status, 'pendente')) IN ('pendente', 'reagendado')
+              AND EXISTS (
+                  SELECT 1
+                  FROM veiculos
+                  WHERE veiculos.placa = retornos_clientes.placa
+                    AND COALESCE(veiculos.empresa_id, 1)=?
+              )
+            """,
+            (empresa_id,),
+        ) or 0)
+        resultado["consultas_ms"]["retornos_pendentes"] = int((time.perf_counter() - consulta_inicio) * 1000)
+
+        if resultado["entregas_atrasadas"]:
+            resultado["alertas"].append(f"{resultado['entregas_atrasadas']} entrega(s) atrasada(s)")
+        if resultado["retornos_pendentes"]:
+            resultado["alertas"].append(f"{resultado['retornos_pendentes']} retorno(s) pendente(s)")
+
+        rotas_lentas = [
+            item.get("rota")
+            for item in metricas_tempo_resposta_central_tecnica()
+            if item.get("alerta_2s") or item.get("classe") == "lento"
+        ]
+        if rotas_lentas:
+            resultado["alertas"].append(f"Rota lenta: {', '.join(rotas_lentas[:2])}")
+
+        status_banco = obter_status_banco_online()
+        if not status_banco.get("conectado"):
+            resultado["alertas"].append("Banco online indisponivel")
+
+    except Exception as erro:
+        registrar_ultimo_erro_producao(erro, descricao="dashboard_dia")
+        resultado["erro"] = str(erro)
+        resultado["alertas"].append("Dashboard do dia carregou em modo reduzido")
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+    resultado["total_ms"] = int((time.perf_counter() - inicio) * 1000)
+    salvar_cache_consulta(DASHBOARD_DIA_CACHE, chave_cache, resultado)
+    return resultado
+
+
 @app.route("/api/home-snapshot")
 def api_home_snapshot():
     if not session.get("usuario"):
@@ -15761,6 +15987,7 @@ def api_home_snapshot():
 
     resultado = {
         "hud": obter_payload_hud(),
+        "dashboard": obter_dashboard_dia(),
         "clima": obter_resultado_clima_api(),
         "sync": obter_payload_status_sync(),
     }
@@ -16563,7 +16790,19 @@ def contar_erros_producao_por_status():
     erros = carregar_erros_producao()
     resolvidos = sum(1 for item in erros if item.get("resolvido"))
     abertos = len(erros) - resolvidos
-    return {"abertos": abertos, "resolvidos": resolvidos, "todos": len(erros)}
+    testes = sum(1 for item in erros if item.get("origem") == "teste")
+    reais = len(erros) - testes
+    reais_abertos = sum(1 for item in erros if not item.get("resolvido") and item.get("origem") != "teste")
+    testes_abertos = sum(1 for item in erros if not item.get("resolvido") and item.get("origem") == "teste")
+    return {
+        "abertos": abertos,
+        "resolvidos": resolvidos,
+        "todos": len(erros),
+        "teste": testes,
+        "reais": reais,
+        "reais_abertos": reais_abertos,
+        "testes_abertos": testes_abertos,
+    }
 
 
 def salvar_registro_erro_producao(registro):
@@ -17228,6 +17467,7 @@ def caches_central_tecnica():
     return [
         resumo_cache_central("HUD", HUD_CACHE, HUD_CACHE_TTL, "usuario"),
         resumo_cache_central("Home snapshot", HOME_SNAPSHOT_CACHE, HOME_SNAPSHOT_CACHE_TTL, "usuario"),
+        resumo_cache_central("Dashboard do dia", DASHBOARD_DIA_CACHE, DASHBOARD_DIA_CACHE_TTL),
         resumo_cache_central("Notificacoes", NOTIFICACOES_CACHE, NOTIFICACOES_CACHE_TTL, "usuario"),
         resumo_cache_central("Status sync", STATUS_SYNC_CACHE, STATUS_SYNC_CACHE_TTL, "usuario"),
         resumo_cache_central("Clientes", CLIENTES_CONTEXT_CACHE, CLIENTES_CONTEXT_CACHE_TTL),
@@ -17261,6 +17501,40 @@ def montar_central_tecnica_desenvolvedor(filtro_erros="abertos"):
     paginas_lentas = [item for item in tempo_resposta if item.get("classe") == "lento"]
     paginas_alerta_2s = [item for item in tempo_resposta if item.get("alerta_2s")]
     paginas_pioraram = [item for item in tempo_resposta if item.get("tendencia") == "piorou"]
+    ranking_rotas_lentas = sorted(
+        [
+            {
+                "tipo": "pagina",
+                "rota": item.get("rota"),
+                "nome": item.get("rota"),
+                "tempo_ms": int(item.get("ultimo_ms") or 0),
+                "media_ms": int(item.get("media_ms") or 0),
+                "status": item.get("status") or "-",
+                "tendencia": item.get("tendencia") or "estavel",
+                "tendencia_label": item.get("tendencia_label") or "Estavel",
+                "causa_provavel": item.get("causa_provavel") or "",
+                "alerta_2s": bool(item.get("alerta_2s")),
+            }
+            for item in tempo_resposta
+            if int(item.get("ultimo_ms") or 0) > 0
+        ] + [
+            {
+                "tipo": "scanner",
+                "rota": item.get("caminho"),
+                "nome": item.get("nome"),
+                "tempo_ms": int(item.get("tempo_ms") or 0),
+                "media_ms": 0,
+                "status": item.get("status") or "erro",
+                "tendencia": "estavel",
+                "tendencia_label": "Medicao atual",
+                "causa_provavel": item.get("causa_provavel") or "",
+                "alerta_2s": bool(item.get("alerta_2s")),
+            }
+            for item in rotas
+        ],
+        key=lambda item: int(item.get("tempo_ms") or 0),
+        reverse=True,
+    )[:10]
     return {
         "gerado_em": agora_iso(),
         "saude": status,
@@ -17268,6 +17542,7 @@ def montar_central_tecnica_desenvolvedor(filtro_erros="abertos"):
         "rotas": rotas,
         "caches": caches,
         "tempo_resposta": tempo_resposta,
+        "ranking_rotas_lentas": ranking_rotas_lentas,
         "erros_abertos": erros_abertos,
         "erros_recentes": erros_recentes,
         "erros_filtro": filtro_erros,
@@ -18335,9 +18610,11 @@ def limpar_cache_rota_lenta_auto_suporte(tempo_resposta=None):
     if rota == "/":
         HOME_SNAPSHOT_CACHE["testado_em"] = 0.0
         HOME_SNAPSHOT_CACHE["resultado"] = None
+        DASHBOARD_DIA_CACHE["testado_em"] = 0.0
+        DASHBOARD_DIA_CACHE["resultado"] = None
         HUD_CACHE["testado_em"] = 0.0
         HUD_CACHE["resultado"] = None
-        caches.extend(["home_snapshot", "hud"])
+        caches.extend(["home_snapshot", "dashboard_dia", "hud"])
     elif rota == "/clientes":
         limpar_cache_clientes()
         caches.append("clientes")
@@ -19149,6 +19426,9 @@ def auto_suporte_json():
 def pagina_auto_suporte_acao():
     if not session.get("usuario"):
         return redirect("/login")
+    redirect_to = normalizar_texto_campo(request.form.get("redirect_to")) or "/auto-suporte"
+    if not redirect_to.startswith("/"):
+        redirect_to = "/auto-suporte"
     if not usuario_pode_usar_auto_suporte():
         definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem executar o AutoSuporte.")
         return redirect("/")
@@ -19168,7 +19448,7 @@ def pagina_auto_suporte_acao():
             "tipo": "erro",
             "mensagem": f"Nao foi possivel executar a acao: {erro}",
         }
-    return redirect("/auto-suporte")
+    return redirect(redirect_to)
 
 
 @app.route("/api/auto-suporte/acao", methods=["POST"])

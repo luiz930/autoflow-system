@@ -307,6 +307,47 @@ input, select {
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.24);
 }
 
+.daily-dashboard {
+    width: min(100%, 860px);
+    margin: 0 auto 24px;
+    padding: 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(var(--primary-rgb), 0.22);
+    background: linear-gradient(180deg, rgba(var(--surface-rgb), 0.96), rgba(var(--background-rgb), 0.92));
+}
+
+.daily-dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.daily-dashboard-item {
+    padding: 12px;
+    border-radius: 10px;
+    background: rgba(var(--background-rgb), 0.56);
+    border: 1px solid rgba(var(--primary-rgb), 0.13);
+}
+
+.daily-dashboard-item span {
+    display: block;
+    color: rgba(var(--text-rgb), 0.68);
+    font-size: 0.76rem;
+}
+
+.daily-dashboard-item strong {
+    display: block;
+    margin-top: 5px;
+    color: var(--text);
+    font-size: 1.1rem;
+}
+
+.daily-dashboard-alerts {
+    margin: 12px 0 0;
+    color: rgba(var(--text-rgb), 0.78);
+    font-size: 0.9rem;
+}
+
 .hud-shell-label {
     margin: 0 0 12px;
     color: rgba(var(--primary-rgb), 0.9);
@@ -1337,6 +1378,10 @@ input[type="file"] {
         padding: 14px;
     }
 
+    .daily-dashboard-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .home-page .card,
     .home-page .card-cliente {
         padding: 16px;
@@ -1480,6 +1525,28 @@ input[type="file"] {
     <div id="relogio"></div>
 </div>
 {% endif %}
+
+<section class="daily-dashboard" aria-label="Indicadores do dia">
+    <div class="daily-dashboard-grid">
+        <div class="daily-dashboard-item">
+            <span>Em andamento</span>
+            <strong id="dashboardServicosAndamento">0</strong>
+        </div>
+        <div class="daily-dashboard-item">
+            <span>Faturamento hoje</span>
+            <strong id="dashboardFaturamentoDia">R$ 0,00</strong>
+        </div>
+        <div class="daily-dashboard-item">
+            <span>Entregas atrasadas</span>
+            <strong id="dashboardEntregasAtrasadas">0</strong>
+        </div>
+        <div class="daily-dashboard-item">
+            <span>Retornos pendentes</span>
+            <strong id="dashboardRetornosPendentes">0</strong>
+        </div>
+    </div>
+    <p class="daily-dashboard-alerts" id="dashboardAlertasDia">Carregando indicadores...</p>
+</section>
 
 <!-- ESTADO INICIAL -->
 {% if not buscou %}
@@ -2671,6 +2738,24 @@ function montarLinhasHud(agora) {
     ].filter(Boolean);
 }
 
+function aplicarDashboardDia(dashboard) {
+    if (!dashboard) return;
+    const andamento = document.getElementById("dashboardServicosAndamento");
+    const faturamento = document.getElementById("dashboardFaturamentoDia");
+    const atrasadas = document.getElementById("dashboardEntregasAtrasadas");
+    const retornos = document.getElementById("dashboardRetornosPendentes");
+    const alertas = document.getElementById("dashboardAlertasDia");
+
+    if (andamento) andamento.textContent = dashboard.servicos_em_andamento ?? 0;
+    if (faturamento) faturamento.textContent = `R$ ${dashboard.faturamento_dia || "0,00"}`;
+    if (atrasadas) atrasadas.textContent = dashboard.entregas_atrasadas ?? 0;
+    if (retornos) retornos.textContent = dashboard.retornos_pendentes ?? 0;
+    if (alertas) {
+        const lista = Array.isArray(dashboard.alertas) ? dashboard.alertas.filter(Boolean) : [];
+        alertas.textContent = lista.length ? lista.join(" | ") : "Operacao do dia sem alerta critico.";
+    }
+}
+
 async function atualizarHomeSnapshot() {
     if (hudExecutando || document.hidden) {
         return;
@@ -2708,6 +2793,7 @@ async function atualizarHomeSnapshot() {
             }
         }
 
+        aplicarDashboardDia(data.dashboard);
         aplicarEstadoClima(data.clima);
         aplicarEstadoSincronizacao(data.sync);
     } catch (e) {

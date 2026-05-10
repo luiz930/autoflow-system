@@ -211,6 +211,64 @@ body.responsive-page {
     justify-content: center;
 }
 
+.global-search {
+    position: relative;
+    flex: 1 1 280px;
+    max-width: 420px;
+    min-width: 240px;
+}
+
+.global-search input[type="search"] {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(250, 204, 21, 0.26);
+    background: rgba(15, 23, 42, 0.72);
+    color: var(--text);
+}
+
+.global-search-results {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: 80;
+    overflow: hidden;
+    border: 1px solid rgba(250, 204, 21, 0.24);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.98);
+    box-shadow: 0 18px 38px rgba(0, 0, 0, 0.35);
+}
+
+.global-search-result {
+    display: grid;
+    width: 100%;
+    gap: 2px;
+    padding: 10px 12px;
+    border: 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 0;
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+    box-shadow: none;
+}
+
+.global-search-result:hover,
+.global-search-result:focus {
+    background: rgba(250, 204, 21, 0.12);
+}
+
+.global-search-result small,
+.global-search-empty {
+    color: var(--muted);
+}
+
+.global-search-empty {
+    padding: 12px;
+}
+
 .actions-row--left {
     justify-content: flex-start;
 }
@@ -1224,6 +1282,56 @@ iframe {
     }
 
     .stack-form {
+        width: 100%;
+    }
+
+    .page-header {
+        align-items: stretch;
+    }
+
+    .global-search {
+        width: 100%;
+        max-width: none;
+        min-width: 0;
+    }
+
+    .global-search-results {
+        position: static;
+        margin-top: 8px;
+    }
+
+    .painel-mobile-toolbar,
+    .painel-resumo-card,
+    .painel-service-card {
+        padding: 12px;
+    }
+
+    .painel-service-card {
+        display: grid;
+        gap: 8px;
+    }
+
+    .painel-service-card p {
+        margin: 4px 0;
+    }
+
+    .painel-service-card .section-title {
+        margin-bottom: 4px;
+        font-size: 1.02rem;
+    }
+
+    .painel-service-card .page-card--soft {
+        padding: 10px;
+    }
+
+    .painel-quick-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .painel-quick-actions .button-link,
+    .painel-quick-actions button {
         width: 100%;
     }
 

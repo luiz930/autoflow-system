@@ -473,6 +473,13 @@ body.responsive-page.sidebar-open {
             </div>
         </div>
 
+        {% if session.get("usuario") %}
+        <form class="global-search" role="search" autocomplete="off">
+            <input id="globalSearchInput" name="q" type="search" placeholder="Buscar placa, cliente ou telefone" aria-label="Buscar placa, cliente ou telefone">
+            <div id="globalSearchResults" class="global-search-results" hidden></div>
+        </form>
+        {% endif %}
+
         <div class="actions-row">
             {% block actions %}{% endblock %}
         </div>
@@ -565,6 +572,93 @@ function toggleSidebar() {
     };
 })();
 </script>
+
+{% if session.get("usuario") %}
+<script>
+(function configurarBuscaGlobal() {
+    const form = document.querySelector(".global-search");
+    const input = document.getElementById("globalSearchInput");
+    const results = document.getElementById("globalSearchResults");
+    if (!form || !input || !results) return;
+
+    let timer = null;
+    let controller = null;
+    let itens = [];
+
+    function esconder() {
+        results.hidden = true;
+        results.innerHTML = "";
+        itens = [];
+    }
+
+    function renderizar(lista) {
+        itens = Array.isArray(lista) ? lista : [];
+        if (!itens.length) {
+            results.innerHTML = '<div class="global-search-empty">Nenhum resultado encontrado.</div>';
+            results.hidden = false;
+            return;
+        }
+
+        const escapar = (valor) => String(valor || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+
+        results.innerHTML = itens.map((item, index) => `
+            <button type="button" class="global-search-result" data-index="${index}">
+                <span>${escapar(item.titulo || "Cliente")}</span>
+                <small>${escapar(item.subtitulo || item.placa || "")}</small>
+            </button>
+        `).join("");
+        results.hidden = false;
+    }
+
+    async function buscar() {
+        const termo = input.value.trim();
+        if (termo.length < 2) {
+            esconder();
+            return;
+        }
+        if (controller) controller.abort();
+        controller = new AbortController();
+        try {
+            const resposta = await fetch(`/api/busca-global?q=${encodeURIComponent(termo)}`, {
+                cache: "no-store",
+                signal: controller.signal,
+            });
+            const data = await resposta.json();
+            renderizar(data.resultados || []);
+        } catch (erro) {
+            if (erro.name !== "AbortError") esconder();
+        }
+    }
+
+    input.addEventListener("input", () => {
+        clearTimeout(timer);
+        timer = setTimeout(buscar, 220);
+    });
+
+    results.addEventListener("click", (event) => {
+        const botao = event.target.closest(".global-search-result");
+        if (!botao) return;
+        const item = itens[Number(botao.dataset.index)];
+        if (item && item.url) window.location.href = item.url;
+    });
+
+    form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const primeiro = itens[0];
+        const termo = input.value.trim().toUpperCase();
+        window.location.href = primeiro && primeiro.url ? primeiro.url : `/?placa=${encodeURIComponent(termo)}`;
+    });
+
+    document.addEventListener("click", (event) => {
+        if (!form.contains(event.target)) esconder();
+    });
+})();
+</script>
+{% endif %}
 
 <script>
 let baseSyncToken = "";
