@@ -5,6 +5,11 @@
 {% block subtitulo %}Linha do tempo de desenvolvimento, marcos tecnicos e historico de alteracoes{% endblock %}
 
 {% block actions %}
+{% if changelog_resumo.github_url %}
+<a href="{{ changelog_resumo.github_url }}" class="button-link" target="_blank" rel="noopener">
+    <button type="button">Abrir GitHub</button>
+</a>
+{% endif %}
 <a href="/" class="button-link">
     <button type="button">Voltar</button>
 </a>
@@ -22,26 +27,51 @@
     <div class="page-card">
         <p class="pill-label">Commits rastreados</p>
         <h2 class="section-title top-spacing">{{ changelog_resumo.total_commits }}</h2>
-        <p class="muted-text">Historico lido do repositorio Git.</p>
+        <p class="muted-text">Historico lido automaticamente do Git.</p>
     </div>
 
     <div class="page-card">
-        <p class="pill-label">Inicio do historico</p>
-        <h2 class="section-title top-spacing">{{ changelog_resumo.primeiro_commit_em }}</h2>
-        <p class="muted-text">Primeiro commit encontrado no projeto.</p>
+        <p class="pill-label">GitHub</p>
+        <h2 class="section-title top-spacing">
+            {% if changelog_resumo.github_owner_repo %}
+            {{ changelog_resumo.github_owner_repo }}
+            {% else %}
+            Nao conectado
+            {% endif %}
+        </h2>
+        <p class="muted-text">
+            {% if changelog_resumo.github_url %}
+            Repositorio remoto origin conectado.
+            {% else %}
+            Configure um remote origin do GitHub para habilitar links.
+            {% endif %}
+        </p>
     </div>
 
     <div class="page-card">
-        <p class="pill-label">Ultima revisao</p>
+        <p class="pill-label">Sincronizacao</p>
         <h2 class="section-title top-spacing">{{ changelog_resumo.ultimo_commit_em }}</h2>
-        <p class="muted-text">Branch {{ changelog_resumo.branch_atual }} | HEAD {{ changelog_resumo.hash_atual }}</p>
+        <p class="muted-text">
+            Branch {{ changelog_resumo.branch_atual }} | HEAD {{ changelog_resumo.hash_atual }}
+            {% if changelog_resumo.github_upstream %}
+            | {{ changelog_resumo.github_upstream }}
+            {% endif %}
+        </p>
     </div>
 </div>
 
 <div class="page-card top-spacing">
     <p class="muted-text">
-        Esta pagina usa o historico real do repositorio como changelog oficial.
+        Esta pagina usa o historico real do repositorio como changelog oficial, sem cadastro manual de mudancas.
         Gerado em {{ changelog_gerado_em }}.
+        {% if changelog_resumo.github_upstream %}
+        Status GitHub:
+        {% if changelog_resumo.github_sincronizado %}
+        sincronizado com {{ changelog_resumo.github_upstream }}.
+        {% else %}
+        {{ changelog_resumo.github_ahead }} commit(s) local(is) a frente e {{ changelog_resumo.github_behind }} commit(s) atras.
+        {% endif %}
+        {% endif %}
         {% if not changelog_resumo.tem_git %}
         O historico Git nao ficou disponivel neste ambiente.
         {% endif %}
@@ -49,46 +79,22 @@
 </div>
 
 <div class="page-card top-spacing">
-    <p class="pill-label">Release atual</p>
-    <h2 class="section-title top-spacing">0.13.0 - Beta</h2>
-    <p class="muted-text">Base de produto preparada para operacao em cliente real: PWA instalavel no Android com HTTPS, configuracoes separadas e mais leves, painel otimizado, empresas e licencas com assinatura, diagnostico, monitoramento por Telegram, melhorias de banco online e correcoes de fluxo de atendimento.</p>
-
-    <div class="top-spacing">
-        <h3 class="section-title">Commits incluidos desde 0.11.7</h3>
-        <div class="stack-form stack-form--wide top-spacing">
-            <p class="muted-text"><b>a76ca74</b> - Ajusta caches e snapshot para acelerar carregamento</p>
-            <p class="muted-text"><b>800d7a7</b> - Endurece seguranca e migrations</p>
-            <p class="muted-text"><b>aaea4f5</b> - Adiciona empresas licencas e diagnostico</p>
-            <p class="muted-text"><b>9ef3605</b> - Adiciona licenciamento assinado e suporte</p>
-            <p class="muted-text"><b>89f0e29</b> - Ajusta geracao de licenca por desenvolvedor</p>
-            <p class="muted-text"><b>7498d2b</b> - Trata falha de banco e otimiza carregamento</p>
-            <p class="muted-text"><b>9c26c33</b> - Amplia tratamento de erro do banco</p>
-            <p class="muted-text"><b>98d853b</b> - Adiciona controle de paginas e HUD</p>
-            <p class="muted-text"><b>5e2b545</b> - Otimiza configuracoes apos salvar</p>
-            <p class="muted-text"><b>5444aff</b> - Divide configuracoes em secoes leves</p>
-            <p class="muted-text"><b>dd628f7</b> - Otimiza carregamento do painel</p>
-            <p class="muted-text"><b>f73de49</b> - Adiciona PWA instalavel no Android</p>
-            <p class="muted-text"><b>d2603d6</b> - Corrige versao no login e textos da home</p>
-            <p class="muted-text"><b>aaeb5e0</b> - Corrige escopo do PWA instalavel</p>
-            <p class="muted-text"><b>5c1cf33</b> - Permitir selecionar fotos da galeria</p>
-            <p class="muted-text"><b>fe65f1c</b> - Adicionar testes periodicos com alerta Telegram</p>
-            <p class="muted-text"><b>0fcaae0</b> - Permite escolher camera ou galeria nos uploads</p>
-            <p class="muted-text"><b>af24476</b> - Corrige classificacao de clientes novos e retornos</p>
-            <p class="muted-text"><b>bfd03a0</b> - Adiciona auto teste com Telegram</p>
-            <p class="muted-text"><b>b772437</b> - Corrige erro no auto teste Telegram</p>
-            <p class="muted-text"><b>ca27ffc</b> - Evita timeout no auto teste manual</p>
-            <p class="muted-text"><b>b28244c</b> - Adiciona central tecnica do desenvolvedor</p>
-            <p class="muted-text"><b>fea79fc</b> - Bloqueia atendimento duplicado em andamento</p>
-            <p class="muted-text"><b>207dbcd</b> - Adiciona AutoSuporte seguro</p>
-            <p class="muted-text"><b>c0338ca</b> - Inclui AutoSuporte na home</p>
-            <p class="muted-text"><b>Rodada atual</b> - Central de erros 500, monitor real de tempo de resposta, AutoSuporte com painel proprio, diagnostico inteligente, historico, alertas melhores, acoes seguras reais, monitoramento de regras de negocio, erro bonito para falhas criticas e trava definitiva para classificar novo cadastro ou retorno.</p>
-        </div>
+    <p class="pill-label">Atualizacoes recentes</p>
+    <h2 class="section-title top-spacing">Ultimos commits publicados</h2>
+    <div class="stack-form stack-form--wide top-spacing">
+        {% for item in changelog_commits_recentes %}
+        <p class="muted-text">
+            {% if item.url %}
+            <a href="{{ item.url }}" target="_blank" rel="noopener"><b>{{ item.hash_curto }}</b></a>
+            {% else %}
+            <b>{{ item.hash_curto }}</b>
+            {% endif %}
+            - {{ item.assunto }} <span class="status-badge status-badge--muted">{{ item.data_label }}</span>
+        </p>
+        {% else %}
+        <p class="muted-text">Nenhum commit recente encontrado.</p>
+        {% endfor %}
     </div>
-
-    <details class="top-spacing">
-        <summary>Release anterior 0.11.7</summary>
-        <p class="muted-text top-spacing">Relatorios consolidados em uma unica tela, com visao financeira, operacional e comercial, exportacao CSV de atendimentos e documentos, e acompanhamento de equipe, orcamentos e notas fiscais por periodo.</p>
-    </details>
 </div>
 
 <div class="top-spacing">
@@ -102,7 +108,14 @@
                 <span class="status-badge status-badge--muted">{{ item.data_label }}</span>
             </div>
             <p class="top-spacing"><b>{{ item.assunto }}</b></p>
-            <p class="muted-text">{{ item.categoria }} | Commit {{ item.hash_curto }}</p>
+            <p class="muted-text">
+                {{ item.categoria }} | Commit
+                {% if item.url %}
+                <a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.hash_curto }}</a>
+                {% else %}
+                {{ item.hash_curto }}
+                {% endif %}
+            </p>
         </div>
         {% else %}
         <div class="page-card page-card--soft">
@@ -128,7 +141,11 @@
                 <div class="actions-row actions-row--left">
                     <span class="pill-label">{{ item.categoria }}</span>
                     <span class="status-badge status-badge--muted">{{ item.data_label }}</span>
+                    {% if item.url %}
+                    <a class="status-badge status-badge--warning" href="{{ item.url }}" target="_blank" rel="noopener">{{ item.hash_curto }}</a>
+                    {% else %}
                     <span class="status-badge status-badge--warning">{{ item.hash_curto }}</span>
+                    {% endif %}
                 </div>
                 <p class="top-spacing"><b>{{ item.assunto }}</b></p>
             </div>

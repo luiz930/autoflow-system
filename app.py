@@ -21467,6 +21467,7 @@ def pagina_changelog():
         changelog_resumo=contexto["resumo"],
         changelog_marcos=contexto["marcos"],
         changelog_grupos=contexto["grupos"],
+        changelog_commits_recentes=contexto.get("commits_recentes", []),
         changelog_gerado_em=contexto["gerado_em"],
     )
 

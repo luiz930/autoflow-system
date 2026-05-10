@@ -10,6 +10,7 @@ import zipfile
 from flask import render_template_string, request, session
 
 import app as app_module
+from domains import changelog as changelog_domain
 from domains.clientes import consultar_sincronizacoes_clientes
 from domains.sync_clientes import excluir_sincronizacao_cliente
 
@@ -392,6 +393,37 @@ class AppRegressionTests(unittest.TestCase):
         self.assertNotIn('<form class="global-search"', html_config)
         self.assertNotIn('id="globalSearchInput"', html_config)
         self.assertIn('<form class="global-search"', html_clientes)
+
+    def test_changelog_monta_links_github_automaticos(self):
+        commit_hash = "1234567890abcdef1234567890abcdef12345678"
+
+        def git_fake(_repo, *args):
+            if args[:3] == ("remote", "get-url", "origin"):
+                return "https://github.com/luiz930/lavagem_novo.git"
+            if args[:2] == ("branch", "--show-current"):
+                return "main"
+            if args[:3] == ("rev-parse", "--short", "HEAD"):
+                return "1234567"
+            if args[:4] == ("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"):
+                return "origin/main"
+            if args[:3] == ("rev-list", "--left-right", "--count"):
+                return "0\t0"
+            if args and args[0] == "log":
+                return f"{commit_hash}\x1f2026-05-10\x1fRemove busca global das configuracoes"
+            return ""
+
+        changelog_domain.CHANGELOG_CACHE["payload"] = None
+        with tempfile.TemporaryDirectory(prefix="changelog_git_") as pasta, \
+             patch.object(changelog_domain, "_run_git_command", side_effect=git_fake):
+            contexto = changelog_domain.carregar_contexto_changelog(pasta, versao_atual="teste")
+
+        self.assertEqual(contexto["resumo"]["github_url"], "https://github.com/luiz930/lavagem_novo")
+        self.assertEqual(contexto["resumo"]["github_upstream"], "origin/main")
+        self.assertTrue(contexto["resumo"]["github_sincronizado"])
+        self.assertEqual(
+            contexto["commits_recentes"][0]["url"],
+            f"https://github.com/luiz930/lavagem_novo/commit/{commit_hash}",
+        )
 
     def test_configuracoes_site_get_renders_for_logged_admin(self):
         with app_module.app.test_request_context("/configuracoes/site", method="GET"):

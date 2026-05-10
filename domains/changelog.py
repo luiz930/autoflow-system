@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
+import re
 import subprocess
 import time
 
@@ -72,6 +73,62 @@ def _run_git_command(repo_root, *args):
     return (resultado.stdout or "").strip()
 
 
+def _normalizar_github_remote(remote_url):
+    remote_url = str(remote_url or "").strip()
+    if not remote_url:
+        return {}
+
+    owner_repo = ""
+    match_https = re.match(r"https://github\.com/([^/]+/[^/]+?)(?:\.git)?/?$", remote_url)
+    match_ssh = re.match(r"git@github\.com:([^/]+/[^/]+?)(?:\.git)?$", remote_url)
+    match_ssh_url = re.match(r"ssh://git@github\.com/([^/]+/[^/]+?)(?:\.git)?/?$", remote_url)
+
+    for match in (match_https, match_ssh, match_ssh_url):
+        if match:
+            owner_repo = match.group(1)
+            break
+
+    if not owner_repo:
+        return {"remote_url": remote_url, "github_url": "", "owner_repo": ""}
+
+    owner_repo = owner_repo.removesuffix(".git")
+    github_url = f"https://github.com/{owner_repo}"
+    return {
+        "remote_url": remote_url,
+        "github_url": github_url,
+        "owner_repo": owner_repo,
+        "commit_url_base": f"{github_url}/commit/",
+    }
+
+
+def _obter_info_github(repo_root, branch_atual):
+    remote_url = _run_git_command(repo_root, "remote", "get-url", "origin")
+    info = _normalizar_github_remote(remote_url)
+    upstream = _run_git_command(repo_root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    ahead = behind = 0
+    sincronizado = False
+
+    if upstream:
+        contagem = _run_git_command(repo_root, "rev-list", "--left-right", "--count", f"HEAD...{upstream}")
+        partes = contagem.split()
+        if len(partes) >= 2:
+            try:
+                ahead = int(partes[0] or 0)
+                behind = int(partes[1] or 0)
+                sincronizado = ahead == 0 and behind == 0
+            except Exception:
+                ahead = behind = 0
+
+    info.update({
+        "branch": branch_atual or "",
+        "upstream": upstream,
+        "ahead": ahead,
+        "behind": behind,
+        "sincronizado": sincronizado,
+    })
+    return info
+
+
 def _formatar_data_curta_iso(data_iso):
     try:
         data = datetime.strptime(str(data_iso or ""), "%Y-%m-%d")
@@ -102,7 +159,7 @@ def _categorizar_commit(subject):
     return "Ajustes gerais"
 
 
-def _parse_git_log(texto_git):
+def _parse_git_log(texto_git, commit_url_base=""):
     entradas = []
     for linha in (texto_git or "").splitlines():
         partes = linha.split("\x1f", 2)
@@ -122,6 +179,7 @@ def _parse_git_log(texto_git):
                 "assunto_casefold": assunto_casefold,
                 "categoria": _categorizar_commit(assunto),
                 "ruido": assunto_casefold in NOISE_SUBJECTS,
+                "url": f"{commit_url_base}{commit_hash}" if commit_url_base else "",
             }
         )
 
@@ -185,6 +243,9 @@ def carregar_contexto_changelog(repo_root, versao_atual=""):
     ):
         return dict(cache)
 
+    branch_atual = _run_git_command(repo_root, "branch", "--show-current")
+    hash_atual = _run_git_command(repo_root, "rev-parse", "--short", "HEAD")
+    github_info = _obter_info_github(repo_root, branch_atual)
     texto_git = _run_git_command(
         repo_root,
         "log",
@@ -194,14 +255,18 @@ def carregar_contexto_changelog(repo_root, versao_atual=""):
         "--",
         ".",
     )
-    entradas = _parse_git_log(texto_git)
-    branch_atual = _run_git_command(repo_root, "branch", "--show-current")
-    hash_atual = _run_git_command(repo_root, "rev-parse", "--short", "HEAD")
+    entradas = _parse_git_log(texto_git, github_info.get("commit_url_base") or "")
 
     resumo = {
         "versao_atual": str(versao_atual or "").strip() or "Versao nao informada",
         "branch_atual": branch_atual or "main",
         "hash_atual": hash_atual or "-",
+        "github_url": github_info.get("github_url") or "",
+        "github_owner_repo": github_info.get("owner_repo") or "",
+        "github_upstream": github_info.get("upstream") or "",
+        "github_ahead": github_info.get("ahead", 0),
+        "github_behind": github_info.get("behind", 0),
+        "github_sincronizado": bool(github_info.get("sincronizado")),
         "total_commits": len(entradas),
         "primeiro_commit_em": entradas[0]["data_label"] if entradas else "-",
         "ultimo_commit_em": entradas[-1]["data_label"] if entradas else "-",
@@ -212,6 +277,7 @@ def carregar_contexto_changelog(repo_root, versao_atual=""):
         "resumo": resumo,
         "marcos": _build_milestones(entradas),
         "grupos": _build_groups(entradas),
+        "commits_recentes": list(reversed(entradas[-12:])),
         "gerado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
     }
 
