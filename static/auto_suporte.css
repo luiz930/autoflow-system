@@ -293,6 +293,30 @@
     padding: 10px;
 }
 
+.auto-support-action-plan {
+    margin-top: 12px;
+    border: 1px solid rgba(250, 204, 21, .28);
+    border-radius: 10px;
+    padding: 12px;
+    background: rgba(30, 41, 59, .72);
+}
+
+.auto-support-action-plan[data-priority="alta"] {
+    border-color: rgba(248, 113, 113, .56);
+    background: rgba(127, 29, 29, .22);
+}
+
+.auto-support-action-plan[data-priority="media"] {
+    border-color: rgba(250, 204, 21, .46);
+}
+
+.auto-support-plan-item {
+    margin: 7px 0 0;
+    color: #dbeafe;
+    font-size: 12px;
+    line-height: 1.42;
+}
+
 .auto-support-diagnostics[data-level="critico"] {
     border-color: rgba(248, 113, 113, .42);
 }

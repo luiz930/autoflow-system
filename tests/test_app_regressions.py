@@ -1964,10 +1964,33 @@ class AppRegressionTests(unittest.TestCase):
             self.assertEqual(status["perfil"], "administrador")
             self.assertEqual(status["modo_interface"], "simples")
             self.assertTrue(status["acoes_simples"])
+            self.assertEqual(status["plano_acao"]["prioridade"], "alta")
+            self.assertIn("Banco online", status["plano_acao"]["titulo"])
             acoes = {item["id"]: item for item in status["acoes"]}
             self.assertIn("limpar_cache_rota_lenta", acoes)
             self.assertEqual(acoes["limpar_todos_erros"]["confirmacao"], "LIMPAR TODOS OS ERROS")
             self.assertTrue(acoes["limpar_todos_erros"]["confirmacao_obrigatoria"])
+
+    def test_auto_suporte_plano_acao_bloqueia_acao_tecnica_para_admin(self):
+        status = {
+            "diagnostico": {"nivel": "alerta", "titulo": "Planilha com erro", "frase": "Revisar sync."},
+            "sugestoes": [{"titulo": "Planilha com erro", "acao": "desativar_planilhas_com_erro"}],
+            "autonomia": {
+                "acoes_bloqueadas": [
+                    {"acao": "desativar_planilhas_com_erro", "label": "Pausar planilhas"}
+                ],
+                "simulacao": {"pretende_fazer": []},
+            },
+            "falhas": ["Planilha com erro"],
+        }
+        with app_module.app.test_request_context("/api/auto-suporte/status"):
+            session["usuario"] = "admin"
+            session["usuario_perfil"] = "admin"
+            plano = app_module.montar_plano_acao_auto_suporte(status)
+
+        self.assertFalse(plano["executavel"])
+        self.assertFalse(plano["permitido"])
+        self.assertIn("desenvolvedor", plano["bloqueio"])
 
     def test_auto_suporte_acao_limpa_erros_resolvidos(self):
         with tempfile.TemporaryDirectory(prefix="auto_suporte_limpa_erros_") as pasta:

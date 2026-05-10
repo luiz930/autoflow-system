@@ -11,6 +11,7 @@
 {% endblock %}
 
 {% block content %}
+{% set plano_auto = status_auto.get('plano_acao', {}) if status_auto else {} %}
 
 {% if modo_auto_suporte == "administrador" %}
 <div class="page-card {% if status_auto.diagnostico.nivel == 'critico' %}error-banner{% elif status_auto.diagnostico.nivel == 'alerta' %}warning-banner{% else %}success-banner{% endif %}">
@@ -19,6 +20,29 @@
     <p>{{ status_auto.diagnostico.frase }}</p>
     <p class="muted-text">Acoes seguras para o administrador. Alteracoes sensiveis ficam restritas ao desenvolvedor.</p>
 </div>
+
+{% if plano_auto %}
+<div class="page-card top-spacing">
+    <p class="pill-label">Plano de acao</p>
+    <h2 class="section-title top-spacing">{{ plano_auto.titulo }}</h2>
+    <p>{{ plano_auto.mensagem }}</p>
+    <div class="stack-form stack-form--wide top-spacing">
+        {% for item in plano_auto.itens %}
+        <div class="{% if plano_auto.prioridade == 'alta' %}error-banner{% elif plano_auto.prioridade == 'media' %}warning-banner{% else %}success-banner{% endif %}" style="padding: 12px; border-radius: 8px;">
+            <p>{{ item }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    {% if plano_auto.acao and plano_auto.executavel %}
+    <form method="post" action="/auto-suporte/acao" class="top-spacing {% if plano_auto.confirmacao %}auto-suporte-confirmacao-form{% endif %}" data-confirmacao="{{ plano_auto.confirmacao }}" data-label="{{ plano_auto.acao_label }}">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="acao" value="{{ plano_auto.acao }}">
+        <input type="hidden" name="confirmacao" value="">
+        <button type="submit">{{ plano_auto.cta_label }}</button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
 
 <div class="page-grid top-spacing">
     <div class="page-card">
@@ -73,6 +97,30 @@
     <p>{{ status_auto.diagnostico.frase }}</p>
     <p class="muted-text">Gerado em {{ status_auto.gerado_em }}.</p>
 </div>
+
+{% if plano_auto %}
+<div class="page-card top-spacing">
+    <p class="pill-label">Plano de acao</p>
+    <h2 class="section-title top-spacing">{{ plano_auto.titulo }}</h2>
+    <p>{{ plano_auto.mensagem }}</p>
+    <p class="muted-text">Prioridade {{ plano_auto.prioridade }}{% if plano_auto.acao_label %} - proxima acao: {{ plano_auto.acao_label }}{% endif %}</p>
+    <div class="page-grid top-spacing">
+        {% for item in plano_auto.itens %}
+        <div class="{% if plano_auto.prioridade == 'alta' %}error-banner{% elif plano_auto.prioridade == 'media' %}warning-banner{% else %}success-banner{% endif %}" style="padding: 12px; border-radius: 8px;">
+            <p>{{ item }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    {% if plano_auto.acao and plano_auto.executavel %}
+    <form method="post" action="/auto-suporte/acao" class="top-spacing {% if plano_auto.confirmacao %}auto-suporte-confirmacao-form{% endif %}" data-confirmacao="{{ plano_auto.confirmacao }}" data-label="{{ plano_auto.acao_label }}">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="acao" value="{{ plano_auto.acao }}">
+        <input type="hidden" name="confirmacao" value="">
+        <button type="submit">{{ plano_auto.cta_label }}</button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
 
 <div class="page-grid top-spacing">
     <div class="page-card">

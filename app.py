@@ -18032,6 +18032,98 @@ def montar_autonomia_auto_suporte(estado=None, status_payload=None):
     }
 
 
+def montar_plano_acao_auto_suporte(status_payload):
+    status_payload = status_payload or {}
+    diagnostico = status_payload.get("diagnostico") or {}
+    autonomia = status_payload.get("autonomia") or {}
+    simulacao = autonomia.get("simulacao") or {}
+    planejadas = list(simulacao.get("pretende_fazer") or [])
+    bloqueadas = list(autonomia.get("acoes_bloqueadas") or simulacao.get("precisa_confirmacao") or [])
+    sugestoes = list(status_payload.get("sugestoes") or [])
+    erros_abertos = list(status_payload.get("erros_abertos") or [])
+    falhas = list(status_payload.get("falhas") or [])
+    nivel = normalizar_texto_campo(diagnostico.get("nivel") or "info")
+    prioridade_por_nivel = {
+        "critico": "alta",
+        "alerta": "media",
+        "atencao": "baixa",
+        "info": "normal",
+    }
+
+    proxima = None
+    origem = ""
+    if planejadas:
+        proxima = planejadas[0]
+        origem = "auto_reparo"
+    else:
+        proxima = next((item for item in sugestoes if normalizar_texto_campo(item.get("acao"))), None)
+        origem = "sugestao" if proxima else ""
+    if not proxima and bloqueadas:
+        proxima = bloqueadas[0]
+        origem = "confirmacao"
+    if not proxima and erros_abertos:
+        proxima = {"acao": "gerar_pacote_codex", "titulo": "Erro aberto exige pacote tecnico"}
+        origem = "codex"
+
+    acao = normalizar_texto_campo((proxima or {}).get("acao"))
+    risco = risco_acao_auto_suporte(acao) if acao else {}
+    permitido = True
+    if has_request_context() and perfil_auto_suporte() == "administrador":
+        permitido = acao in AUTO_SUPORTE_ACOES_ADMIN
+    executavel = bool(acao and acao in ACOES_AUTO_SUPORTE and permitido)
+    confirmacao = normalizar_texto_campo(risco.get("confirmacao"))
+    acao_label = ACOES_AUTO_SUPORTE.get(acao, acao) if acao else ""
+    itens = []
+
+    if planejadas:
+        itens.append(f"{len(planejadas)} reparo(s) seguro(s) podem ser executados pelo bot.")
+    if bloqueadas:
+        itens.append(f"{len(bloqueadas)} acao(oes) sensivel(is) ficaram pendentes de confirmacao.")
+    if erros_abertos:
+        itens.append("Existe erro aberto: gere o pacote Codex antes de mexer em regra sensivel.")
+    if falhas and not itens:
+        itens.append("Revise o diagnostico e execute a primeira acao sugerida.")
+    if not falhas and not planejadas and not bloqueadas and not erros_abertos:
+        itens.append("Nenhuma acao urgente. Mantenha o monitoramento automatico ativo.")
+
+    if origem == "auto_reparo":
+        cta = "Rodar auto-reparo"
+        mensagem = "O bot encontrou uma acao reversivel e de baixo risco para tentar primeiro."
+    elif acao and not permitido:
+        cta = "Acao restrita"
+        mensagem = "A proxima acao e tecnica e deve ser enviada ao desenvolvedor pelo pacote Codex."
+    elif confirmacao:
+        cta = "Executar com confirmacao"
+        mensagem = "A proxima acao altera dados ou evidencias e precisa de confirmacao manual."
+    elif acao == "gerar_pacote_codex":
+        cta = "Gerar pacote Codex"
+        mensagem = "Prepare um relatorio tecnico para enviar ao desenvolvedor."
+    elif acao:
+        cta = "Executar proxima acao"
+        mensagem = "Ha uma sugestao direta para reduzir o problema detectado."
+    else:
+        cta = "Sem acao pendente"
+        mensagem = "O AutoSuporte nao encontrou reparo pendente nesta leitura."
+
+    return {
+        "prioridade": prioridade_por_nivel.get(nivel, "normal"),
+        "nivel": nivel,
+        "titulo": diagnostico.get("titulo") or "Plano de acao",
+        "resumo": diagnostico.get("frase") or status_payload.get("mensagem") or mensagem,
+        "mensagem": mensagem,
+        "origem": origem or "monitoramento",
+        "acao": acao,
+        "acao_label": acao_label,
+        "cta_label": cta,
+        "executavel": executavel,
+        "permitido": permitido,
+        "bloqueio": "" if permitido else "Acao restrita ao desenvolvedor. Gere o pacote Codex.",
+        "confirmacao": confirmacao,
+        "risco": risco.get("risco") or ("baixo" if executavel else ""),
+        "itens": itens[:4],
+    }
+
+
 def planejar_acoes_autonomas_auto_suporte(status_payload, estado=None):
     status_payload = status_payload or {}
     estado = estado or carregar_estado_auto_suporte()
@@ -18445,6 +18537,11 @@ def montar_pacote_codex_auto_suporte():
         "status_sistema": status_sistema,
         "banco": banco,
         "backup": backup,
+        "plano_acao": montar_plano_acao_auto_suporte({
+            "diagnostico": (status_sistema.get("diagnostico") or {}),
+            "erros_abertos": listar_erros_producao(apenas_abertos=True, limite=8),
+            "tempo_resposta": metricas_tempo_resposta_central_tecnica(),
+        }),
         "inconsistencias_negocio": executar_check_auto_suporte(
             detectar_inconsistencias_negocio_auto_suporte,
             [],
@@ -18584,6 +18681,7 @@ def status_auto_suporte():
         "mensagem": diagnostico.get("frase") or ("Sistema sem incidentes criticos." if not falhas else "AutoSuporte encontrou pontos para revisar."),
     }
     resposta["autonomia"] = montar_autonomia_auto_suporte(status_payload=resposta)
+    resposta["plano_acao"] = montar_plano_acao_auto_suporte(resposta)
     resposta["perfil"] = perfil_auto_suporte() if has_request_context() else "desenvolvedor"
     resposta["modo_interface"] = "tecnico" if resposta["perfil"] == "desenvolvedor" else "simples"
     resposta["acoes_simples"] = montar_acoes_simples_auto_suporte(resposta)

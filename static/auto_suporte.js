@@ -88,6 +88,33 @@
         return bloco;
     }
 
+    function renderizarPlanoAcao(status) {
+        const plano = status && status.plano_acao ? status.plano_acao : {};
+        const bloco = criarElemento("div", "auto-support-action-plan");
+        bloco.setAttribute("data-priority", plano.prioridade || "normal");
+        bloco.appendChild(criarElemento("p", "auto-support-section-title", `Plano de acao - ${plano.prioridade || "normal"}`));
+        bloco.appendChild(criarElemento("p", "auto-support-diagnostic-title", plano.titulo || "Proxima melhor acao"));
+        bloco.appendChild(criarElemento("p", "auto-support-log-message", plano.mensagem || plano.resumo || "Nenhuma acao pendente nesta leitura."));
+
+        const itens = Array.isArray(plano.itens) ? plano.itens : [];
+        itens.slice(0, 4).forEach((item) => {
+            bloco.appendChild(criarElemento("p", "auto-support-plan-item", item));
+        });
+
+        if (plano.acao && plano.executavel) {
+            const btn = criarElemento("button", "auto-support-mini-action", plano.cta_label || "Executar");
+            btn.type = "button";
+            btn.addEventListener("click", () => executarAcao(plano.acao, plano.acao_label || plano.cta_label || "Plano de acao"));
+            bloco.appendChild(btn);
+        } else if (plano.acao === "gerar_pacote_codex") {
+            const btn = criarElemento("button", "auto-support-mini-action", "Gerar pacote Codex");
+            btn.type = "button";
+            btn.addEventListener("click", carregarPacoteCodex);
+            bloco.appendChild(btn);
+        }
+        return bloco;
+    }
+
     function renderizarHistorico(status) {
         const historico = Array.isArray(status.historico) ? status.historico : [];
         const bloco = criarElemento("div", "auto-support-history");
@@ -424,6 +451,7 @@
         statusBox.appendChild(criarElemento("p", "auto-support-log-message", textoFalhas(status).replace(/\n/g, " ")));
         body.appendChild(statusBox);
         body.appendChild(renderizarDiagnostico(status));
+        body.appendChild(renderizarPlanoAcao(status));
         body.appendChild(renderizarAcoesSimples(status));
 
         const atalhos = criarElemento("div", "auto-support-quick-actions auto-support-quick-actions--simple");
@@ -504,6 +532,7 @@
         statusBox.appendChild(criarElemento("pre", "auto-support-terminal", textoFalhas(status)));
         body.appendChild(statusBox);
         body.appendChild(renderizarDiagnostico(status));
+        body.appendChild(renderizarPlanoAcao(status));
 
         const sugestoes = renderizarSugestoes(status);
         if (sugestoes) {
