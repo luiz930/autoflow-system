@@ -16,12 +16,7 @@
 <link rel="stylesheet" href="/static/auto_suporte.css?v={{ app_version }}">
 {% endif %}
 
-<script>
-if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/static/sw.js")
-    .catch(() => {});
-}
-</script>
+{% include "components/service_worker_registration.html" %}
 
 <style>
 :root {

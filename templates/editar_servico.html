@@ -12,12 +12,7 @@
 <link rel="apple-touch-icon" href="{{ brand_favicon_url or '/static/icon-192.jpg' }}">
 <link rel="stylesheet" href="/static/responsive.css">
 
-<script>
-if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/static/sw.js")
-    .catch(() => {});
-}
-</script>
+{% include "components/service_worker_registration.html" %}
 
 <style>
 </style>

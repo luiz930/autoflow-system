@@ -2498,9 +2498,66 @@ class AppRegressionTests(unittest.TestCase):
         with app_module.app.test_client() as client:
             self.assertEqual(client.get("/login").status_code, 200)
             self.assertEqual(client.get("/site.webmanifest").status_code, 200)
-            self.assertEqual(client.get("/sw.js").status_code, 200)
+            sw_response = client.get("/sw.js")
+            try:
+                self.assertEqual(sw_response.status_code, 200)
+            finally:
+                sw_response.close()
             self.assertEqual(client.get("/api/pwa/status").status_code, 200)
             self.assertEqual(client.get("/clientes").status_code, 302)
+
+    def test_telas_principais_renderizam_com_sessao_autenticada(self):
+        leitura_painel = {
+            "servicos_db": [],
+            "produtos_pneu": [],
+            "resumo_fotos_por_servico": {},
+            "resumo_extras_por_servico": {},
+        }
+        status_auto = {
+            "ok": True,
+            "diagnostico": {"nivel": "info", "label": "OK", "titulo": "OK", "frase": "", "itens": []},
+            "falhas": [],
+            "erros_abertos": [],
+            "inconsistencias_negocio": [],
+            "sugestoes": [],
+            "tempo_resposta": [],
+            "acoes": {},
+            "acoes_simples": [],
+        }
+        status_sistema = {
+            "gerado_em": "agora",
+            "resumo": {"ok": True, "falhas": []},
+            "itens": [],
+            "ultimo_erro": {},
+        }
+
+        with app_module.app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["usuario"] = "admin"
+                sess["usuario_perfil"] = "desenvolvedor"
+                sess["usuario_id"] = 1
+                sess["empresa_id"] = 1
+                sess["senha_alteracao_obrigatoria"] = False
+
+            with patch.object(app_module, "sincronizar_sessao_usuario"), \
+                 patch.object(app_module, "obter_contexto_licenca_empresa_cached", return_value={"bloqueada": False}), \
+                 patch.object(app_module, "usuario_desenvolvedor", return_value=True), \
+                 patch.object(app_module, "usuario_gerencia_configuracao_sistema", return_value=True), \
+                 patch.object(app_module, "preparar_rotinas_interface_logada"), \
+                 patch.object(app_module, "carregar_contexto_clientes", return_value=([], [])), \
+                 patch.object(app_module, "carregar_contexto_relatorios", return_value={}), \
+                 patch.object(app_module, "executar_leitura_resiliente", return_value=leitura_painel), \
+                 patch.object(app_module, "montar_status_sistema_dono", return_value=status_sistema), \
+                 patch.object(app_module, "status_auto_suporte", return_value=status_auto), \
+                 patch.object(app_module, "listar_historico_auto_suporte", return_value=[]), \
+                 patch.object(app_module, "render_template", return_value="ok"):
+                for rota in ["/", "/painel", "/clientes", "/financeiro", "/configuracoes", "/auto-suporte"]:
+                    with self.subTest(rota=rota):
+                        response = client.get(rota)
+                        try:
+                            self.assertEqual(response.status_code, 200)
+                        finally:
+                            response.close()
 
 
 if __name__ == "__main__":
