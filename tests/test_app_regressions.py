@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 import tempfile
 import time
@@ -625,6 +626,28 @@ class AppRegressionTests(unittest.TestCase):
                 with open(caminho, encoding="utf-8") as arquivo:
                     conteudo = arquivo.read()
                 self.assertNotIn("capture=", conteudo)
+
+    def test_campos_de_senha_tem_botao_mostrar_senha(self):
+        for caminho in ["templates/login.html", "templates/configuracoes.html", "templates/nota_fiscal.html"]:
+            with self.subTest(caminho=caminho):
+                with open(caminho, encoding="utf-8") as arquivo:
+                    conteudo = arquivo.read()
+
+                inputs = re.findall(r"<input\b(?=[^>]*type=\"password\")[^>]*>", conteudo, flags=re.S)
+                targets = set(re.findall(r'data-password-target="([^"]+)"', conteudo))
+
+                self.assertGreater(len(inputs), 0)
+                for input_html in inputs:
+                    id_match = re.search(r'id="([^"]+)"', input_html)
+                    self.assertIsNotNone(id_match, input_html)
+                    self.assertIn(id_match.group(1), targets)
+
+    def test_senhas_salvas_de_usuarios_nao_sao_exibidas_no_template(self):
+        with open("templates/configuracoes.html", encoding="utf-8") as arquivo:
+            conteudo = arquivo.read()
+
+        self.assertIn("hash seguro", conteudo)
+        self.assertNotIn("{{ item.senha", conteudo)
 
     def test_configuracoes_requires_login(self):
         with patch.object(app_module, "INIT_DB_EXECUTADO", True):

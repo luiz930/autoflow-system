@@ -70,9 +70,18 @@
 
         <form action="/configuracoes/senha" method="POST" class="stack-form stack-form--wide">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <input name="senha_atual" type="password" placeholder="Senha atual" required>
-            <input name="nova_senha" type="password" placeholder="Nova senha forte" autocomplete="new-password" required>
-            <input name="confirmar_senha" type="password" placeholder="Confirmar nova senha" autocomplete="new-password" required>
+            <div class="password-toggle-row">
+                <input id="minha-senha-atual" class="password-toggle-input" name="senha_atual" type="password" placeholder="Senha atual" autocomplete="current-password" required>
+                <button type="button" class="password-toggle-button" data-password-target="minha-senha-atual">Mostrar senha</button>
+            </div>
+            <div class="password-toggle-row">
+                <input id="minha-nova-senha" class="password-toggle-input" name="nova_senha" type="password" placeholder="Nova senha forte" autocomplete="new-password" required>
+                <button type="button" class="password-toggle-button" data-password-target="minha-nova-senha">Mostrar senha</button>
+            </div>
+            <div class="password-toggle-row">
+                <input id="minha-confirmar-senha" class="password-toggle-input" name="confirmar_senha" type="password" placeholder="Confirmar nova senha" autocomplete="new-password" required>
+                <button type="button" class="password-toggle-button" data-password-target="minha-confirmar-senha">Mostrar senha</button>
+            </div>
 
             <div class="actions-row actions-row--left">
                 <button type="submit">Salvar nova senha</button>
@@ -248,13 +257,18 @@
 
             <label class="top-spacing">
                 <span class="muted-text">Token do bot</span>
-                <input
-                    name="auto_teste_telegram_bot_token"
-                    type="password"
-                    placeholder="{% if configuracao_empresa.auto_teste_telegram_token_configurado %}Token atual: {{ configuracao_empresa.auto_teste_telegram_token_masked }}{% else %}Cole o token do BotFather{% endif %}"
-                    autocomplete="off"
-                    {% if not configuracao_empresa.auto_teste_telegram_token_configurado %}required{% endif %}
-                >
+                <div class="password-toggle-row">
+                    <input
+                        id="auto-teste-telegram-token"
+                        class="password-toggle-input"
+                        name="auto_teste_telegram_bot_token"
+                        type="password"
+                        placeholder="{% if configuracao_empresa.auto_teste_telegram_token_configurado %}Token atual: {{ configuracao_empresa.auto_teste_telegram_token_masked }}{% else %}Cole o token do BotFather{% endif %}"
+                        autocomplete="off"
+                        {% if not configuracao_empresa.auto_teste_telegram_token_configurado %}required{% endif %}
+                    >
+                    <button type="button" class="password-toggle-button" data-password-target="auto-teste-telegram-token">Mostrar senha</button>
+                </div>
                 <span class="field-help">O token nao aparece na tela depois de salvo. Para trocar, cole um novo token aqui.</span>
             </label>
 
@@ -1309,7 +1323,19 @@
 
                 <form action="/configuracoes/usuarios/{{ item.id }}/senha" method="POST" class="stack-form stack-form--wide top-spacing">
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                    <input name="nova_senha" type="password" placeholder="Nova senha forte para {{ item.usuario }}" autocomplete="new-password" required>
+                    <div class="password-toggle-row">
+                        <input
+                            id="redefinir-senha-{{ item.id }}"
+                            class="password-toggle-input"
+                            name="nova_senha"
+                            type="password"
+                            placeholder="Nova senha forte para {{ item.usuario }}"
+                            autocomplete="new-password"
+                            required
+                        >
+                        <button type="button" class="password-toggle-button" data-password-target="redefinir-senha-{{ item.id }}">Mostrar senha</button>
+                    </div>
+                    <p class="muted-text">A senha atual nao pode ser exibida porque fica salva como hash seguro. Confira a nova senha aqui antes de salvar.</p>
 
                     <div class="actions-row actions-row--left">
                         <button type="submit">Salvar senha</button>
@@ -1331,17 +1357,6 @@
 {% endif %}
 
 <script>
-document.querySelectorAll("[data-password-target]").forEach((button) => {
-    button.addEventListener("click", () => {
-        const input = document.getElementById(button.dataset.passwordTarget);
-        if (!input) return;
-
-        const mostrando = input.type === "text";
-        input.type = mostrando ? "password" : "text";
-        button.textContent = mostrando ? "Mostrar senha" : "Ocultar senha";
-    });
-});
-
 const backupDestinoSelector = document.querySelector("[data-backup-destino-selector]");
 const backupDestinoBlocos = document.querySelectorAll("[data-backup-mode]");
 

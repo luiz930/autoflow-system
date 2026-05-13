@@ -741,6 +741,19 @@ document.addEventListener("storage", (evento) => {
 
 <script src="/static/photo_upload.js"></script>
 <script src="/static/pwa_install.js"></script>
+<script>
+document.addEventListener("click", (evento) => {
+    const button = evento.target.closest("[data-password-target]");
+    if (!button) return;
+
+    const input = document.getElementById(button.dataset.passwordTarget);
+    if (!input) return;
+
+    const mostrando = input.type === "text";
+    input.type = mostrando ? "password" : "text";
+    button.textContent = mostrando ? "Mostrar senha" : "Ocultar senha";
+});
+</script>
 {% if auto_suporte_disponivel %}
 <link rel="stylesheet" href="/static/auto_suporte.css?v={{ app_version }}">
 <script src="/static/auto_suporte.js?v={{ app_version }}"></script>

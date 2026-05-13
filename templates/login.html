@@ -40,17 +40,4 @@
 
 </div>
 
-<script>
-document.querySelectorAll("[data-password-target]").forEach((button) => {
-    button.addEventListener("click", () => {
-        const input = document.getElementById(button.dataset.passwordTarget);
-        if (!input) return;
-
-        const mostrando = input.type === "text";
-        input.type = mostrando ? "password" : "text";
-        button.textContent = mostrando ? "Mostrar senha" : "Ocultar senha";
-    });
-});
-</script>
-
 {% endblock %}

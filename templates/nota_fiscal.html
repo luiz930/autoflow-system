@@ -291,11 +291,17 @@
             </div>
             <div>
                 <label for="senha_api">Senha API</label>
-                <input id="senha_api" type="password" name="senha_api" value="{{ integracao.senha_api }}" placeholder="senha da API">
+                <div class="password-toggle-row">
+                    <input id="senha_api" class="password-toggle-input" type="password" name="senha_api" value="{{ integracao.senha_api }}" placeholder="senha da API">
+                    <button type="button" class="password-toggle-button" data-password-target="senha_api">Mostrar senha</button>
+                </div>
             </div>
             <div>
                 <label for="token_api">Token / API key</label>
-                <input id="token_api" type="password" name="token_api" value="{{ integracao.token_api }}" placeholder="token, bearer ou chave">
+                <div class="password-toggle-row">
+                    <input id="token_api" class="password-toggle-input" type="password" name="token_api" value="{{ integracao.token_api }}" placeholder="token, bearer ou chave">
+                    <button type="button" class="password-toggle-button" data-password-target="token_api">Mostrar senha</button>
+                </div>
             </div>
             <div>
                 <label for="token_url">Token URL</label>
@@ -310,7 +316,10 @@
             </div>
             <div>
                 <label for="client_secret">Client Secret</label>
-                <input id="client_secret" type="password" name="client_secret" value="{{ integracao.client_secret }}" placeholder="client secret">
+                <div class="password-toggle-row">
+                    <input id="client_secret" class="password-toggle-input" type="password" name="client_secret" value="{{ integracao.client_secret }}" placeholder="client secret">
+                    <button type="button" class="password-toggle-button" data-password-target="client_secret">Mostrar senha</button>
+                </div>
             </div>
             <div>
                 <label for="certificado_arquivo">Arquivo/referencia do certificado</label>
@@ -318,7 +327,10 @@
             </div>
             <div>
                 <label for="certificado_senha">Senha do certificado</label>
-                <input id="certificado_senha" type="password" name="certificado_senha" value="{{ integracao.certificado_senha }}" placeholder="senha do certificado">
+                <div class="password-toggle-row">
+                    <input id="certificado_senha" class="password-toggle-input" type="password" name="certificado_senha" value="{{ integracao.certificado_senha }}" placeholder="senha do certificado">
+                    <button type="button" class="password-toggle-button" data-password-target="certificado_senha">Mostrar senha</button>
+                </div>
             </div>
         </div>
 
