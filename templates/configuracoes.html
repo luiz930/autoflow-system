@@ -845,6 +845,32 @@
         <p><b>Usuario:</b> {{ banco_status.usuario or "-" }}</p>
 
         <div class="top-spacing">
+            <p class="pill-label">Banco offline + online</p>
+            <h3 class="section-title top-spacing">Sincronizacao entre bancos</h3>
+            <p>
+                <span class="status-badge {% if banco_sync_status.ok %}status-badge--success{% elif banco_sync_status.status in ['offline', 'erro'] or banco_sync_status.conflitos %}status-badge--warning{% else %}status-badge--muted{% endif %}">
+                    {% if banco_sync_status.ok %}
+                    Em dia
+                    {% elif banco_sync_status.status == 'sincronizando' %}
+                    Sincronizando
+                    {% elif banco_sync_status.status == 'offline' %}
+                    Aguardando internet
+                    {% elif banco_sync_status.conflitos %}
+                    Com conflitos
+                    {% else %}
+                    {{ banco_sync_status.status or 'Aguardando' }}
+                    {% endif %}
+                </span>
+            </p>
+            <p><b>Resumo:</b> {{ banco_sync_status.mensagem }}</p>
+            <p><b>Ultimo sucesso:</b> {{ banco_sync_status.ultimo_sucesso_em or "Ainda nao sincronizou" }}</p>
+            <p><b>Fila local pendente:</b> {{ banco_sync_status.pendentes_local or 0 }} alteracao(oes)</p>
+            <p><b>Conflitos abertos:</b> {{ banco_sync_status.conflitos or 0 }}</p>
+            <p><b>Ultima rodada:</b> {{ banco_sync_status.inseridos or 0 }} inserido(s), {{ banco_sync_status.atualizados or 0 }} atualizado(s), {{ banco_sync_status.ignorados or 0 }} ignorado(s)</p>
+            <p class="muted-text">A rotina nao apaga dados. Ela insere o que falta, atualiza quando existe uma versao mais nova e registra conflito quando os dois lados mudaram o mesmo registro sem uma versao claramente mais recente.</p>
+        </div>
+
+        <div class="top-spacing">
             <p class="pill-label">Sincronizacao</p>
             <h3 class="section-title top-spacing">Atualizacao automatica</h3>
             <p class="muted-text">A tela confere se o banco online mudou a cada 600 segundos para evitar travamentos e recarregamentos excessivos.</p>

@@ -2405,6 +2405,14 @@ let hudData = {
     banco_online_resumo: "Conectando ao banco...",
     banco_online_mensagem: "Carregando status de conexao. Aguarde.",
     banco_online_backend_label: "",
+    sync_bancos_status: "aguardando",
+    sync_bancos_ok: false,
+    sync_bancos_resumo: "Sync offline/online aguardando",
+    sync_bancos_mensagem: "Aguardando primeira sincronizacao.",
+    sync_bancos_pendentes: 0,
+    sync_bancos_conflitos: 0,
+    sync_bancos_ultimo_sucesso_em: "",
+    sync_bancos_intervalo_segundos: 180,
     sync_token: "",
     usuario_nome: "",
     usuario_iniciais: "",
@@ -2673,10 +2681,29 @@ function montarStatusBancoHud() {
     };
 }
 
+function montarStatusSyncBancosHud() {
+    const status = String(hudData.sync_bancos_status || "aguardando").trim();
+    const resumo = String(hudData.sync_bancos_resumo || "").trim();
+    const mensagem = String(hudData.sync_bancos_mensagem || "").trim();
+    const pendentes = Number(hudData.sync_bancos_pendentes || 0);
+    const conflitos = Number(hudData.sync_bancos_conflitos || 0);
+    const ok = Boolean(hudData.sync_bancos_ok) && conflitos <= 0;
+    const carregando = status === "sincronizando" || status === "aguardando";
+    const alerta = conflitos > 0 || pendentes > 0 || ["offline", "erro"].includes(status);
+
+    return {
+        ok,
+        carregando: carregando && !alerta,
+        resumo: resumo || "Sync offline/online aguardando",
+        detalhe: mensagem || "Banco local e online aguardando sincronizacao.",
+    };
+}
+
 function montarLinhasHud(agora) {
     const dataAtual = agora.toLocaleDateString("pt-BR");
     const horaAtual = agora.toLocaleTimeString("pt-BR");
     const statusBanco = montarStatusBancoHud();
+    const statusSyncBancos = montarStatusSyncBancosHud();
 
     if (!hudExpandido) {
         return [
@@ -2686,6 +2713,12 @@ function montarLinhasHud(agora) {
                 status: true,
                 statusOk: statusBanco.ativo,
                 statusLoading: statusBanco.carregando,
+            } : null,
+            hudItemAtivo("banco_online") ? {
+                texto: `${statusSyncBancos.resumo}`,
+                status: true,
+                statusOk: statusSyncBancos.ok,
+                statusLoading: statusSyncBancos.carregando,
             } : null,
             (hudItemAtivo("operacional") || hudItemAtivo("financeiro")) ? {
                 texto: [
@@ -2706,6 +2739,12 @@ function montarLinhasHud(agora) {
             status: true,
             statusOk: statusBanco.ativo,
             statusLoading: statusBanco.carregando,
+        } : null,
+        hudItemAtivo("banco_online") ? {
+            texto: statusSyncBancos.detalhe,
+            status: true,
+            statusOk: statusSyncBancos.ok,
+            statusLoading: statusSyncBancos.carregando,
         } : null,
         hudItemAtivo("clima") ? { texto: montarTextoClimaHud(), multilinha: true } : null,
         hudItemAtivo("financeiro") ? { texto: `Hoje: R$ ${hudData.total}` } : null,

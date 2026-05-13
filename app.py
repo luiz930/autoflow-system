@@ -3950,6 +3950,7 @@ bootstrap_init_thread_started = False
 schema_bootstrap_thread_started = False
 WORKER_SYNC_DELAY_INICIAL = 90
 WORKER_SYNC_BANCOS_DELAY_INICIAL = 360
+WORKER_SYNC_BANCOS_INTERVALO = 180
 WORKER_MANUTENCAO_DELAY_INICIAL = 600
 WORKER_BACKUP_DELAY_INICIAL = 900
 WORKER_AUTO_TESTE_DELAY_INICIAL = 180
@@ -6059,6 +6060,371 @@ CHAVES_UNICAS_SYNC = {
 }
 
 
+def garantir_tabelas_sync_bancos_local(conn=None):
+    fechar = False
+    if conn is None:
+        conn = conectar_banco_local_forcado()
+        fechar = True
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS sync_bancos_status (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            status TEXT,
+            mensagem TEXT,
+            ultimo_inicio_em TEXT,
+            ultimo_sucesso_em TEXT,
+            ultima_falha_em TEXT,
+            ultimo_erro TEXT,
+            duracao_ms INTEGER DEFAULT 0,
+            tabelas_total INTEGER DEFAULT 0,
+            inseridos INTEGER DEFAULT 0,
+            atualizados INTEGER DEFAULT 0,
+            ignorados INTEGER DEFAULT 0,
+            conflitos INTEGER DEFAULT 0,
+            pendentes_local INTEGER DEFAULT 0,
+            atualizado_em TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS sync_bancos_conflitos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tabela TEXT NOT NULL,
+            chave TEXT,
+            hash_origem TEXT,
+            hash_destino TEXT,
+            momento_origem TEXT,
+            momento_destino TEXT,
+            detalhe_json TEXT,
+            resolvido INTEGER DEFAULT 0,
+            criado_em TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS sync_bancos_fila (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tabela TEXT NOT NULL,
+            registro_id INTEGER,
+            chave TEXT,
+            acao TEXT DEFAULT 'upsert',
+            status TEXT DEFAULT 'pendente',
+            origem TEXT DEFAULT 'local_auto',
+            criado_em TEXT,
+            atualizado_em TEXT,
+            detalhes_json TEXT
+        )
+    """)
+    conn.commit()
+    if fechar:
+        conn.close()
+
+
+def status_sync_bancos_padrao():
+    return {
+        "status": "aguardando",
+        "mensagem": "Sincronizacao offline/online aguardando primeira execucao.",
+        "ultimo_inicio_em": "",
+        "ultimo_sucesso_em": "",
+        "ultima_falha_em": "",
+        "ultimo_erro": "",
+        "duracao_ms": 0,
+        "tabelas_total": 0,
+        "inseridos": 0,
+        "atualizados": 0,
+        "ignorados": 0,
+        "conflitos": 0,
+        "pendentes_local": 0,
+        "intervalo_segundos": WORKER_SYNC_BANCOS_INTERVALO,
+        "ativo": False,
+        "ok": False,
+    }
+
+
+def salvar_status_sync_bancos(status, mensagem="", resumo=None):
+    conn = conectar_banco_local_forcado()
+    try:
+        garantir_tabelas_sync_bancos_local(conn)
+        atual = obter_status_sync_bancos(conn=conn)
+        payload = dict(atual)
+        payload.update(status or {})
+        payload["mensagem"] = mensagem or payload.get("mensagem") or status_sync_bancos_padrao()["mensagem"]
+        payload["atualizado_em"] = agora_iso()
+        resumo = resumo or {}
+        for chave in ("tabelas_total", "inseridos", "atualizados", "ignorados", "conflitos", "pendentes_local", "duracao_ms"):
+            if chave in resumo:
+                payload[chave] = int(resumo.get(chave) or 0)
+        c = conn.cursor()
+        c.execute(
+            """
+            INSERT INTO sync_bancos_status (
+                id, status, mensagem, ultimo_inicio_em, ultimo_sucesso_em, ultima_falha_em,
+                ultimo_erro, duracao_ms, tabelas_total, inseridos, atualizados, ignorados,
+                conflitos, pendentes_local, atualizado_em
+            )
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                status=excluded.status,
+                mensagem=excluded.mensagem,
+                ultimo_inicio_em=excluded.ultimo_inicio_em,
+                ultimo_sucesso_em=excluded.ultimo_sucesso_em,
+                ultima_falha_em=excluded.ultima_falha_em,
+                ultimo_erro=excluded.ultimo_erro,
+                duracao_ms=excluded.duracao_ms,
+                tabelas_total=excluded.tabelas_total,
+                inseridos=excluded.inseridos,
+                atualizados=excluded.atualizados,
+                ignorados=excluded.ignorados,
+                conflitos=excluded.conflitos,
+                pendentes_local=excluded.pendentes_local,
+                atualizado_em=excluded.atualizado_em
+            """,
+            (
+                payload.get("status"),
+                payload.get("mensagem"),
+                payload.get("ultimo_inicio_em"),
+                payload.get("ultimo_sucesso_em"),
+                payload.get("ultima_falha_em"),
+                payload.get("ultimo_erro"),
+                int(payload.get("duracao_ms") or 0),
+                int(payload.get("tabelas_total") or 0),
+                int(payload.get("inseridos") or 0),
+                int(payload.get("atualizados") or 0),
+                int(payload.get("ignorados") or 0),
+                int(payload.get("conflitos") or 0),
+                int(payload.get("pendentes_local") or 0),
+                payload.get("atualizado_em"),
+            ),
+        )
+        conn.commit()
+        return payload
+    finally:
+        conn.close()
+
+
+def obter_status_sync_bancos(conn=None):
+    fechar = False
+    if conn is None:
+        conn = conectar_banco_local_forcado()
+        fechar = True
+    try:
+        garantir_tabelas_sync_bancos_local(conn)
+        c = conn.cursor()
+        c.execute("SELECT * FROM sync_bancos_status WHERE id=1")
+        row = c.fetchone()
+        status = status_sync_bancos_padrao()
+        if row:
+            status.update(dict(row))
+        status["intervalo_segundos"] = WORKER_SYNC_BANCOS_INTERVALO
+        status["ativo"] = status.get("status") in {"ok", "sincronizando"}
+        status["ok"] = status.get("status") == "ok" and int(status.get("conflitos") or 0) == 0
+        return status
+    except Exception as erro:
+        status = status_sync_bancos_padrao()
+        status["status"] = "erro"
+        status["mensagem"] = f"Nao foi possivel ler o status da sincronizacao: {erro}"
+        status["ultimo_erro"] = str(erro)
+        return status
+    finally:
+        if fechar:
+            conn.close()
+
+
+def montar_resumo_sync_bancos_hud(status=None):
+    status = dict(status or obter_status_sync_bancos())
+    estado = status.get("status") or "aguardando"
+    pendentes = int(status.get("pendentes_local") or 0)
+    conflitos = int(status.get("conflitos") or 0)
+
+    if conflitos > 0:
+        resumo = f"Sync offline/online com {conflitos} conflito(s)"
+        mensagem = "Revise os conflitos antes de considerar os bancos totalmente alinhados."
+        ok = False
+    elif estado == "sincronizando":
+        resumo = "Sync offline/online em andamento"
+        mensagem = "Banco local e online estao trocando atualizacoes agora."
+        ok = False
+    elif estado == "ok":
+        resumo = "Sync offline/online em dia"
+        mensagem = status.get("mensagem") or "Banco local e online sincronizados."
+        ok = True
+    elif estado in {"offline", "erro"}:
+        resumo = f"Sync offline com {pendentes} pendente(s)"
+        mensagem = status.get("mensagem") or "Sem conexao online. Alteracoes locais entram na fila."
+        ok = False
+    elif estado == "local":
+        resumo = "Sync em modo local"
+        mensagem = status.get("mensagem") or "Banco online nao configurado."
+        ok = False
+    else:
+        resumo = "Sync offline/online aguardando"
+        mensagem = status.get("mensagem") or "Aguardando primeira sincronizacao."
+        ok = False
+
+    return {
+        "status": estado,
+        "ok": ok,
+        "resumo": resumo,
+        "mensagem": mensagem,
+        "pendentes": pendentes,
+        "conflitos": conflitos,
+        "ultimo_sucesso_em": status.get("ultimo_sucesso_em") or "",
+        "intervalo_segundos": int(status.get("intervalo_segundos") or WORKER_SYNC_BANCOS_INTERVALO),
+    }
+
+
+def chave_registro_sync(tabela, registro):
+    registro_dict = dict(registro) if not isinstance(registro, dict) else dict(registro)
+    campos = CHAVES_UNICAS_SYNC.get(tabela) or ("id",)
+    partes = []
+    for campo in campos:
+        valor = registro_dict.get(campo)
+        if valor not in (None, ""):
+            partes.append(f"{campo}={valor}")
+    if partes:
+        return "|".join(partes)
+    return f"id={registro_dict.get('id') or ''}"
+
+
+def detectar_conflito_registro_sync(tabela, registro_origem, registro_destino):
+    if hash_registro_sync(registro_origem) == hash_registro_sync(registro_destino):
+        return False
+    momento_origem = obter_momento_registro_sync(registro_origem)
+    momento_destino = obter_momento_registro_sync(registro_destino)
+    if momento_origem and momento_destino:
+        return momento_origem == momento_destino
+    return not momento_origem and not momento_destino
+
+
+def montar_conflito_registro_sync(tabela, registro_origem, registro_destino):
+    destino_dict = dict(registro_destino) if not isinstance(registro_destino, dict) else dict(registro_destino)
+    origem_dict = dict(registro_origem) if not isinstance(registro_origem, dict) else dict(registro_origem)
+    return {
+        "tabela": tabela,
+        "chave": chave_registro_sync(tabela, origem_dict),
+        "hash_origem": hash_registro_sync(origem_dict),
+        "hash_destino": hash_registro_sync(destino_dict),
+        "momento_origem": str(origem_dict.get("atualizado_em") or ""),
+        "momento_destino": str(destino_dict.get("atualizado_em") or ""),
+    }
+
+
+def registrar_conflitos_sync_bancos(conflitos):
+    conflitos = list(conflitos or [])
+    if not conflitos:
+        return 0
+    conn = conectar_banco_local_forcado()
+    inseridos = 0
+    try:
+        garantir_tabelas_sync_bancos_local(conn)
+        c = conn.cursor()
+        for conflito in conflitos:
+            tabela = conflito.get("tabela") or ""
+            chave = conflito.get("chave") or ""
+            hash_origem = conflito.get("hash_origem") or ""
+            hash_destino = conflito.get("hash_destino") or ""
+            c.execute(
+                """
+                SELECT 1 FROM sync_bancos_conflitos
+                WHERE resolvido=0 AND tabela=? AND chave=? AND hash_origem=? AND hash_destino=?
+                LIMIT 1
+                """,
+                (tabela, chave, hash_origem, hash_destino),
+            )
+            if c.fetchone():
+                continue
+            c.execute(
+                """
+                INSERT INTO sync_bancos_conflitos (
+                    tabela, chave, hash_origem, hash_destino, momento_origem,
+                    momento_destino, detalhe_json, resolvido, criado_em
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+                """,
+                (
+                    tabela,
+                    chave,
+                    hash_origem,
+                    hash_destino,
+                    conflito.get("momento_origem") or "",
+                    conflito.get("momento_destino") or "",
+                    json.dumps(conflito, ensure_ascii=False, default=sanitizar_para_json),
+                    agora_iso(),
+                ),
+            )
+            inseridos += 1
+        conn.commit()
+        return inseridos
+    finally:
+        conn.close()
+
+
+def contar_conflitos_sync_bancos_abertos(conn=None):
+    fechar = False
+    if conn is None:
+        conn = conectar_banco_local_forcado()
+        fechar = True
+    try:
+        garantir_tabelas_sync_bancos_local(conn)
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM sync_bancos_conflitos WHERE resolvido=0")
+        return int((c.fetchone() or [0])[0] or 0)
+    except Exception:
+        return 0
+    finally:
+        if fechar:
+            conn.close()
+
+
+def atualizar_fila_sync_bancos_local_pendente(ultimo_sucesso_em=""):
+    conn = conectar_banco_local_forcado()
+    total = 0
+    try:
+        garantir_tabelas_sync_bancos_local(conn)
+        c = conn.cursor()
+        c.execute("DELETE FROM sync_bancos_fila WHERE origem='local_auto' AND status='pendente'")
+        for tabela in TABELAS_COM_ATUALIZADO_EM_SYNC:
+            if tabela.startswith("sincronizacao_") or not tabela_existe_no_backend(conn, tabela):
+                continue
+            try:
+                colunas = set(obter_colunas_tabela(conn, tabela))
+                if "atualizado_em" not in colunas:
+                    continue
+                if ultimo_sucesso_em:
+                    c.execute(
+                        f"SELECT * FROM {tabela} WHERE COALESCE(atualizado_em, '') > ? ORDER BY atualizado_em LIMIT 500",
+                        (ultimo_sucesso_em,),
+                    )
+                else:
+                    c.execute(
+                        f"SELECT * FROM {tabela} WHERE COALESCE(atualizado_em, '') <> '' ORDER BY atualizado_em LIMIT 500"
+                    )
+                for row in c.fetchall():
+                    registro = dict(row)
+                    c.execute(
+                        """
+                        INSERT INTO sync_bancos_fila (
+                            tabela, registro_id, chave, acao, status, origem,
+                            criado_em, atualizado_em, detalhes_json
+                        )
+                        VALUES (?, ?, ?, 'upsert', 'pendente', 'local_auto', ?, ?, ?)
+                        """,
+                        (
+                            tabela,
+                            registro.get("id"),
+                            chave_registro_sync(tabela, registro),
+                            agora_iso(),
+                            registro.get("atualizado_em") or "",
+                            json.dumps({"tabela": tabela, "id": registro.get("id")}, ensure_ascii=False),
+                        ),
+                    )
+                    total += 1
+            except Exception:
+                continue
+        conn.commit()
+        return total
+    finally:
+        conn.close()
+
+
 def encontrar_registro_destino_por_chave_unica(cursor_destino, tabela, registro_dict):
     campos = CHAVES_UNICAS_SYNC.get(tabela) or ()
     if not campos:
@@ -6123,7 +6489,7 @@ def executar_update_sync_seguro(cursor_destino, tabela, colunas_update, valores_
         return False
 
 
-def sincronizar_tabela_incremental(origem_conn, destino_conn, tabela, origem_prevalece_em_empate=False):
+def sincronizar_tabela_incremental(origem_conn, destino_conn, tabela, origem_prevalece_em_empate=False, conflitos=None):
     if not tabela_existe_no_backend(origem_conn, tabela) or not tabela_existe_no_backend(destino_conn, tabela):
         return {"lidos": 0, "inseridos": 0, "atualizados": 0, "ignorados": 0}
 
@@ -6180,6 +6546,12 @@ def sincronizar_tabela_incremental(origem_conn, destino_conn, tabela, origem_pre
                 estatisticas["ignorados"] += 1
                 continue
 
+            if detectar_conflito_registro_sync(tabela, registro_dict, registro_destino):
+                if conflitos is not None:
+                    conflitos.append(montar_conflito_registro_sync(tabela, registro_dict, registro_destino))
+                estatisticas["ignorados"] += 1
+                continue
+
             if not decidir_atualizar_registro_sync(
                 registro_dict,
                 registro_destino,
@@ -6215,6 +6587,12 @@ def sincronizar_tabela_incremental(origem_conn, destino_conn, tabela, origem_pre
             registro_dict,
         )
         if registro_destino is not None:
+            if detectar_conflito_registro_sync(tabela, registro_dict, registro_destino):
+                if conflitos is not None:
+                    conflitos.append(montar_conflito_registro_sync(tabela, registro_dict, registro_destino))
+                estatisticas["ignorados"] += 1
+                continue
+
             if not decidir_atualizar_registro_sync(
                 registro_dict,
                 registro_destino,
@@ -6274,6 +6652,12 @@ def sincronizar_tabela_incremental(origem_conn, destino_conn, tabela, origem_pre
                 estatisticas["ignorados"] += 1
                 continue
 
+            if detectar_conflito_registro_sync(tabela, registro_dict, registro_destino):
+                if conflitos is not None:
+                    conflitos.append(montar_conflito_registro_sync(tabela, registro_dict, registro_destino))
+                estatisticas["ignorados"] += 1
+                continue
+
             if not decidir_atualizar_registro_sync(
                 registro_dict,
                 registro_destino,
@@ -6318,27 +6702,57 @@ def sincronizar_tabela_incremental(origem_conn, destino_conn, tabela, origem_pre
 
 def sincronizar_bancos_incremental(force=False):
     if not banco_online_configurado():
-        return {"ativo": False, "conectado": False, "mensagem": "Banco online nao configurado."}
+        pendentes = atualizar_fila_sync_bancos_local_pendente(obter_status_sync_bancos().get("ultimo_sucesso_em") or "")
+        salvar_status_sync_bancos(
+            {"status": "local", "pendentes_local": pendentes},
+            "Banco online nao configurado. Dados seguem no SQLite local.",
+            {"pendentes_local": pendentes, "conflitos": contar_conflitos_sync_bancos_abertos()},
+        )
+        return {"ativo": False, "conectado": False, "mensagem": "Banco online nao configurado.", "pendentes_local": pendentes}
 
     status = diagnosticar_banco_online(force=force)
     if not status.get("conectado"):
+        status_atual = obter_status_sync_bancos()
+        pendentes = atualizar_fila_sync_bancos_local_pendente(status_atual.get("ultimo_sucesso_em") or "")
+        salvar_status_sync_bancos(
+            {
+                "status": "offline",
+                "ultima_falha_em": agora_iso(),
+                "ultimo_erro": status.get("mensagem") or "Banco online indisponivel.",
+            },
+            "Banco online offline. Alteracoes locais ficam na fila para sincronizar depois.",
+            {"pendentes_local": pendentes, "conflitos": contar_conflitos_sync_bancos_abertos()},
+        )
         return {
             "ativo": False,
             "conectado": False,
             "mensagem": status.get("mensagem") or "Banco online indisponivel.",
+            "pendentes_local": pendentes,
         }
 
-    origem_online = conectar_banco_online_forcado()
-    destino_local = conectar_banco_local_forcado()
+    if not sync_bancos_lock.acquire(blocking=False):
+        return {"ativo": True, "conectado": True, "mensagem": "Sincronizacao ja em andamento."}
+
+    inicio_ts = time.perf_counter()
+    inicio_iso = agora_iso()
+    salvar_status_sync_bancos(
+        {"status": "sincronizando", "ultimo_inicio_em": inicio_iso, "ultimo_erro": ""},
+        "Sincronizando banco offline e online.",
+    )
+    origem_online = None
+    destino_local = None
 
     resumo = {
         "ativo": True,
         "conectado": True,
         "mensagem": "Sincronizacao incremental concluida.",
         "tabelas": {},
+        "conflitos_lista": [],
     }
 
     try:
+        origem_online = conectar_banco_online_forcado()
+        destino_local = conectar_banco_local_forcado()
         for tabela in TABELAS_SISTEMA_ORDENADAS:
             if tabela.startswith("sincronizacao_"):
                 continue
@@ -6348,25 +6762,80 @@ def sincronizar_bancos_incremental(force=False):
                 destino_local,
                 tabela,
                 origem_prevalece_em_empate=True,
+                conflitos=resumo["conflitos_lista"],
             )
             resultado_local_online = sincronizar_tabela_incremental(
                 destino_local,
                 origem_online,
                 tabela,
                 origem_prevalece_em_empate=False,
+                conflitos=resumo["conflitos_lista"],
             )
             resumo["tabelas"][tabela] = {
                 "online_para_local": resultado_online_local,
                 "local_para_online": resultado_local_online,
             }
+        registrar_conflitos_sync_bancos(resumo["conflitos_lista"])
+        pendentes = atualizar_fila_sync_bancos_local_pendente(agora_iso())
+        totais = {"tabelas_total": len(resumo["tabelas"]), "inseridos": 0, "atualizados": 0, "ignorados": 0}
+        for item in resumo["tabelas"].values():
+            for direcao in ("online_para_local", "local_para_online"):
+                parcial = item.get(direcao) or {}
+                totais["inseridos"] += int(parcial.get("inseridos") or 0)
+                totais["atualizados"] += int(parcial.get("atualizados") or 0)
+                totais["ignorados"] += int(parcial.get("ignorados") or 0)
+        conflitos_abertos = contar_conflitos_sync_bancos_abertos()
+        duracao_ms = int((time.perf_counter() - inicio_ts) * 1000)
+        salvar_status_sync_bancos(
+            {
+                "status": "ok",
+                "ultimo_inicio_em": inicio_iso,
+                "ultimo_sucesso_em": agora_iso(),
+                "ultimo_erro": "",
+            },
+            "Banco offline e online sincronizados.",
+            {
+                **totais,
+                "conflitos": conflitos_abertos,
+                "pendentes_local": pendentes,
+                "duracao_ms": duracao_ms,
+            },
+        )
+        resumo.update(totais)
+        resumo["conflitos"] = conflitos_abertos
+        resumo["pendentes_local"] = pendentes
+        resumo["duracao_ms"] = duracao_ms
         return resumo
+    except Exception as erro:
+        pendentes = atualizar_fila_sync_bancos_local_pendente(obter_status_sync_bancos().get("ultimo_sucesso_em") or "")
+        salvar_status_sync_bancos(
+            {
+                "status": "erro",
+                "ultimo_inicio_em": inicio_iso,
+                "ultima_falha_em": agora_iso(),
+                "ultimo_erro": str(erro),
+            },
+            f"Falha na sincronizacao offline/online: {erro}",
+            {
+                "pendentes_local": pendentes,
+                "conflitos": contar_conflitos_sync_bancos_abertos(),
+                "duracao_ms": int((time.perf_counter() - inicio_ts) * 1000),
+            },
+        )
+        raise
     finally:
+        if origem_online is not None:
+            try:
+                origem_online.close()
+            except Exception:
+                pass
+        if destino_local is not None:
+            try:
+                destino_local.close()
+            except Exception:
+                pass
         try:
-            origem_online.close()
-        except Exception:
-            pass
-        try:
-            destino_local.close()
+            sync_bancos_lock.release()
         except Exception:
             pass
 
@@ -14534,7 +15003,7 @@ def loop_worker_sincronizacao_bancos():
         except Exception as e:
             log_info("ERRO WORKER SYNC BANCOS:", e)
 
-        time.sleep(180)
+        time.sleep(WORKER_SYNC_BANCOS_INTERVALO)
 
 
 def iniciar_worker_sincronizacao_bancos():
@@ -15618,6 +16087,7 @@ def api_agenda_retorno():
 
 def montar_resultado_hud_basico(sync_token="init-pendente"):
     status_banco = obter_status_banco_online()
+    status_sync_bancos = montar_resumo_sync_bancos_hud()
     banco_online_ativo = bool(status_banco.get("conectado"))
     banco_online_backend = status_banco.get("backend_label") or "Supabase / PostgreSQL"
     banco_online_resumo = (
@@ -15651,6 +16121,14 @@ def montar_resultado_hud_basico(sync_token="init-pendente"):
         "banco_online_resumo": banco_online_resumo,
         "banco_online_mensagem": banco_online_mensagem,
         "banco_online_backend_label": banco_online_backend,
+        "sync_bancos_status": status_sync_bancos["status"],
+        "sync_bancos_ok": status_sync_bancos["ok"],
+        "sync_bancos_resumo": status_sync_bancos["resumo"],
+        "sync_bancos_mensagem": status_sync_bancos["mensagem"],
+        "sync_bancos_pendentes": status_sync_bancos["pendentes"],
+        "sync_bancos_conflitos": status_sync_bancos["conflitos"],
+        "sync_bancos_ultimo_sucesso_em": status_sync_bancos["ultimo_sucesso_em"],
+        "sync_bancos_intervalo_segundos": status_sync_bancos["intervalo_segundos"],
         "versao": obter_versao_sistema(),
         "usuario": session.get("usuario") or "",
         "usuario_nome": session.get("usuario_nome") or session.get("usuario") or "",
@@ -15861,6 +16339,7 @@ def montar_resultado_hud_dinamico(usuario_cache, agora_cache_ts):
             )
 
     status_banco = obter_status_banco_online()
+    status_sync_bancos = montar_resumo_sync_bancos_hud()
     banco_online_ativo = bool(status_banco.get("conectado"))
     banco_online_backend = status_banco.get("backend_label") or "Supabase / PostgreSQL"
     banco_online_resumo = (
@@ -15895,6 +16374,14 @@ def montar_resultado_hud_dinamico(usuario_cache, agora_cache_ts):
         "banco_online_resumo": banco_online_resumo,
         "banco_online_mensagem": banco_online_mensagem,
         "banco_online_backend_label": banco_online_backend,
+        "sync_bancos_status": status_sync_bancos["status"],
+        "sync_bancos_ok": status_sync_bancos["ok"],
+        "sync_bancos_resumo": status_sync_bancos["resumo"],
+        "sync_bancos_mensagem": status_sync_bancos["mensagem"],
+        "sync_bancos_pendentes": status_sync_bancos["pendentes"],
+        "sync_bancos_conflitos": status_sync_bancos["conflitos"],
+        "sync_bancos_ultimo_sucesso_em": status_sync_bancos["ultimo_sucesso_em"],
+        "sync_bancos_intervalo_segundos": status_sync_bancos["intervalo_segundos"],
         "versao": obter_versao_sistema(),
         "usuario": session.get("usuario") or "",
         "usuario_nome": session.get("usuario_nome") or session.get("usuario") or "",
@@ -19922,6 +20409,7 @@ def configuracoes(secao="meu-acesso"):
     usuarios = []
     configuracao_empresa = {}
     banco_status = {}
+    banco_sync_status = {}
     banco_config = {}
     backup_status = {}
     backup_config = {}
@@ -19950,6 +20438,12 @@ def configuracoes(secao="meu-acesso"):
         except Exception as erro:
             log_info("ERRO CONFIG BANCO FORM:", erro)
             banco_config = {}
+
+        try:
+            banco_sync_status = obter_status_sync_bancos()
+        except Exception as erro:
+            log_info("ERRO CONFIG SYNC BANCOS:", erro)
+            banco_sync_status = status_sync_bancos_padrao()
 
     if pode_gerenciar_config_sistema and secao in {"sistema", "desenvolvedor", "auto-teste"}:
         try:
@@ -20077,6 +20571,7 @@ def configuracoes(secao="meu-acesso"):
         hud_usuario_itens=montar_itens_hud_configuracao_usuario() if pode_configurar_hud_usuario and secao == "meu-acesso" else [],
         configuracao_empresa=configuracao_empresa,
         banco_status=banco_status,
+        banco_sync_status=banco_sync_status,
         banco_config=banco_config,
         backup_status=backup_status,
         backup_config=backup_config,

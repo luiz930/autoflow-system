@@ -706,6 +706,16 @@ class AppRegressionTests(unittest.TestCase):
         self.assertIn(".hud-line--status-loading", conteudo)
         self.assertIn("statusLoading: statusBanco.carregando", conteudo)
         self.assertNotIn('banco_online_resumo: "Banco online indisponivel"', conteudo)
+        self.assertIn('sync_bancos_resumo: "Sync offline/online aguardando"', conteudo)
+        self.assertIn("function montarStatusSyncBancosHud()", conteudo)
+
+    def test_configuracoes_banco_exibe_status_sync_offline_online(self):
+        with open(os.path.join(app_module.app.root_path, "templates", "configuracoes.html"), encoding="utf-8") as arquivo:
+            conteudo = arquivo.read()
+
+        self.assertIn("Banco offline + online", conteudo)
+        self.assertIn("Fila local pendente", conteudo)
+        self.assertIn("Conflitos abertos", conteudo)
 
     def test_changelog_monta_links_github_automaticos(self):
         commit_hash = "1234567890abcdef1234567890abcdef12345678"
@@ -1675,6 +1685,99 @@ class AppRegressionTests(unittest.TestCase):
         c = conn.cursor()
         c.execute("SELECT data_nascimento FROM clientes WHERE empresa_id=? LIMIT 1", (1,))
         self.assertEqual(c.fetchone()["data_nascimento"], "1990-05-05")
+        conn.close()
+
+    def _criar_banco_sync_veiculos_memoria(self, registros):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            """
+            CREATE TABLE veiculos (
+                id INTEGER PRIMARY KEY,
+                empresa_id INTEGER DEFAULT 1,
+                placa TEXT,
+                modelo TEXT,
+                cor TEXT,
+                atualizado_em TEXT
+            )
+            """
+        )
+        for registro in registros:
+            conn.execute(
+                """
+                INSERT INTO veiculos (id, empresa_id, placa, modelo, cor, atualizado_em)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    registro["id"],
+                    registro.get("empresa_id", 1),
+                    registro["placa"],
+                    registro.get("modelo", ""),
+                    registro.get("cor", ""),
+                    registro.get("atualizado_em", ""),
+                ),
+            )
+        conn.commit()
+        return conn, PersistentCompatConnection(conn)
+
+    def test_sync_bancos_incremental_versao_mais_nova_vence_sem_apagar(self):
+        origem_conn, origem = self._criar_banco_sync_veiculos_memoria([
+            {"id": 1, "placa": "ABC1234", "modelo": "Onix Novo", "cor": "Preto", "atualizado_em": "2026-05-13T10:00:00-03:00"},
+        ])
+        destino_conn, destino = self._criar_banco_sync_veiculos_memoria([
+            {"id": 1, "placa": "ABC1234", "modelo": "Onix Antigo", "cor": "Preto", "atualizado_em": "2026-05-13T09:00:00-03:00"},
+            {"id": 2, "placa": "XYZ9876", "modelo": "Gol", "cor": "Branco", "atualizado_em": "2026-05-13T09:30:00-03:00"},
+        ])
+        conflitos = []
+
+        resultado = app_module.sincronizar_tabela_incremental(origem, destino, "veiculos", conflitos=conflitos)
+
+        row_atualizado = destino_conn.execute("SELECT modelo FROM veiculos WHERE id=1").fetchone()
+        row_preservado = destino_conn.execute("SELECT modelo FROM veiculos WHERE id=2").fetchone()
+        self.assertEqual(resultado["atualizados"], 1)
+        self.assertEqual(row_atualizado["modelo"], "Onix Novo")
+        self.assertEqual(row_preservado["modelo"], "Gol")
+        self.assertEqual(conflitos, [])
+        origem_conn.close()
+        destino_conn.close()
+
+    def test_sync_bancos_empate_divergente_registra_conflito_sem_sobrescrever(self):
+        origem_conn, origem = self._criar_banco_sync_veiculos_memoria([
+            {"id": 1, "placa": "ABC1234", "modelo": "Onix", "cor": "Preto", "atualizado_em": "2026-05-13T10:00:00-03:00"},
+        ])
+        destino_conn, destino = self._criar_banco_sync_veiculos_memoria([
+            {"id": 1, "placa": "ABC1234", "modelo": "Gol", "cor": "Branco", "atualizado_em": "2026-05-13T10:00:00-03:00"},
+        ])
+        conflitos = []
+
+        resultado = app_module.sincronizar_tabela_incremental(origem, destino, "veiculos", conflitos=conflitos)
+
+        row = destino_conn.execute("SELECT modelo, cor FROM veiculos WHERE id=1").fetchone()
+        self.assertEqual(resultado["atualizados"], 0)
+        self.assertEqual(row["modelo"], "Gol")
+        self.assertEqual(row["cor"], "Branco")
+        self.assertEqual(len(conflitos), 1)
+        self.assertEqual(conflitos[0]["tabela"], "veiculos")
+        self.assertIn("placa=ABC1234", conflitos[0]["chave"])
+        origem_conn.close()
+        destino_conn.close()
+
+    def test_status_sync_bancos_local_cria_tabelas_tecnicas(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        wrapper = PersistentCompatConnection(conn)
+
+        app_module.garantir_tabelas_sync_bancos_local(wrapper)
+        status = app_module.obter_status_sync_bancos(conn=wrapper)
+
+        tabelas = {
+            row["name"]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        self.assertIn("sync_bancos_status", tabelas)
+        self.assertIn("sync_bancos_conflitos", tabelas)
+        self.assertIn("sync_bancos_fila", tabelas)
+        self.assertEqual(status["status"], "aguardando")
         conn.close()
 
     def test_mensagem_publica_cadastro_veiculo_nao_exibe_erro_planilha(self):
