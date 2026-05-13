@@ -7673,6 +7673,22 @@ def verificar_senha_usuario(senha_digitada, senha_salva):
 
     return senha_digitada == senha_salva
 
+
+def buscar_usuario_para_alteracao_senha(cursor, usuario_id=None, usuario_login=""):
+    if usuario_id:
+        cursor.execute("SELECT * FROM usuarios WHERE id=?", (usuario_id,))
+        usuario = cursor.fetchone()
+        if usuario:
+            return usuario
+
+    usuario_login = normalizar_texto_campo(usuario_login)
+    if usuario_login:
+        cursor.execute("SELECT * FROM usuarios WHERE usuario=?", (usuario_login,))
+        return cursor.fetchone()
+
+    return None
+
+
 def gerar_senha_temporaria_segura(comprimento=18):
     alfabeto = string.ascii_letters + string.digits + "!@#$%*+-_?"
     return "".join(secrets.choice(alfabeto) for _ in range(max(14, int(comprimento or 18))))
@@ -20713,60 +20729,85 @@ def atualizar_minha_senha():
     if not session.get("usuario"):
         return redirect("/login")
 
-    sincronizar_sessao_usuario()
+    try:
+        sincronizar_sessao_usuario()
+    except Exception as erro:
+        log_info("AVISO SINCRONIZACAO USUARIO SENHA:", erro)
+
     senha_atual = request.form.get("senha_atual") or ""
     nova_senha = request.form.get("nova_senha") or ""
     confirmar_senha = request.form.get("confirmar_senha") or ""
+    destino = destino_configuracoes("meu-acesso")
 
     if not senha_atual or not nova_senha or not confirmar_senha:
         definir_feedback_configuracoes("erro", "Preencha todos os campos para alterar a senha.")
-        return redirect("/configuracoes")
+        return redirect(destino)
 
     if nova_senha != confirmar_senha:
         definir_feedback_configuracoes("erro", "A confirmacao da nova senha nao confere.")
-        return redirect("/configuracoes")
+        return redirect(destino)
 
-    conn = conectar()
-    c = conn.cursor()
-    c.execute("SELECT * FROM usuarios WHERE id=?", (session.get("usuario_id"),))
-    usuario = c.fetchone()
+    conn = None
+    try:
+        conn = conectar()
+        c = conn.cursor()
+        usuario = buscar_usuario_para_alteracao_senha(
+            c,
+            usuario_id=session.get("usuario_id"),
+            usuario_login=session.get("usuario"),
+        )
 
-    if not usuario or not verificar_senha_usuario(senha_atual, usuario["senha"]):
-        conn.close()
-        definir_feedback_configuracoes("erro", "A senha atual informada esta incorreta.")
-        return redirect("/configuracoes")
+        if not usuario or not verificar_senha_usuario(senha_atual, usuario["senha"]):
+            definir_feedback_configuracoes("erro", "A senha atual informada esta incorreta.")
+            return redirect(destino)
 
-    erro_forca = validar_forca_senha(nova_senha, session.get("usuario"))
-    if erro_forca:
-        conn.close()
-        definir_feedback_configuracoes("erro", erro_forca)
-        return redirect("/configuracoes")
+        erro_forca = validar_forca_senha(nova_senha, usuario["usuario"])
+        if erro_forca:
+            definir_feedback_configuracoes("erro", erro_forca)
+            return redirect(destino)
 
-    if verificar_senha_usuario(nova_senha, usuario["senha"]):
-        conn.close()
-        definir_feedback_configuracoes("erro", "Escolha uma senha diferente da atual.")
-        return redirect("/configuracoes")
+        if verificar_senha_usuario(nova_senha, usuario["senha"]):
+            definir_feedback_configuracoes("erro", "Escolha uma senha diferente da atual.")
+            return redirect(destino)
 
-    c.execute(
-        """
-        UPDATE usuarios
-        SET senha=?, senha_alteracao_obrigatoria=0, senha_atualizada_em=?, tentativas_login=0, bloqueado_ate=NULL
-        WHERE id=?
-        """,
-        (senha_hash_bcrypt(nova_senha), agora_iso(), usuario["id"])
-    )
-    conn.commit()
-    c.execute("SELECT * FROM usuarios WHERE id=?", (usuario["id"],))
-    usuario_atualizado = c.fetchone()
-    conn.close()
+        atualizado_em = agora_iso()
+        c.execute(
+            """
+            UPDATE usuarios
+            SET senha=?, senha_alteracao_obrigatoria=0, senha_atualizada_em=?, tentativas_login=0, bloqueado_ate=NULL
+            WHERE id=?
+            """,
+            (senha_hash_bcrypt(nova_senha), atualizado_em, usuario["id"])
+        )
+        conn.commit()
+        c.execute("SELECT * FROM usuarios WHERE id=?", (usuario["id"],))
+        usuario_atualizado = c.fetchone()
+    except Exception as erro:
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        log_info("ERRO ALTERAR SENHA:", erro)
+        definir_feedback_configuracoes("erro", "Nao foi possivel alterar a senha agora. Tente novamente em instantes.")
+        return redirect(destino)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     preencher_sessao_usuario(usuario_atualizado)
-    registrar_auditoria(
-        "alterou_propria_senha",
-        "usuario",
-        entidade_id=usuario["id"],
-        detalhes={"usuario_alvo": usuario["usuario"]},
-    )
+    try:
+        registrar_auditoria_assincrona(
+            "alterou_propria_senha",
+            "usuario",
+            entidade_id=usuario_atualizado["id"],
+            detalhes={"usuario_alvo": usuario_atualizado["usuario"]},
+        )
+    except Exception as erro:
+        log_info("AVISO AUDITORIA SENHA:", erro)
     definir_feedback_configuracoes(
         "sucesso",
         (

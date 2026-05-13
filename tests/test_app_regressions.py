@@ -409,6 +409,123 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Informe usuario e senha.", response.data)
 
+    def criar_banco_usuario_senha(self, senha="SenhaAtual1!"):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            """
+            CREATE TABLE usuarios (
+                id INTEGER PRIMARY KEY,
+                empresa_id INTEGER,
+                usuario TEXT,
+                senha TEXT,
+                nome TEXT,
+                perfil TEXT,
+                ativo INTEGER,
+                tentativas_login INTEGER,
+                bloqueado_ate TEXT,
+                ultimo_login_em TEXT,
+                senha_alteracao_obrigatoria INTEGER,
+                senha_atualizada_em TEXT,
+                foto_perfil TEXT,
+                hud_config_json TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO usuarios (
+                id, empresa_id, usuario, senha, nome, perfil, ativo,
+                tentativas_login, bloqueado_ate, senha_alteracao_obrigatoria,
+                foto_perfil, hud_config_json
+            )
+            VALUES (1, 1, 'admin', ?, 'Admin', 'admin', 1, 2, '2026-05-12T10:00:00', 1, '', '')
+            """,
+            (app_module.senha_hash_bcrypt(senha),),
+        )
+        conn.commit()
+        return conn, PersistentCompatConnection(conn)
+
+    def autenticar_cliente_para_senha(self, usuario_id=1, usuario="admin"):
+        with self.client.session_transaction() as sess:
+            sess["usuario"] = usuario
+            if usuario_id is not None:
+                sess["usuario_id"] = usuario_id
+            sess["usuario_nome"] = "Admin"
+            sess["usuario_perfil"] = "admin"
+            sess["empresa_id"] = 1
+            sess["senha_alteracao_obrigatoria"] = True
+            return app_module.issue_csrf_token(sess)
+
+    def test_atualizar_minha_senha_nao_da_500_se_auditoria_falhar(self):
+        conn, compat = self.criar_banco_usuario_senha()
+        token = self.autenticar_cliente_para_senha()
+
+        with patch.object(app_module, "conectar", return_value=compat), \
+             patch.object(app_module, "sincronizar_sessao_usuario"), \
+             patch.object(app_module, "registrar_auditoria_assincrona", side_effect=RuntimeError("auditoria indisponivel")):
+            response = self.client.post(
+                "/configuracoes/senha",
+                data={
+                    "_csrf_token": token,
+                    "senha_atual": "SenhaAtual1!",
+                    "nova_senha": "NovaSenha1!",
+                    "confirmar_senha": "NovaSenha1!",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        row = conn.execute("SELECT senha, senha_alteracao_obrigatoria, tentativas_login, bloqueado_ate FROM usuarios WHERE id=1").fetchone()
+        self.assertTrue(app_module.verificar_senha_usuario("NovaSenha1!", row["senha"]))
+        self.assertEqual(row["senha_alteracao_obrigatoria"], 0)
+        self.assertEqual(row["tentativas_login"], 0)
+        self.assertIsNone(row["bloqueado_ate"])
+        conn.close()
+
+    def test_atualizar_minha_senha_incorreta_retorna_feedback_sem_500(self):
+        conn, compat = self.criar_banco_usuario_senha()
+        token = self.autenticar_cliente_para_senha()
+
+        with patch.object(app_module, "conectar", return_value=compat), \
+             patch.object(app_module, "sincronizar_sessao_usuario"):
+            response = self.client.post(
+                "/configuracoes/senha",
+                data={
+                    "_csrf_token": token,
+                    "senha_atual": "Errada1!",
+                    "nova_senha": "NovaSenha1!",
+                    "confirmar_senha": "NovaSenha1!",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        row = conn.execute("SELECT senha, senha_alteracao_obrigatoria FROM usuarios WHERE id=1").fetchone()
+        self.assertTrue(app_module.verificar_senha_usuario("SenhaAtual1!", row["senha"]))
+        self.assertEqual(row["senha_alteracao_obrigatoria"], 1)
+        conn.close()
+
+    def test_atualizar_minha_senha_busca_usuario_pelo_login_quando_sessao_sem_id(self):
+        conn, compat = self.criar_banco_usuario_senha()
+        token = self.autenticar_cliente_para_senha(usuario_id=None)
+
+        with patch.object(app_module, "conectar", return_value=compat), \
+             patch.object(app_module, "sincronizar_sessao_usuario"), \
+             patch.object(app_module, "registrar_auditoria_assincrona"):
+            response = self.client.post(
+                "/configuracoes/senha",
+                data={
+                    "_csrf_token": token,
+                    "senha_atual": "SenhaAtual1!",
+                    "nova_senha": "OutraSenha1!",
+                    "confirmar_senha": "OutraSenha1!",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        row = conn.execute("SELECT senha FROM usuarios WHERE id=1").fetchone()
+        self.assertTrue(app_module.verificar_senha_usuario("OutraSenha1!", row["senha"]))
+        conn.close()
+
     def test_login_exibe_versao_configurada_sem_sessao(self):
         with patch.object(app_module, "INIT_DB_EXECUTADO", True), \
              patch.object(app_module, "obter_versao_sistema", return_value="Versao: 0.13.5 - Beta") as versao_mock:
