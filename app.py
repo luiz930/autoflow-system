@@ -7842,6 +7842,15 @@ def sincronizar_sessao_usuario(force=False):
     if usuario:
         preencher_sessao_usuario(usuario, limpar=False)
 
+
+def sincronizar_sessao_usuario_seguro(force=False, contexto="sessao"):
+    try:
+        sincronizar_sessao_usuario(force=force)
+        return True
+    except Exception as erro:
+        log_info(f"AVISO SINCRONIZACAO USUARIO {contexto}:", erro)
+        return False
+
 def usuario_admin():
     return (
         session.get("usuario_perfil") == "admin" or
@@ -14813,7 +14822,7 @@ def exigir_troca_senha_obrigatoria():
     if endpoint == "static" or not session.get("usuario"):
         return
 
-    sincronizar_sessao_usuario()
+    sincronizar_sessao_usuario_seguro(contexto="CONFIGURACOES")
 
     if not session.get("senha_alteracao_obrigatoria"):
         return
@@ -16314,7 +16323,7 @@ def login():
     versao_login = obter_versao_sistema(permitir_sem_sessao=True)
 
     if session.get("usuario"):
-        sincronizar_sessao_usuario()
+        sincronizar_sessao_usuario_seguro(contexto="LOGIN")
         if session.get("senha_alteracao_obrigatoria"):
             return redirect("/configuracoes")
         return redirect("/")
@@ -19877,7 +19886,7 @@ def configuracoes(secao="meu-acesso"):
 
     secao = normalizar_secao_configuracoes(secao)
     preparar_rotinas_interface_logada()
-    sincronizar_sessao_usuario()
+    sincronizar_sessao_usuario_seguro(contexto="VERSAO")
     senha_pendente = bool(session.get("senha_alteracao_obrigatoria"))
     perfil_logado = normalizar_perfil_usuario(
         session.get("usuario_perfil") or (
@@ -20068,7 +20077,7 @@ def salvar_configuracao_versao():
     if not session.get("usuario"):
         return redirect("/login")
 
-    sincronizar_sessao_usuario()
+    sincronizar_sessao_usuario_seguro(contexto="TROCA SENHA OBRIGATORIA")
     if not usuario_gerencia_configuracao_sistema():
         definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem alterar a versao do sistema.")
         return redirect("/configuracoes")
@@ -20652,7 +20661,7 @@ def atualizar_minha_foto():
     if not session.get("usuario"):
         return redirect("/login")
 
-    sincronizar_sessao_usuario()
+    sincronizar_sessao_usuario_seguro(contexto="FOTO USUARIO")
     foto = request.files.get("foto_perfil")
 
     conn = conectar()
@@ -20729,10 +20738,7 @@ def atualizar_minha_senha():
     if not session.get("usuario"):
         return redirect("/login")
 
-    try:
-        sincronizar_sessao_usuario()
-    except Exception as erro:
-        log_info("AVISO SINCRONIZACAO USUARIO SENHA:", erro)
+    sincronizar_sessao_usuario_seguro(contexto="SENHA")
 
     senha_atual = request.form.get("senha_atual") or ""
     nova_senha = request.form.get("nova_senha") or ""
@@ -20822,10 +20828,10 @@ def criar_usuario_funcionario():
     if not session.get("usuario"):
         return redirect("/login")
 
-    sincronizar_sessao_usuario()
+    sincronizar_sessao_usuario_seguro(contexto="CRIAR USUARIO")
     if not usuario_gerencia_acessos():
         definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem criar novos acessos.")
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios"))
 
     nome = (request.form.get("nome") or "").strip()
     usuario = (request.form.get("usuario") or "").strip().lower()
@@ -20835,19 +20841,19 @@ def criar_usuario_funcionario():
 
     if not nome or not usuario or not senha:
         definir_feedback_configuracoes("erro", "Informe nome, login e senha para criar o usuario.")
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios"))
 
     erro_forca = validar_forca_senha(senha, usuario)
     if erro_forca:
         definir_feedback_configuracoes("erro", erro_forca)
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios"))
 
     if perfil == "desenvolvedor" and not usuario_desenvolvedor():
         definir_feedback_configuracoes(
             "erro",
             "Somente um desenvolvedor pode criar um acesso com perfil Desenvolvedor.",
         )
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios"))
 
     if bloquear_criacao_usuario_por_licenca():
         licenca = carregar_contexto_licenca_empresa_seguro()
@@ -20855,7 +20861,7 @@ def criar_usuario_funcionario():
             "erro",
             f"Limite de usuarios do plano atingido ({licenca['usuarios_ativos']}/{licenca['limite_usuarios']}).",
         )
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios"))
 
     conn = conectar()
     c = conn.cursor()
@@ -20865,7 +20871,7 @@ def criar_usuario_funcionario():
     if existente:
         conn.close()
         definir_feedback_configuracoes("erro", "Ja existe um acesso com esse login.")
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios"))
 
     nova_foto = ""
 
@@ -20919,22 +20925,25 @@ def criar_usuario_funcionario():
         if nova_foto:
             remover_foto_perfil_antiga(nova_foto)
         definir_feedback_configuracoes("erro", str(erro))
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios"))
     except Exception:
         conn.rollback()
         conn.close()
         if nova_foto:
             remover_foto_perfil_antiga(nova_foto)
         definir_feedback_configuracoes("erro", "Nao foi possivel criar o usuario agora.")
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios"))
 
     conn.close()
 
-    registrar_auditoria(
-        "criou_usuario",
-        "usuario",
-        detalhes={"usuario_alvo": usuario, "perfil": perfil, "com_foto": bool(nova_foto)},
-    )
+    try:
+        registrar_auditoria_assincrona(
+            "criou_usuario",
+            "usuario",
+            detalhes={"usuario_alvo": usuario, "perfil": perfil, "com_foto": bool(nova_foto)},
+        )
+    except Exception as erro:
+        log_info("AVISO AUDITORIA CRIAR USUARIO:", erro)
     definir_feedback_configuracoes(
         "sucesso",
         (
@@ -20942,17 +20951,17 @@ def criar_usuario_funcionario():
             "A troca de senha sera obrigatoria no primeiro login."
         ),
     )
-    return redirect("/configuracoes")
+    return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
 
 @app.route("/configuracoes/usuarios/<int:usuario_id>/senha", methods=["POST"])
 def redefinir_senha_usuario(usuario_id):
     if not session.get("usuario"):
         return redirect("/login")
 
-    sincronizar_sessao_usuario()
+    sincronizar_sessao_usuario_seguro(contexto="REDEFINIR SENHA")
     if not usuario_gerencia_acessos():
         definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem redefinir senhas.")
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
 
     nova_senha = request.form.get("nova_senha") or ""
 
@@ -20964,7 +20973,7 @@ def redefinir_senha_usuario(usuario_id):
     if not alvo:
         conn.close()
         definir_feedback_configuracoes("erro", "Usuario nao encontrado.")
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
 
     if (
         normalizar_perfil_usuario(alvo["perfil"]) == "desenvolvedor" and
@@ -20975,13 +20984,13 @@ def redefinir_senha_usuario(usuario_id):
             "erro",
             "Somente um desenvolvedor pode redefinir a senha de outro desenvolvedor.",
         )
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
 
     erro_forca = validar_forca_senha(nova_senha, alvo["usuario"])
     if erro_forca:
         conn.close()
         definir_feedback_configuracoes("erro", erro_forca)
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
 
     c.execute(
         """
@@ -20994,12 +21003,15 @@ def redefinir_senha_usuario(usuario_id):
     conn.commit()
     conn.close()
 
-    registrar_auditoria(
-        "redefiniu_senha_usuario",
-        "usuario",
-        entidade_id=usuario_id,
-        detalhes={"usuario_alvo": alvo["usuario"]},
-    )
+    try:
+        registrar_auditoria_assincrona(
+            "redefiniu_senha_usuario",
+            "usuario",
+            entidade_id=usuario_id,
+            detalhes={"usuario_alvo": alvo["usuario"]},
+        )
+    except Exception as erro:
+        log_info("AVISO AUDITORIA REDEFINIR SENHA:", erro)
     definir_feedback_configuracoes(
         "sucesso",
         (
@@ -21007,14 +21019,14 @@ def redefinir_senha_usuario(usuario_id):
             "Ele vai precisar trocar a senha no proximo login."
         ),
     )
-    return redirect("/configuracoes")
+    return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
 
 @app.route("/configuracoes/usuarios/<int:usuario_id>/foto", methods=["POST"])
 def atualizar_foto_usuario(usuario_id):
     if not session.get("usuario"):
         return redirect("/login")
 
-    sincronizar_sessao_usuario()
+    sincronizar_sessao_usuario_seguro(contexto="FOTO USUARIO")
     if not usuario_gerencia_acessos():
         definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem atualizar fotos de acessos.")
         return redirect("/configuracoes")
@@ -21109,10 +21121,10 @@ def alternar_status_usuario(usuario_id):
     if not session.get("usuario"):
         return redirect("/login")
 
-    sincronizar_sessao_usuario()
+    sincronizar_sessao_usuario_seguro(contexto="ALTERNAR USUARIO")
     if not usuario_gerencia_acessos():
         definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem alterar o status de acessos.")
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
 
     conn = conectar()
     c = conn.cursor()
@@ -21122,7 +21134,7 @@ def alternar_status_usuario(usuario_id):
     if not alvo:
         conn.close()
         definir_feedback_configuracoes("erro", "Usuario nao encontrado.")
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
 
     if (
         normalizar_perfil_usuario(alvo["perfil"]) == "desenvolvedor" and
@@ -21133,12 +21145,12 @@ def alternar_status_usuario(usuario_id):
             "erro",
             "Somente um desenvolvedor pode alterar o status de outro desenvolvedor.",
         )
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
 
     if alvo["usuario"] == "admin" or normalizar_perfil_usuario(alvo["perfil"]) == "admin":
         conn.close()
         definir_feedback_configuracoes("erro", "O acesso administrador principal nao pode ser desativado.")
-        return redirect("/configuracoes")
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
 
     novo_status = 0 if int(alvo["ativo"] or 0) else 1
     c.execute("UPDATE usuarios SET ativo=? WHERE empresa_id=? AND id=?", (novo_status, empresa_atual_id(), usuario_id))
@@ -21149,7 +21161,7 @@ def alternar_status_usuario(usuario_id):
         "sucesso",
         f"Usuario {alvo['usuario']} {'ativado' if novo_status else 'pausado'} com sucesso e sincronizado no banco ativo."
     )
-    return redirect("/configuracoes")
+    return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
 
 @app.route("/retornos")
 def pagina_retornos():

@@ -422,6 +422,7 @@ class AppRegressionTests(unittest.TestCase):
                 nome TEXT,
                 perfil TEXT,
                 ativo INTEGER,
+                criado_em TEXT,
                 tentativas_login INTEGER,
                 bloqueado_ate TEXT,
                 ultimo_login_em TEXT,
@@ -435,18 +436,18 @@ class AppRegressionTests(unittest.TestCase):
         conn.execute(
             """
             INSERT INTO usuarios (
-                id, empresa_id, usuario, senha, nome, perfil, ativo,
+                id, empresa_id, usuario, senha, nome, perfil, ativo, criado_em,
                 tentativas_login, bloqueado_ate, senha_alteracao_obrigatoria,
                 foto_perfil, hud_config_json
             )
-            VALUES (1, 1, 'admin', ?, 'Admin', 'admin', 1, 2, '2026-05-12T10:00:00', 1, '', '')
+            VALUES (1, 1, 'admin', ?, 'Admin', 'admin', 1, '2026-05-12T09:00:00', 2, '2026-05-12T10:00:00', 1, '', '')
             """,
             (app_module.senha_hash_bcrypt(senha),),
         )
         conn.commit()
         return conn, PersistentCompatConnection(conn)
 
-    def autenticar_cliente_para_senha(self, usuario_id=1, usuario="admin"):
+    def autenticar_cliente_para_senha(self, usuario_id=1, usuario="admin", senha_pendente=True):
         with self.client.session_transaction() as sess:
             sess["usuario"] = usuario
             if usuario_id is not None:
@@ -454,7 +455,7 @@ class AppRegressionTests(unittest.TestCase):
             sess["usuario_nome"] = "Admin"
             sess["usuario_perfil"] = "admin"
             sess["empresa_id"] = 1
-            sess["senha_alteracao_obrigatoria"] = True
+            sess["senha_alteracao_obrigatoria"] = senha_pendente
             return app_module.issue_csrf_token(sess)
 
     def test_atualizar_minha_senha_nao_da_500_se_auditoria_falhar(self):
@@ -524,6 +525,81 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         row = conn.execute("SELECT senha FROM usuarios WHERE id=1").fetchone()
         self.assertTrue(app_module.verificar_senha_usuario("OutraSenha1!", row["senha"]))
+        conn.close()
+
+    def test_login_com_sessao_existente_nao_da_500_se_sync_falhar(self):
+        with self.client.session_transaction() as sess:
+            sess["usuario"] = "admin"
+            sess["senha_alteracao_obrigatoria"] = False
+
+        with patch.object(app_module, "sincronizar_sessao_usuario", side_effect=RuntimeError("sync indisponivel")):
+            response = self.client.get("/login")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers.get("Location"), "/")
+
+    def test_criar_usuario_nao_da_500_se_auditoria_falhar(self):
+        conn, compat = self.criar_banco_usuario_senha()
+        token = self.autenticar_cliente_para_senha(senha_pendente=False)
+
+        with patch.object(app_module, "conectar", return_value=compat), \
+             patch.object(app_module, "sincronizar_sessao_usuario"), \
+             patch.object(app_module, "bloquear_criacao_usuario_por_licenca", return_value=False), \
+             patch.object(app_module, "registrar_auditoria_assincrona", side_effect=RuntimeError("auditoria indisponivel")):
+            response = self.client.post(
+                "/configuracoes/usuarios",
+                data={
+                    "_csrf_token": token,
+                    "nome": "Operador",
+                    "usuario": "operador",
+                    "senha": "AcessoNovo1!",
+                    "perfil": "funcionario",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers.get("Location"), "/configuracoes/usuarios?detalhar_usuarios=1")
+        row = conn.execute("SELECT senha, senha_alteracao_obrigatoria, ativo FROM usuarios WHERE usuario='operador'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertTrue(app_module.verificar_senha_usuario("AcessoNovo1!", row["senha"]))
+        self.assertEqual(row["senha_alteracao_obrigatoria"], 1)
+        self.assertEqual(row["ativo"], 1)
+        conn.close()
+
+    def test_redefinir_senha_usuario_nao_da_500_se_auditoria_falhar(self):
+        conn, compat = self.criar_banco_usuario_senha()
+        conn.execute(
+            """
+            INSERT INTO usuarios (
+                id, empresa_id, usuario, senha, nome, perfil, ativo, criado_em,
+                tentativas_login, bloqueado_ate, senha_alteracao_obrigatoria,
+                foto_perfil, hud_config_json
+            )
+            VALUES (2, 1, 'operador', ?, 'Operador', 'funcionario', 1, '2026-05-12T09:00:00', 3, '2026-05-12T10:00:00', 0, '', '')
+            """,
+            (app_module.senha_hash_bcrypt("SenhaAntiga1!"),),
+        )
+        conn.commit()
+        token = self.autenticar_cliente_para_senha(senha_pendente=False)
+
+        with patch.object(app_module, "conectar", return_value=compat), \
+             patch.object(app_module, "sincronizar_sessao_usuario"), \
+             patch.object(app_module, "registrar_auditoria_assincrona", side_effect=RuntimeError("auditoria indisponivel")):
+            response = self.client.post(
+                "/configuracoes/usuarios/2/senha",
+                data={
+                    "_csrf_token": token,
+                    "nova_senha": "SenhaNova2!",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers.get("Location"), "/configuracoes/usuarios?detalhar_usuarios=1")
+        row = conn.execute("SELECT senha, senha_alteracao_obrigatoria, tentativas_login, bloqueado_ate FROM usuarios WHERE id=2").fetchone()
+        self.assertTrue(app_module.verificar_senha_usuario("SenhaNova2!", row["senha"]))
+        self.assertEqual(row["senha_alteracao_obrigatoria"], 1)
+        self.assertEqual(row["tentativas_login"], 0)
+        self.assertIsNone(row["bloqueado_ate"])
         conn.close()
 
     def test_login_exibe_versao_configurada_sem_sessao(self):
