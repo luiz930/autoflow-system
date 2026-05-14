@@ -6473,6 +6473,62 @@ def listar_conflitos_sync_bancos_abertos(limite=8):
         conn.close()
 
 
+def arquivar_conflitos_sync_bancos_abertos(motivo="revisao_manual_admin"):
+    conn = conectar_banco_local_forcado()
+    total = 0
+    try:
+        garantir_tabelas_sync_bancos_local(conn)
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT id, tabela, chave, detalhe_json
+            FROM sync_bancos_conflitos
+            WHERE resolvido=0
+            ORDER BY id
+            """
+        )
+        rows = [row_para_dict(row) for row in c.fetchall()]
+        for row in rows:
+            detalhe = {
+                "conflito_id": row.get("id"),
+                "tabela": row.get("tabela"),
+                "chave": row.get("chave"),
+                "motivo": motivo,
+                "usuario": session.get("usuario") if has_request_context() else "",
+                "observacao": (
+                    "Conflito arquivado por revisao administrativa. "
+                    "Nenhum dado foi sobrescrito automaticamente."
+                ),
+            }
+            try:
+                detalhe["conflito"] = json.loads(row.get("detalhe_json") or "{}")
+            except Exception:
+                detalhe["conflito"] = {}
+            c.execute(
+                """
+                INSERT INTO sync_bancos_resolucoes (
+                    tabela, chave, acao, direcao, status, detalhe_json, criado_em
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    row.get("tabela") or "",
+                    row.get("chave") or "",
+                    "conflito_revisado_admin",
+                    "manual",
+                    "revisado",
+                    json.dumps(detalhe, ensure_ascii=False, default=sanitizar_para_json),
+                    agora_iso(),
+                ),
+            )
+            total += 1
+        c.execute("UPDATE sync_bancos_conflitos SET resolvido=1 WHERE resolvido=0")
+        conn.commit()
+        return total
+    finally:
+        conn.close()
+
+
 def contar_conflitos_sync_bancos_abertos(conn=None):
     fechar = False
     if conn is None:
@@ -16751,7 +16807,78 @@ def api_sync_bancos_resumo():
         "resumo": resumo,
         "resolucoes": resolucoes,
         "conflitos": conflitos,
+        "acoes": [
+            {
+                "id": "reprocessar_seguro",
+                "titulo": "Reprocessar seguro",
+                "descricao": "Tenta resolver automaticamente apenas registros com versao mais recente segura.",
+                "perigosa": False,
+            },
+            {
+                "id": "marcar_revisado",
+                "titulo": "Marcar como revisado",
+                "descricao": "Arquiva os conflitos restantes sem sobrescrever dados.",
+                "perigosa": True,
+            },
+        ] if usuario_gerencia_configuracao_sistema() else [],
     })
+
+@app.route("/api/sync-bancos/acao", methods=["POST"])
+def api_sync_bancos_acao():
+    if not session.get("usuario"):
+        return jsonify({"ok": False, "erro": "nao_autorizado"}), 401
+    sincronizar_sessao_usuario_seguro(contexto="SYNC BANCOS ACAO")
+    if not usuario_gerencia_configuracao_sistema():
+        return jsonify({"ok": False, "erro": "acesso_negado"}), 403
+
+    dados = request.get_json(silent=True) or {}
+    acao = normalizar_texto_campo(dados.get("acao"))
+    if acao == "reprocessar_seguro":
+        resultado = sincronizar_bancos_incremental(force=True)
+        conflitos = contar_conflitos_sync_bancos_abertos()
+        registrar_auditoria(
+            "sync_bancos_reprocessou_seguro",
+            "sync_bancos",
+            detalhes={
+                "conflitos_abertos": conflitos,
+                "resultado": resultado,
+            },
+        )
+        return jsonify({
+            "ok": True,
+            "mensagem": (
+                "Reprocessamento seguro concluido. "
+                f"Conflitos restantes: {conflitos}."
+            ),
+            "resultado": resultado,
+            "conflitos": conflitos,
+        })
+
+    if acao == "marcar_revisado":
+        total = arquivar_conflitos_sync_bancos_abertos()
+        pendentes = atualizar_fila_sync_bancos_local_pendente(
+            obter_status_sync_bancos().get("ultimo_sucesso_em") or ""
+        )
+        salvar_status_sync_bancos(
+            {"status": "ok", "ultimo_sucesso_em": agora_iso(), "ultimo_erro": ""},
+            "Conflitos restantes foram revisados pelo administrador sem sobrescrever dados.",
+            {
+                "conflitos": contar_conflitos_sync_bancos_abertos(),
+                "pendentes_local": pendentes,
+            },
+        )
+        registrar_auditoria(
+            "sync_bancos_conflitos_revisados",
+            "sync_bancos",
+            detalhes={"total": total, "modo": "sem_sobrescrever_dados"},
+        )
+        return jsonify({
+            "ok": True,
+            "mensagem": f"{total} conflito(s) marcado(s) como revisado(s), sem sobrescrever dados.",
+            "conflitos": contar_conflitos_sync_bancos_abertos(),
+        })
+
+    return jsonify({"ok": False, "erro": "acao_invalida"}), 400
 
 def obter_payload_status_sync():
     if not session.get("usuario"):
@@ -22252,6 +22379,56 @@ def testar_configuracao_banco():
         definir_feedback_configuracoes("sucesso", "Conexao com o Supabase validada com sucesso.")
     else:
         definir_feedback_configuracoes("erro", status.get("mensagem") or "Nao foi possivel validar a conexao online.")
+
+    return redirect("/configuracoes")
+
+@app.route("/configuracoes/banco/sync-acao", methods=["POST"])
+def executar_acao_sync_bancos_configuracoes():
+    if not session.get("usuario"):
+        return redirect("/login")
+
+    sincronizar_sessao_usuario()
+    if not usuario_gerencia_banco_online():
+        definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem agir sobre conflitos do banco.")
+        return redirect("/configuracoes")
+
+    acao = normalizar_texto_campo(request.form.get("acao"))
+    try:
+        if acao == "reprocessar_seguro":
+            resultado = sincronizar_bancos_incremental(force=True)
+            conflitos = contar_conflitos_sync_bancos_abertos()
+            registrar_auditoria(
+                "sync_bancos_reprocessou_seguro",
+                "sync_bancos",
+                detalhes={"conflitos_abertos": conflitos, "resultado": resultado},
+            )
+            definir_feedback_configuracoes(
+                "sucesso" if conflitos == 0 else "aviso",
+                f"Reprocessamento seguro concluido. Conflitos restantes: {conflitos}.",
+            )
+        elif acao == "marcar_revisado":
+            total = arquivar_conflitos_sync_bancos_abertos()
+            pendentes = atualizar_fila_sync_bancos_local_pendente(
+                obter_status_sync_bancos().get("ultimo_sucesso_em") or ""
+            )
+            salvar_status_sync_bancos(
+                {"status": "ok", "ultimo_sucesso_em": agora_iso(), "ultimo_erro": ""},
+                "Conflitos restantes foram revisados pelo administrador sem sobrescrever dados.",
+                {"conflitos": contar_conflitos_sync_bancos_abertos(), "pendentes_local": pendentes},
+            )
+            registrar_auditoria(
+                "sync_bancos_conflitos_revisados",
+                "sync_bancos",
+                detalhes={"total": total, "modo": "sem_sobrescrever_dados"},
+            )
+            definir_feedback_configuracoes(
+                "sucesso",
+                f"{total} conflito(s) marcado(s) como revisado(s), sem sobrescrever dados.",
+            )
+        else:
+            definir_feedback_configuracoes("erro", "Acao de sincronizacao invalida.")
+    except Exception as erro:
+        definir_feedback_configuracoes("erro", f"Nao foi possivel executar a acao: {erro}")
 
     return redirect("/configuracoes")
 

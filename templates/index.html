@@ -2308,8 +2308,47 @@ function textoAcaoSyncBancos(acao) {
     const mapa = {
         atualizacao_automatica_mais_recente: "Aplicou a versao mais recente",
         foto_preservada_sem_sobrescrever: "Preservou foto existente",
+        conflito_revisado_admin: "Conflito revisado pelo admin",
     };
     return mapa[acao] || acao || "Registro avaliado";
+}
+
+function csrfTokenCabecalho() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute("content") || "" : "";
+}
+
+async function executarAcaoSyncBancos(acao) {
+    const mensagens = {
+        reprocessar_seguro: "Reprocessar agora usando apenas regras seguras?",
+        marcar_revisado: "Marcar os conflitos restantes como revisados sem sobrescrever dados?",
+    };
+    if (!confirm(mensagens[acao] || "Executar acao de sincronizacao?")) {
+        return;
+    }
+    const dropdown = document.getElementById("dropdown-sync-bancos");
+    try {
+        const res = await fetch("/api/sync-bancos/acao", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrfTokenCabecalho(),
+            },
+            body: JSON.stringify({ acao }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+            alert(data.erro || "Nao foi possivel executar a acao.");
+            return;
+        }
+        if (dropdown) {
+            dropdown.dataset.carregado = "0";
+        }
+        await carregarSyncBancosResumo(true);
+        atualizarHomeSnapshot();
+    } catch (e) {
+        alert("Nao foi possivel executar a acao agora.");
+    }
 }
 
 function renderizarSyncBancosResumo(data) {
@@ -2358,6 +2397,24 @@ function renderizarSyncBancosResumo(data) {
     status.className = "agenda-card-note";
     status.textContent = resumo.mensagem || "O sistema resolve automaticamente apenas quando existe uma versao mais recente segura.";
     dropdown.appendChild(status);
+
+    if (Array.isArray(data.acoes) && data.acoes.length) {
+        const actions = document.createElement("div");
+        actions.className = "agenda-header-actions";
+        actions.style.margin = "10px 0";
+        data.acoes.forEach(acao => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.textContent = acao.titulo || acao.id;
+            btn.title = acao.descricao || "";
+            btn.onclick = () => executarAcaoSyncBancos(acao.id);
+            if (acao.perigosa) {
+                btn.style.borderColor = "#f97316";
+            }
+            actions.appendChild(btn);
+        });
+        dropdown.appendChild(actions);
+    }
 
     if (resolucoes.length) {
         resolucoes.slice(0, 5).forEach(item => {
