@@ -122,15 +122,22 @@ export function AppShell({ active, title, subtitle, onSelect, onLogout, children
 function Sidebar({ active, onSelect, overlay = false }: { active: AppScreenKey; onSelect: (screen: AppScreenKey) => void; overlay?: boolean }) {
   return (
     <View style={[styles.sidebar, overlay && styles.sidebarOverlay]}>
-      <View style={styles.sidebarHeader}>
-        <View style={styles.sidebarLogo}>
-          <Text style={styles.sidebarLogoText}>W</Text>
+      <ScrollView
+        alwaysBounceVertical
+        nestedScrollEnabled
+        persistentScrollbar
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator
+        style={styles.sidebarScroller}
+        contentContainerStyle={styles.sidebarNav}
+      >
+        <View style={styles.sidebarHeader}>
+          <View style={styles.sidebarLogo}>
+            <Text style={styles.sidebarLogoText}>W</Text>
+          </View>
+          <Text style={styles.sidebarTitle}>Wagen</Text>
+          <Text style={styles.sidebarSubtitle}>Estetica automotiva</Text>
         </View>
-        <Text style={styles.sidebarTitle}>Wagen</Text>
-        <Text style={styles.sidebarSubtitle}>Estetica automotiva</Text>
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false} style={styles.sidebarScroller} contentContainerStyle={styles.sidebarNav}>
         {menuGroups.map((group) => (
           <View key={group.label} style={styles.sidebarGroup}>
             <Text style={styles.sidebarGroupLabel}>{group.label}</Text>
@@ -172,8 +179,6 @@ const styles = StyleSheet.create({
     borderRightWidth: 2,
     borderRightColor: colors.primary,
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.md,
     zIndex: 30,
     elevation: 30,
     flexShrink: 0
@@ -191,7 +196,7 @@ const styles = StyleSheet.create({
     elevation: 20
   },
   sidebarHeader: {
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
@@ -231,10 +236,11 @@ const styles = StyleSheet.create({
   sidebarNav: {
     gap: spacing.md,
     paddingBottom: spacing.xl,
-    flexGrow: 1
+    paddingTop: spacing.xs
   },
   sidebarScroller: {
-    flex: 1
+    flex: 1,
+    paddingHorizontal: 0
   },
   sidebarGroup: {
     borderRadius: 18,
