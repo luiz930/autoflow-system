@@ -240,6 +240,82 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(changes[0]["payload"]["valor"], 80.0)
         conn.close()
 
+    def test_api_mobile_sync_retorna_servicos_e_fotos_do_site(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(
+            """
+            CREATE TABLE veiculos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mobile_uuid TEXT
+            );
+            CREATE TABLE tipos_servico (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT,
+                valor REAL
+            );
+            CREATE TABLE servicos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                veiculo_id INTEGER,
+                tipo_id INTEGER,
+                valor REAL,
+                valor_adicional REAL,
+                status TEXT,
+                observacoes TEXT,
+                etapa_atual TEXT,
+                entrada TEXT,
+                entrega_prevista TEXT,
+                entrega TEXT,
+                mobile_uuid TEXT,
+                mobile_updated_at TEXT
+            );
+            CREATE TABLE fotos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                servico_id INTEGER,
+                tipo TEXT,
+                caminho TEXT,
+                usuario TEXT,
+                usuario_nome TEXT,
+                tamanho_bytes INTEGER,
+                largura INTEGER,
+                altura INTEGER,
+                mime_type TEXT,
+                criado_em TEXT,
+                mobile_uuid TEXT,
+                mobile_updated_at TEXT
+            );
+            INSERT INTO veiculos (mobile_uuid) VALUES ('veiculo-site-1');
+            INSERT INTO tipos_servico (nome, valor) VALUES ('Lavagem Completa', 80);
+            INSERT INTO servicos (
+                veiculo_id, tipo_id, valor, valor_adicional, status, observacoes,
+                etapa_atual, entrada, entrega_prevista, mobile_uuid
+            )
+            VALUES (1, 1, 90, 10, 'EM ANDAMENTO', 'Site', 'LAVAGEM', '2026-05-14T10:00:00', '2026-05-14T12:00:00', 'servico-site-1');
+            INSERT INTO fotos (servico_id, tipo, usuario, usuario_nome, mime_type, criado_em, mobile_uuid)
+            VALUES (1, 'entrada', 'admin', 'Admin', 'image/jpeg', '2026-05-14T10:01:00', 'foto-site-1');
+            """
+        )
+        compat = PersistentCompatConnection(conn)
+
+        with patch.dict(os.environ, {"MOBILE_SYNC_TOKEN": "segredo"}, clear=False), \
+             patch.object(app_module, "conectar", return_value=compat):
+            resposta = self.client.post(
+                "/api/mobile/sync",
+                json={"changes": []},
+                headers={"Authorization": "Bearer segredo"},
+            )
+
+        self.assertEqual(resposta.status_code, 200)
+        changes = resposta.get_json()["changes"]
+        servico = next(item for item in changes if item["entity"] == "servicos")
+        foto = next(item for item in changes if item["entity"] == "fotos")
+        self.assertEqual(servico["payload"]["uuid"], "servico-site-1")
+        self.assertEqual(servico["payload"]["veiculo_uuid"], "veiculo-site-1")
+        self.assertEqual(servico["payload"]["fotos_entrada"], 1)
+        self.assertEqual(foto["payload"]["servico_uuid"], "servico-site-1")
+        self.assertEqual(foto["payload"]["tipo"], "entrada")
+        conn.close()
+
     def test_api_mobile_sync_aplica_veiculo_offline(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row

@@ -17431,6 +17431,101 @@ def montar_changes_mobile_site(c):
     try:
         c.execute(
             """
+            SELECT s.id, s.veiculo_id, s.valor, s.valor_adicional, s.status, s.observacoes,
+                   s.etapa_atual, s.entrada, s.entrega_prevista, s.entrega,
+                   COALESCE(s.mobile_uuid, '') AS mobile_uuid,
+                   COALESCE(s.mobile_updated_at, '') AS mobile_updated_at,
+                   COALESCE(v.mobile_uuid, '') AS veiculo_mobile_uuid,
+                   COALESCE(ts.nome, '') AS tipo_nome,
+                   SUM(CASE WHEN f.tipo='entrada' THEN 1 ELSE 0 END) AS fotos_entrada,
+                   SUM(CASE WHEN f.tipo='detalhe' THEN 1 ELSE 0 END) AS fotos_detalhe,
+                   SUM(CASE WHEN f.tipo='saida' THEN 1 ELSE 0 END) AS fotos_saida
+            FROM servicos s
+            LEFT JOIN veiculos v ON v.id = s.veiculo_id
+            LEFT JOIN tipos_servico ts ON ts.id = s.tipo_id
+            LEFT JOIN fotos f ON f.servico_id = s.id
+            GROUP BY s.id
+            ORDER BY s.id DESC
+            LIMIT 500
+            """
+        )
+        for row in c.fetchall():
+            uuid = normalizar_texto_campo(row["mobile_uuid"]) or f"site-servico-{row['id']}"
+            veiculo_uuid = normalizar_texto_campo(row["veiculo_mobile_uuid"])
+            if not veiculo_uuid and row["veiculo_id"]:
+                veiculo_uuid = f"site-veiculo-{row['veiculo_id']}"
+            changes.append({
+                "entity": "servicos",
+                "entity_uuid": uuid,
+                "action": "upsert",
+                "payload": {
+                    "uuid": uuid,
+                    "veiculo_uuid": veiculo_uuid,
+                    "tipo_nome": str(row["tipo_nome"] or "Servico"),
+                    "valor": float(row["valor"] or 0),
+                    "valor_adicional": float(row["valor_adicional"] or 0),
+                    "status": str(row["status"] or "ABERTO"),
+                    "observacoes": str(row["observacoes"] or ""),
+                    "etapa_atual": str(row["etapa_atual"] or "LAVAGEM"),
+                    "entrada": str(row["entrada"] or ""),
+                    "entrega_prevista": str(row["entrega_prevista"] or ""),
+                    "entrega": str(row["entrega"] or ""),
+                    "fotos_entrada": int(row["fotos_entrada"] or 0),
+                    "fotos_detalhe": int(row["fotos_detalhe"] or 0),
+                    "fotos_saida": int(row["fotos_saida"] or 0),
+                    "updated_at": str(row["mobile_updated_at"] or row["entrada"] or agora_iso()),
+                },
+            })
+    except Exception as erro:
+        log_info("ERRO MOBILE PULL SERVICOS:", erro)
+
+    try:
+        c.execute(
+            """
+            SELECT f.id, f.servico_id, f.tipo, f.caminho, f.usuario, f.usuario_nome,
+                   f.tamanho_bytes, f.largura, f.altura, f.mime_type, f.criado_em,
+                   COALESCE(f.mobile_uuid, '') AS mobile_uuid,
+                   COALESCE(f.mobile_updated_at, '') AS mobile_updated_at,
+                   COALESCE(s.mobile_uuid, '') AS servico_mobile_uuid
+            FROM fotos f
+            LEFT JOIN servicos s ON s.id = f.servico_id
+            ORDER BY f.id DESC
+            LIMIT 500
+            """
+        )
+        for row in c.fetchall():
+            uuid = normalizar_texto_campo(row["mobile_uuid"]) or f"site-foto-{row['id']}"
+            servico_uuid = normalizar_texto_campo(row["servico_mobile_uuid"])
+            if not servico_uuid and row["servico_id"]:
+                servico_uuid = f"site-servico-{row['servico_id']}"
+            tipo = normalizar_texto_campo(row["tipo"]).lower()
+            if tipo not in {"entrada", "detalhe", "saida"}:
+                tipo = "entrada"
+            changes.append({
+                "entity": "fotos",
+                "entity_uuid": uuid,
+                "action": "upsert",
+                "payload": {
+                    "uuid": uuid,
+                    "servico_uuid": servico_uuid,
+                    "tipo": tipo,
+                    "uri_local": f"/fotos/{row['id']}/arquivo",
+                    "usuario": str(row["usuario"] or ""),
+                    "usuario_nome": str(row["usuario_nome"] or ""),
+                    "tamanho_bytes": int(row["tamanho_bytes"] or 0),
+                    "largura": int(row["largura"] or 0),
+                    "altura": int(row["altura"] or 0),
+                    "mime_type": str(row["mime_type"] or "image/jpeg"),
+                    "created_at": str(row["criado_em"] or ""),
+                    "updated_at": str(row["mobile_updated_at"] or row["criado_em"] or agora_iso()),
+                },
+            })
+    except Exception as erro:
+        log_info("ERRO MOBILE PULL FOTOS:", erro)
+
+    try:
+        c.execute(
+            """
             SELECT id, nome, valor
             FROM tipos_servico
             ORDER BY nome ASC

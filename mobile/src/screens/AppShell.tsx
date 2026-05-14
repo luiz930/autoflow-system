@@ -130,6 +130,8 @@ function Sidebar({ active, onSelect, overlay = false }: { active: AppScreenKey; 
         showsVerticalScrollIndicator
         style={styles.sidebarScroller}
         contentContainerStyle={styles.sidebarNav}
+        keyboardShouldPersistTaps="handled"
+        overScrollMode="always"
       >
         <View style={styles.sidebarHeader}>
           <View style={styles.sidebarLogo}>
@@ -175,6 +177,7 @@ const styles = StyleSheet.create({
   sidebar: {
     width: 260,
     height: "100%",
+    maxHeight: "100%",
     backgroundColor: colors.surface,
     borderRightWidth: 2,
     borderRightColor: colors.primary,
@@ -235,12 +238,13 @@ const styles = StyleSheet.create({
   },
   sidebarNav: {
     gap: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.xl * 4,
     paddingTop: spacing.xs
   },
   sidebarScroller: {
     flex: 1,
-    paddingHorizontal: 0
+    paddingHorizontal: 0,
+    width: "100%"
   },
   sidebarGroup: {
     borderRadius: 18,

@@ -19,6 +19,7 @@ export type ServicoLocal = {
   etapa_atual?: string;
   entrada?: string;
   entrega_prevista?: string;
+  entrega?: string;
   fotos_entrada?: number;
   fotos_detalhe?: number;
   fotos_saida?: number;
@@ -248,7 +249,7 @@ export async function listarServicos() {
   const db = await getDatabase();
   return db.getAllAsync<ServicoLocal>(
     `
-    SELECT uuid, veiculo_uuid, tipo_nome, valor, valor_adicional, status, observacoes, etapa_atual, entrada, entrega_prevista, fotos_entrada, fotos_detalhe, fotos_saida, updated_at
+    SELECT uuid, veiculo_uuid, tipo_nome, valor, valor_adicional, status, observacoes, etapa_atual, entrada, entrega_prevista, entrega, fotos_entrada, fotos_detalhe, fotos_saida, updated_at
     FROM servicos
     WHERE deleted_at IS NULL
     ORDER BY updated_at DESC, entrada DESC

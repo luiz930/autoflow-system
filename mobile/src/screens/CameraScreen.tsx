@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { UserSession } from "../auth/authRepository";
-import { FotoTipo, salvarFotoAtendimento } from "../data/localRepository";
+import { finalizarServico, FotoTipo, salvarFotoAtendimento } from "../data/localRepository";
 import { newUuid } from "../database/db";
 import { colors, spacing } from "../theme";
 
@@ -13,6 +13,7 @@ export type CameraTarget = {
   servico_uuid: string;
   tipo: FotoTipo;
   titulo: string;
+  finalizarAoSalvar?: boolean;
 };
 
 type Props = {
@@ -26,6 +27,8 @@ export function CameraScreen({ session, target, onClose, onSaved }: Props) {
   const cameraRef = useRef<CameraView | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [saving, setSaving] = useState(false);
+  const [savedCount, setSavedCount] = useState(0);
+  const [finalizado, setFinalizado] = useState(false);
 
   async function takePhoto() {
     if (!cameraRef.current || saving) {
@@ -60,8 +63,12 @@ export function CameraScreen({ session, target, onClose, onSaved }: Props) {
         largura: Number(photo.width || 0),
         altura: Number(photo.height || 0)
       });
+      if (target.finalizarAoSalvar && !finalizado) {
+        await finalizarServico(target.servico_uuid);
+        setFinalizado(true);
+      }
+      setSavedCount((value) => value + 1);
       await onSaved();
-      onClose();
     } finally {
       setSaving(false);
     }
@@ -91,6 +98,7 @@ export function CameraScreen({ session, target, onClose, onSaved }: Props) {
       <CameraView ref={cameraRef} style={styles.camera} facing="back" />
       <View style={styles.header}>
         <Text style={styles.headerText}>{target.titulo}</Text>
+        <Text style={styles.headerSubText}>{savedCount} foto(s) salva(s). Tire quantas precisar e toque em concluir.</Text>
       </View>
       <View style={styles.toolbar}>
         <Pressable onPress={onClose} style={styles.iconButton}>
@@ -99,7 +107,9 @@ export function CameraScreen({ session, target, onClose, onSaved }: Props) {
         <Pressable onPress={takePhoto} style={styles.captureButton}>
           <Ionicons color="#111827" name="camera" size={30} />
         </Pressable>
-        <View style={styles.iconButtonPlaceholder} />
+        <Pressable onPress={onClose} style={styles.doneButton}>
+          <Text style={styles.doneButtonText}>Concluir</Text>
+        </Pressable>
       </View>
       {saving ? <Text style={styles.saving}>Salvando no banco local...</Text> : null}
     </View>
@@ -128,6 +138,12 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     textAlign: "center"
   },
+  headerSubText: {
+    color: colors.muted,
+    textAlign: "center",
+    marginTop: 4,
+    fontSize: 12
+  },
   toolbar: {
     position: "absolute",
     left: spacing.lg,
@@ -145,9 +161,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center"
   },
-  iconButtonPlaceholder: {
-    width: 52,
-    height: 52
+  doneButton: {
+    minWidth: 82,
+    height: 52,
+    borderRadius: 18,
+    backgroundColor: "rgba(17, 24, 39, 0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border
+  },
+  doneButtonText: {
+    color: colors.text,
+    fontWeight: "900"
   },
   captureButton: {
     width: 74,

@@ -7,7 +7,6 @@ import {
   BuscaPlacaResultado,
   buscarPorPlaca,
   ClienteLocal,
-  finalizarServico,
   listarClientes,
   listarServicos,
   listarTiposServico,
@@ -187,14 +186,11 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: (target: 
     if (!selecionado?.servico_uuid) {
       return;
     }
-    if (tipo === "saida") {
-      await finalizarServico(selecionado.servico_uuid);
-      await onSaved();
-    }
     onOpenCamera({
       servico_uuid: selecionado.servico_uuid,
       tipo,
-      titulo: tipo === "entrada" ? "Fotos de entrada" : tipo === "detalhe" ? "Fotos de detalhe" : "Fotos de finalizacao"
+      titulo: tipo === "entrada" ? "Fotos de entrada" : tipo === "detalhe" ? "Fotos de detalhe" : "Fotos de finalizacao",
+      finalizarAoSalvar: tipo === "saida"
     });
   }
 
@@ -359,6 +355,40 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: (target: 
 }
 
 function PainelScreen({ onOpenCamera }: { onOpenCamera: (target: CameraTarget) => void }) {
+  const [servicos, setServicos] = useState<ServicoLocal[]>([]);
+
+  useEffect(() => {
+    listarServicos().then(setServicos);
+  }, []);
+
+  const lavagem = servicos.filter((item) => String(item.status || "").toUpperCase() !== "FINALIZADO" && String(item.etapa_atual || "LAVAGEM").toUpperCase() !== "FINALIZACAO");
+  const finalizacao = servicos.filter((item) => String(item.status || "").toUpperCase() !== "FINALIZADO" && String(item.etapa_atual || "").toUpperCase() === "FINALIZACAO");
+  const finalizados = servicos.filter((item) => String(item.status || "").toUpperCase() === "FINALIZADO");
+
+  function renderServico(item: ServicoLocal) {
+    return (
+      <View key={item.uuid} style={styles.servicePreview}>
+        <View style={styles.itemRow}>
+          <Text style={styles.itemTitle}>{item.tipo_nome || "Atendimento"}</Text>
+          <Text style={styles.badge}>{item.status || "ABERTO"}</Text>
+        </View>
+        <Text style={styles.muted}>{item.observacoes || "Sem observacoes"}</Text>
+        <Text style={styles.muted}>Fotos: entrada {Number(item.fotos_entrada || 0)} | detalhe {Number(item.fotos_detalhe || 0)} | finalizacao {Number(item.fotos_saida || 0)}</Text>
+        <View style={styles.photoFlowRow}>
+          <Pressable onPress={() => onOpenCamera({ servico_uuid: item.uuid, tipo: "entrada", titulo: "Fotos de entrada" })} style={styles.photoActionButton}>
+            <Text style={styles.secondaryButtonText}>Entrada</Text>
+          </Pressable>
+          <Pressable onPress={() => onOpenCamera({ servico_uuid: item.uuid, tipo: "detalhe", titulo: "Fotos de detalhe" })} style={styles.photoActionButton}>
+            <Text style={styles.secondaryButtonText}>Detalhe</Text>
+          </Pressable>
+          <Pressable onPress={() => onOpenCamera({ servico_uuid: item.uuid, tipo: "saida", titulo: "Fotos de finalizacao", finalizarAoSalvar: true })} style={styles.photoActionButton}>
+            <Text style={styles.secondaryButtonText}>Finalizar</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <>
       <View style={styles.toolbarCard}>
@@ -369,24 +399,30 @@ function PainelScreen({ onOpenCamera }: { onOpenCamera: (target: CameraTarget) =
         </View>
       </View>
       <View style={styles.grid}>
-        <Metric label="Em atendimento" value={0} icon="car" />
-        <Metric label="Lavagem" value={0} icon="water" />
-        <Metric label="Finalizacao" value={0} icon="checkmark-done" />
-        <Metric label="Atrasados" value={0} icon="alert-circle" />
+        <Metric label="Em atendimento" value={lavagem.length + finalizacao.length} icon="car" />
+        <Metric label="Lavagem" value={lavagem.length} icon="water" />
+        <Metric label="Finalizacao" value={finalizacao.length} icon="checkmark-done" />
+        <Metric label="Finalizados" value={finalizados.length} icon="flag" />
       </View>
-      {["Etapa de Lavagem", "Etapa de Finalizacao"].map((title) => (
-        <View key={title} style={styles.stageCard}>
+      {[
+        { title: "Etapa de Lavagem", items: lavagem },
+        { title: "Etapa de Finalizacao", items: finalizacao },
+        { title: "Finalizados", items: finalizados }
+      ].map((group) => (
+        <View key={group.title} style={styles.stageCard}>
           <View style={styles.sectionHeader}>
             <View>
-              <Text style={styles.pill}>{title}</Text>
-              <Text style={styles.muted}>Nenhum atendimento sincronizado nesta etapa.</Text>
+              <Text style={styles.pill}>{group.title}</Text>
+              <Text style={styles.muted}>{group.items.length} atendimento(s)</Text>
             </View>
             <Ionicons color={colors.primary} name="timer" size={24} />
           </View>
-          <View style={styles.servicePreview}>
-            <Text style={styles.itemTitle}>Fila vazia</Text>
-            <Text style={styles.muted}>Ao abrir servicos no app, eles aparecem aqui com cliente, veiculo, etapa e fotos.</Text>
-          </View>
+          {group.items.length ? group.items.map(renderServico) : (
+            <View style={styles.servicePreview}>
+              <Text style={styles.itemTitle}>Fila vazia</Text>
+              <Text style={styles.muted}>Sincronize para carregar os atendimentos do site.</Text>
+            </View>
+          )}
         </View>
       ))}
     </>
@@ -1034,6 +1070,16 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 18,
     fontWeight: "900"
+  },
+  photoActionButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm
   },
   grid: {
     flexDirection: "row",

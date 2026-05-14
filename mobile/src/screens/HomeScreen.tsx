@@ -32,6 +32,12 @@ export function HomeScreen({ session, onLogout }: Props) {
     getSetting("sync_token").then(setSyncToken);
   }, []);
 
+  useEffect(() => {
+    if (endpointUrl) {
+      syncNow();
+    }
+  }, [endpointUrl]);
+
   async function syncNow() {
     const normalizedUrl = normalizeServerUrl(endpointUrl);
     await setSetting("sync_endpoint_url", normalizedUrl);
@@ -41,8 +47,13 @@ export function HomeScreen({ session, onLogout }: Props) {
     await refreshPending();
   }
 
+  async function handleLocalSaved() {
+    await refreshPending();
+    await syncNow();
+  }
+
   if (cameraTarget) {
-    return <CameraScreen session={session} target={cameraTarget} onClose={() => setCameraTarget(null)} onSaved={refreshPending} />;
+    return <CameraScreen session={session} target={cameraTarget} onClose={() => setCameraTarget(null)} onSaved={handleLocalSaved} />;
   }
 
   return (
@@ -57,7 +68,7 @@ export function HomeScreen({ session, onLogout }: Props) {
         key={activeScreen}
         screen={activeScreen}
         onOpenCamera={setCameraTarget}
-        onRefreshPending={refreshPending}
+        onRefreshPending={handleLocalSaved}
         sync={{
           pending,
           message: syncMessage,

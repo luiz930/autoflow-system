@@ -169,4 +169,101 @@ async function applyServerChange(change: ServerChange) {
       String(payload.updated_at || new Date().toISOString())
     );
   }
+
+  if (entity === "servicos") {
+    await db.runAsync(
+      `
+      INSERT INTO servicos (
+        uuid, veiculo_uuid, tipo_nome, valor, valor_adicional, status, observacoes,
+        etapa_atual, entrada, entrega_prevista, entrega,
+        fotos_entrada, fotos_detalhe, fotos_saida, updated_at, deleted_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      ON CONFLICT(uuid) DO UPDATE SET
+        veiculo_uuid=excluded.veiculo_uuid,
+        tipo_nome=excluded.tipo_nome,
+        valor=excluded.valor,
+        valor_adicional=excluded.valor_adicional,
+        status=excluded.status,
+        observacoes=excluded.observacoes,
+        etapa_atual=excluded.etapa_atual,
+        entrada=excluded.entrada,
+        entrega_prevista=excluded.entrega_prevista,
+        entrega=excluded.entrega,
+        fotos_entrada=excluded.fotos_entrada,
+        fotos_detalhe=excluded.fotos_detalhe,
+        fotos_saida=excluded.fotos_saida,
+        updated_at=excluded.updated_at,
+        deleted_at=NULL
+      `,
+      uuid,
+      String(payload.veiculo_uuid || ""),
+      String(payload.tipo_nome || "Servico"),
+      Number(payload.valor || 0),
+      Number(payload.valor_adicional || 0),
+      String(payload.status || "ABERTO"),
+      String(payload.observacoes || ""),
+      String(payload.etapa_atual || "LAVAGEM"),
+      String(payload.entrada || ""),
+      String(payload.entrega_prevista || ""),
+      String(payload.entrega || ""),
+      Number(payload.fotos_entrada || 0),
+      Number(payload.fotos_detalhe || 0),
+      Number(payload.fotos_saida || 0),
+      String(payload.updated_at || new Date().toISOString())
+    );
+  }
+
+  if (entity === "fotos") {
+    const servicoUuid = String(payload.servico_uuid || "");
+    const tipo = ["entrada", "detalhe", "saida"].includes(String(payload.tipo)) ? String(payload.tipo) : "entrada";
+    await db.runAsync(
+      `
+      INSERT INTO fotos (
+        uuid, servico_uuid, tipo, uri_local, mime_type, usuario, usuario_nome,
+        tamanho_bytes, largura, altura, created_at, updated_at, deleted_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      ON CONFLICT(uuid) DO UPDATE SET
+        servico_uuid=excluded.servico_uuid,
+        tipo=excluded.tipo,
+        uri_local=excluded.uri_local,
+        mime_type=excluded.mime_type,
+        usuario=excluded.usuario,
+        usuario_nome=excluded.usuario_nome,
+        tamanho_bytes=excluded.tamanho_bytes,
+        largura=excluded.largura,
+        altura=excluded.altura,
+        updated_at=excluded.updated_at,
+        deleted_at=NULL
+      `,
+      uuid,
+      servicoUuid,
+      tipo,
+      String(payload.uri_local || ""),
+      String(payload.mime_type || "image/jpeg"),
+      String(payload.usuario || ""),
+      String(payload.usuario_nome || ""),
+      Number(payload.tamanho_bytes || 0),
+      Number(payload.largura || 0),
+      Number(payload.altura || 0),
+      String(payload.created_at || payload.updated_at || new Date().toISOString()),
+      String(payload.updated_at || payload.created_at || new Date().toISOString())
+    );
+    if (servicoUuid) {
+      await db.runAsync(
+        `
+        UPDATE servicos
+        SET fotos_entrada=(SELECT COUNT(*) FROM fotos WHERE servico_uuid=? AND tipo='entrada' AND deleted_at IS NULL),
+            fotos_detalhe=(SELECT COUNT(*) FROM fotos WHERE servico_uuid=? AND tipo='detalhe' AND deleted_at IS NULL),
+            fotos_saida=(SELECT COUNT(*) FROM fotos WHERE servico_uuid=? AND tipo='saida' AND deleted_at IS NULL)
+        WHERE uuid=?
+        `,
+        servicoUuid,
+        servicoUuid,
+        servicoUuid,
+        servicoUuid
+      );
+    }
+  }
 }
