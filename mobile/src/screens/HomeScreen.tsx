@@ -65,7 +65,7 @@ export function HomeScreen({ session, onLogout }: Props) {
       onLogout={onLogout}
     >
       <NativeScreenContent
-        key={activeScreen}
+        key={`${activeScreen}-${syncMessage}-${pending}`}
         screen={activeScreen}
         onOpenCamera={setCameraTarget}
         onRefreshPending={handleLocalSaved}

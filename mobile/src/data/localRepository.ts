@@ -32,6 +32,18 @@ export type TipoServicoLocal = {
   valor: number;
 };
 
+export type ProdutoPneuLocal = {
+  uuid: string;
+  nome: string;
+};
+
+export type ChecklistItemLocal = {
+  uuid: string;
+  nome: string;
+  ativo: number;
+  ordem: number;
+};
+
 export type BuscaPlacaResultado = {
   veiculo_uuid: string;
   cliente_uuid?: string;
@@ -113,6 +125,30 @@ export async function listarTiposServico() {
     FROM tipos_servico
     WHERE deleted_at IS NULL
     ORDER BY nome ASC
+    `
+  );
+}
+
+export async function listarProdutosPneu() {
+  const db = await getDatabase();
+  return db.getAllAsync<ProdutoPneuLocal>(
+    `
+    SELECT uuid, nome
+    FROM produtos_pneu
+    WHERE deleted_at IS NULL
+    ORDER BY nome ASC
+    `
+  );
+}
+
+export async function listarChecklistItens() {
+  const db = await getDatabase();
+  return db.getAllAsync<ChecklistItemLocal>(
+    `
+    SELECT uuid, nome, ativo, ordem
+    FROM checklist_itens
+    WHERE deleted_at IS NULL
+    ORDER BY ordem ASC, nome ASC
     `
   );
 }

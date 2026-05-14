@@ -170,6 +170,87 @@ async function applyServerChange(change: ServerChange) {
     );
   }
 
+  if (entity === "produtos_pneu") {
+    await db.runAsync(
+      `
+      INSERT INTO produtos_pneu (uuid, nome, updated_at, deleted_at)
+      VALUES (?, ?, ?, NULL)
+      ON CONFLICT(uuid) DO UPDATE SET
+        nome=excluded.nome,
+        updated_at=excluded.updated_at,
+        deleted_at=NULL
+      `,
+      uuid,
+      String(payload.nome || "Produto"),
+      String(payload.updated_at || new Date().toISOString())
+    );
+  }
+
+  if (entity === "checklist_itens") {
+    await db.runAsync(
+      `
+      INSERT INTO checklist_itens (uuid, nome, ativo, ordem, updated_at, deleted_at)
+      VALUES (?, ?, ?, ?, ?, NULL)
+      ON CONFLICT(uuid) DO UPDATE SET
+        nome=excluded.nome,
+        ativo=excluded.ativo,
+        ordem=excluded.ordem,
+        updated_at=excluded.updated_at,
+        deleted_at=NULL
+      `,
+      uuid,
+      String(payload.nome || "Item"),
+      Number(payload.ativo ?? 1),
+      Number(payload.ordem || 0),
+      String(payload.updated_at || new Date().toISOString())
+    );
+  }
+
+  if (entity === "adicionais") {
+    await db.runAsync(
+      `
+      INSERT INTO adicionais (uuid, nome, updated_at, deleted_at)
+      VALUES (?, ?, ?, NULL)
+      ON CONFLICT(uuid) DO UPDATE SET
+        nome=excluded.nome,
+        updated_at=excluded.updated_at,
+        deleted_at=NULL
+      `,
+      uuid,
+      String(payload.nome || "Adicional"),
+      String(payload.updated_at || new Date().toISOString())
+    );
+  }
+
+  if (entity === "servico_cobrancas_extras") {
+    await db.runAsync(
+      `
+      INSERT INTO servico_cobrancas_extras (
+        uuid, servico_uuid, descricao, valor, criado_em, criado_por_usuario,
+        criado_por_nome, updated_at, deleted_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      ON CONFLICT(uuid) DO UPDATE SET
+        servico_uuid=excluded.servico_uuid,
+        descricao=excluded.descricao,
+        valor=excluded.valor,
+        criado_em=excluded.criado_em,
+        criado_por_usuario=excluded.criado_por_usuario,
+        criado_por_nome=excluded.criado_por_nome,
+        updated_at=excluded.updated_at,
+        deleted_at=NULL
+      `,
+      uuid,
+      String(payload.servico_uuid || ""),
+      String(payload.descricao || ""),
+      Number(payload.valor || 0),
+      String(payload.criado_em || payload.updated_at || ""),
+      String(payload.criado_por_usuario || ""),
+      String(payload.criado_por_nome || ""),
+      String(payload.updated_at || payload.criado_em || new Date().toISOString())
+    );
+  }
+
   if (entity === "servicos") {
     await db.runAsync(
       `

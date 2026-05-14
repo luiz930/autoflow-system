@@ -1,5 +1,5 @@
 import { ReactNode, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { colors, spacing } from "../theme";
@@ -89,10 +89,15 @@ export function AppShell({ active, title, subtitle, onSelect, onLogout, children
 
         {!desktopSidebar && (
           <Modal visible={sidebarOpen} transparent animationType="slide" onRequestClose={() => setSidebarOpen(false)}>
-            <View style={styles.modalLayer}>
-              <Pressable style={styles.drawerBackdrop} onPress={() => setSidebarOpen(false)} />
-              <Sidebar active={active} height={height} onSelect={selectScreen} overlay />
-            </View>
+            <SafeAreaView style={styles.mobileMenuScreen}>
+              <View style={styles.mobileMenuTopbar}>
+                <Text style={styles.mobileMenuTitle}>Menu</Text>
+                <Pressable onPress={() => setSidebarOpen(false)} style={styles.iconButton}>
+                  <Ionicons color={colors.text} name="close" size={22} />
+                </Pressable>
+              </View>
+              <Sidebar active={active} height={height - 64} onSelect={selectScreen} overlay />
+            </SafeAreaView>
           </Modal>
         )}
 
@@ -183,6 +188,25 @@ const styles = StyleSheet.create({
   modalLayer: {
     flex: 1
   },
+  mobileMenuScreen: {
+    flex: 1,
+    backgroundColor: colors.bg
+  },
+  mobileMenuTopbar: {
+    minHeight: 64,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.panel
+  },
+  mobileMenuTitle: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "900"
+  },
   sidebar: {
     width: 260,
     backgroundColor: colors.surfaceStrong,
@@ -196,10 +220,10 @@ const styles = StyleSheet.create({
     overflow: "hidden"
   },
   sidebarOverlay: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
+    position: "relative",
+    width: "100%",
+    flex: 1,
+    borderRightWidth: 0,
     shadowColor: "#000",
     shadowOpacity: 0.45,
     shadowRadius: 18,
@@ -257,7 +281,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingBottom: spacing.xl * 4,
     paddingTop: spacing.xs,
-    minHeight: "110%"
+    minHeight: "130%"
   },
   sidebarScroller: {
     flex: 1,

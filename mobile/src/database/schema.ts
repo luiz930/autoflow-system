@@ -76,6 +76,45 @@ CREATE TABLE IF NOT EXISTS tipos_servico (
   deleted_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS produtos_pneu (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  nome TEXT NOT NULL,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS checklist_itens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  nome TEXT NOT NULL,
+  ativo INTEGER DEFAULT 1,
+  ordem INTEGER DEFAULT 0,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS adicionais (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  nome TEXT NOT NULL,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS servico_cobrancas_extras (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  servico_uuid TEXT,
+  descricao TEXT NOT NULL,
+  valor REAL DEFAULT 0,
+  criado_em TEXT,
+  criado_por_usuario TEXT,
+  criado_por_nome TEXT,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS fotos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   uuid TEXT UNIQUE NOT NULL,

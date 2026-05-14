@@ -6,10 +6,14 @@ import {
   atualizarClienteVeiculo,
   BuscaPlacaResultado,
   buscarPorPlaca,
+  ChecklistItemLocal,
   ClienteLocal,
   listarClientes,
+  listarChecklistItens,
+  listarProdutosPneu,
   listarServicos,
   listarTiposServico,
+  ProdutoPneuLocal,
   resumoLocal,
   salvarCliente,
   salvarClienteVeiculo,
@@ -72,6 +76,12 @@ export function NativeScreenContent({ screen, onOpenCamera, onRefreshPending, sy
   }
   if (screen === "servicos") {
     return <ServicosScreen onSaved={onRefreshPending} onOpenCamera={onOpenCamera} />;
+  }
+  if (screen === "pneus") {
+    return <PneusScreen sync={sync} />;
+  }
+  if (screen === "checklist") {
+    return <ChecklistScreen sync={sync} />;
   }
   return <ModuleScreen screen={screen} sync={sync} />;
 }
@@ -480,10 +490,12 @@ function ClientesScreen({ onSaved }: { onSaved: () => void }) {
 
 function ServicosScreen({ onSaved, onOpenCamera }: { onSaved: () => void; onOpenCamera: (target: CameraTarget) => void }) {
   const [servicos, setServicos] = useState<ServicoLocal[]>([]);
+  const [tipos, setTipos] = useState<TipoServicoLocal[]>([]);
   const [observacoes, setObservacoes] = useState("");
 
   async function refresh() {
     setServicos(await listarServicos());
+    setTipos(await listarTiposServico());
   }
 
   useEffect(() => {
@@ -514,10 +526,90 @@ function ServicosScreen({ onSaved, onOpenCamera }: { onSaved: () => void; onOpen
         </View>
       </View>
       <ListCard title="Servicos locais" empty="Nenhum servico offline ainda.">
+        {tipos.map((item) => (
+          <View key={`tipo-${item.uuid}`} style={styles.listItem}>
+            <View style={styles.itemRow}>
+              <Text style={styles.itemTitle}>{item.nome}</Text>
+              <Text style={styles.badge}>R$ {Number(item.valor || 0).toFixed(2)}</Text>
+            </View>
+            <Text style={styles.muted}>Catalogo sincronizado do site</Text>
+          </View>
+        ))}
         {servicos.map((item) => (
           <View key={item.uuid} style={styles.listItem}>
             <Text style={styles.itemTitle}>{item.status || "ABERTO"} | {item.etapa_atual || "LAVAGEM"}</Text>
             <Text style={styles.muted}>{item.observacoes || "Sem observacoes"}</Text>
+          </View>
+        ))}
+      </ListCard>
+    </>
+  );
+}
+
+function PneusScreen({ sync }: { sync: Props["sync"] }) {
+  const [produtos, setProdutos] = useState<ProdutoPneuLocal[]>([]);
+
+  useEffect(() => {
+    listarProdutosPneu().then(setProdutos);
+  }, [sync.message]);
+
+  return (
+    <>
+      <View style={styles.pageHeaderCard}>
+        <View>
+          <Text style={styles.pill}>Pneus</Text>
+          <Text style={styles.cardTitle}>Produtos de pneu</Text>
+          <Text style={styles.muted}>Lista sincronizada da tela Pneus do site.</Text>
+        </View>
+        <Ionicons color={colors.primary} name="construct" size={28} />
+      </View>
+      <View style={styles.card}>
+        <Pressable onPress={sync.onSyncNow} style={styles.primaryButton}>
+          <Ionicons color={colors.primaryText} name="sync" size={22} />
+          <Text style={styles.primaryButtonText}>Sincronizar pneus</Text>
+        </Pressable>
+      </View>
+      <ListCard title="Produtos cadastrados no site" empty="Nenhum produto de pneu sincronizado ainda.">
+        {produtos.map((item) => (
+          <View key={item.uuid} style={styles.listItem}>
+            <Text style={styles.itemTitle}>{item.nome}</Text>
+          </View>
+        ))}
+      </ListCard>
+    </>
+  );
+}
+
+function ChecklistScreen({ sync }: { sync: Props["sync"] }) {
+  const [itens, setItens] = useState<ChecklistItemLocal[]>([]);
+
+  useEffect(() => {
+    listarChecklistItens().then(setItens);
+  }, [sync.message]);
+
+  return (
+    <>
+      <View style={styles.pageHeaderCard}>
+        <View>
+          <Text style={styles.pill}>Checklist</Text>
+          <Text style={styles.cardTitle}>Itens de finalizacao</Text>
+          <Text style={styles.muted}>Itens obrigatorios sincronizados do site.</Text>
+        </View>
+        <Ionicons color={colors.primary} name="checkbox" size={28} />
+      </View>
+      <View style={styles.card}>
+        <Pressable onPress={sync.onSyncNow} style={styles.primaryButton}>
+          <Ionicons color={colors.primaryText} name="sync" size={22} />
+          <Text style={styles.primaryButtonText}>Sincronizar checklist</Text>
+        </Pressable>
+      </View>
+      <ListCard title="Itens cadastrados no site" empty="Nenhum item de checklist sincronizado ainda.">
+        {itens.map((item) => (
+          <View key={item.uuid} style={styles.listItem}>
+            <View style={styles.itemRow}>
+              <Text style={styles.itemTitle}>{item.nome}</Text>
+              <Text style={styles.badge}>{item.ativo ? "Ativo" : "Inativo"}</Text>
+            </View>
           </View>
         ))}
       </ListCard>
@@ -928,7 +1020,7 @@ function Metric({ label, value, icon }: { label: string; value: number; icon: ke
 }
 
 function ListCard({ title, empty, children }: { title: string; empty: string; children: ReactNode }) {
-  const list = Array.isArray(children) ? children.filter(Boolean) : children;
+  const list = Array.isArray(children) ? children.flat().filter(Boolean) : children;
   const isEmpty = Array.isArray(list) ? list.length === 0 : !list;
   return (
     <View style={styles.card}>

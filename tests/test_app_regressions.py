@@ -316,6 +316,66 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(foto["payload"]["tipo"], "entrada")
         conn.close()
 
+    def test_api_mobile_sync_retorna_catalogos_operacionais_do_site(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(
+            """
+            CREATE TABLE produtos_pneu (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT
+            );
+            CREATE TABLE checklist_itens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT,
+                ativo INTEGER,
+                ordem INTEGER,
+                criado_em TEXT
+            );
+            CREATE TABLE adicionais (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT
+            );
+            CREATE TABLE servicos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mobile_uuid TEXT
+            );
+            CREATE TABLE servico_cobrancas_extras (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                servico_id INTEGER,
+                descricao TEXT,
+                valor REAL,
+                criado_em TEXT,
+                criado_por_usuario TEXT,
+                criado_por_nome TEXT
+            );
+            INSERT INTO produtos_pneu (nome) VALUES ('Pretinho');
+            INSERT INTO checklist_itens (nome, ativo, ordem, criado_em) VALUES ('Conferir vidros', 1, 2, '2026-05-14T10:00:00');
+            INSERT INTO adicionais (nome) VALUES ('Higienizacao');
+            INSERT INTO servicos (mobile_uuid) VALUES ('servico-site-1');
+            INSERT INTO servico_cobrancas_extras (servico_id, descricao, valor, criado_em)
+            VALUES (1, 'Produto extra', 15, '2026-05-14T10:10:00');
+            """
+        )
+        compat = PersistentCompatConnection(conn)
+
+        with patch.dict(os.environ, {"MOBILE_SYNC_TOKEN": "segredo"}, clear=False), \
+             patch.object(app_module, "conectar", return_value=compat):
+            resposta = self.client.post(
+                "/api/mobile/sync",
+                json={"changes": []},
+                headers={"Authorization": "Bearer segredo"},
+            )
+
+        self.assertEqual(resposta.status_code, 200)
+        changes = resposta.get_json()["changes"]
+        entidades = {item["entity"]: item for item in changes}
+        self.assertEqual(entidades["produtos_pneu"]["payload"]["nome"], "Pretinho")
+        self.assertEqual(entidades["checklist_itens"]["payload"]["nome"], "Conferir vidros")
+        self.assertEqual(entidades["adicionais"]["payload"]["nome"], "Higienizacao")
+        self.assertEqual(entidades["servico_cobrancas_extras"]["payload"]["servico_uuid"], "servico-site-1")
+        conn.close()
+
     def test_api_mobile_sync_aplica_veiculo_offline(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row

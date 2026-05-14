@@ -17548,6 +17548,115 @@ def montar_changes_mobile_site(c):
     except Exception as erro:
         log_info("ERRO MOBILE PULL TIPOS SERVICO:", erro)
 
+    try:
+        c.execute(
+            """
+            SELECT id, nome
+            FROM produtos_pneu
+            ORDER BY nome ASC
+            LIMIT 500
+            """
+        )
+        for row in c.fetchall():
+            uuid = f"site-produto-pneu-{row['id']}"
+            changes.append({
+                "entity": "produtos_pneu",
+                "entity_uuid": uuid,
+                "action": "upsert",
+                "payload": {
+                    "uuid": uuid,
+                    "nome": str(row["nome"] or ""),
+                    "updated_at": agora_iso(),
+                },
+            })
+    except Exception as erro:
+        log_info("ERRO MOBILE PULL PRODUTOS PNEU:", erro)
+
+    try:
+        c.execute(
+            """
+            SELECT id, nome, ativo, ordem, criado_em
+            FROM checklist_itens
+            ORDER BY ordem ASC, nome ASC
+            LIMIT 500
+            """
+        )
+        for row in c.fetchall():
+            uuid = f"site-checklist-item-{row['id']}"
+            changes.append({
+                "entity": "checklist_itens",
+                "entity_uuid": uuid,
+                "action": "upsert",
+                "payload": {
+                    "uuid": uuid,
+                    "nome": str(row["nome"] or ""),
+                    "ativo": int(row["ativo"] if row["ativo"] is not None else 1),
+                    "ordem": int(row["ordem"] or 0),
+                    "updated_at": str(row["criado_em"] or agora_iso()),
+                },
+            })
+    except Exception as erro:
+        log_info("ERRO MOBILE PULL CHECKLIST:", erro)
+
+    try:
+        c.execute(
+            """
+            SELECT id, nome
+            FROM adicionais
+            ORDER BY nome ASC
+            LIMIT 500
+            """
+        )
+        for row in c.fetchall():
+            uuid = f"site-adicional-{row['id']}"
+            changes.append({
+                "entity": "adicionais",
+                "entity_uuid": uuid,
+                "action": "upsert",
+                "payload": {
+                    "uuid": uuid,
+                    "nome": str(row["nome"] or ""),
+                    "updated_at": agora_iso(),
+                },
+            })
+    except Exception as erro:
+        log_info("ERRO MOBILE PULL ADICIONAIS:", erro)
+
+    try:
+        c.execute(
+            """
+            SELECT e.id, e.servico_id, e.descricao, e.valor, e.criado_em,
+                   e.criado_por_usuario, e.criado_por_nome,
+                   COALESCE(s.mobile_uuid, '') AS servico_mobile_uuid
+            FROM servico_cobrancas_extras e
+            LEFT JOIN servicos s ON s.id = e.servico_id
+            ORDER BY e.id DESC
+            LIMIT 500
+            """
+        )
+        for row in c.fetchall():
+            uuid = f"site-cobranca-extra-{row['id']}"
+            servico_uuid = normalizar_texto_campo(row["servico_mobile_uuid"])
+            if not servico_uuid and row["servico_id"]:
+                servico_uuid = f"site-servico-{row['servico_id']}"
+            changes.append({
+                "entity": "servico_cobrancas_extras",
+                "entity_uuid": uuid,
+                "action": "upsert",
+                "payload": {
+                    "uuid": uuid,
+                    "servico_uuid": servico_uuid,
+                    "descricao": str(row["descricao"] or ""),
+                    "valor": float(row["valor"] or 0),
+                    "criado_em": str(row["criado_em"] or ""),
+                    "criado_por_usuario": str(row["criado_por_usuario"] or ""),
+                    "criado_por_nome": str(row["criado_por_nome"] or ""),
+                    "updated_at": str(row["criado_em"] or agora_iso()),
+                },
+            })
+    except Exception as erro:
+        log_info("ERRO MOBILE PULL COBRANCAS EXTRAS:", erro)
+
     return changes
 
 @app.route("/api/mobile/sync", methods=["POST"])
