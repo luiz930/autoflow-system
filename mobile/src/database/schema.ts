@@ -49,7 +49,9 @@ CREATE TABLE IF NOT EXISTS servicos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   uuid TEXT UNIQUE NOT NULL,
   veiculo_uuid TEXT,
+  tipo_nome TEXT,
   valor REAL,
+  valor_adicional REAL DEFAULT 0,
   entrada TEXT,
   entrega_prevista TEXT,
   entrega TEXT,
@@ -58,6 +60,17 @@ CREATE TABLE IF NOT EXISTS servicos (
   etapa_atual TEXT DEFAULT 'LAVAGEM',
   criado_por_usuario TEXT,
   criado_por_nome TEXT,
+  fotos_entrada INTEGER DEFAULT 0,
+  fotos_detalhe INTEGER DEFAULT 0,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS tipos_servico (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  nome TEXT NOT NULL,
+  valor REAL DEFAULT 0,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
   deleted_at TEXT
 );

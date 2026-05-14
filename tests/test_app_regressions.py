@@ -112,6 +112,7 @@ class AppRegressionTests(unittest.TestCase):
             """
             CREATE TABLE servicos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                veiculo_id INTEGER,
                 status TEXT,
                 observacoes TEXT,
                 etapa_atual TEXT,
@@ -206,6 +207,98 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(changes[0]["payload"]["nome"], "Cliente Site")
         self.assertEqual(changes[1]["entity"], "veiculos")
         self.assertEqual(changes[1]["payload"]["placa"], "ABC1234")
+        conn.close()
+
+    def test_api_mobile_sync_retorna_tipos_servico_do_site(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            """
+            CREATE TABLE tipos_servico (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT,
+                valor REAL
+            )
+            """
+        )
+        conn.execute("INSERT INTO tipos_servico (nome, valor) VALUES ('Lavagem Completa', 80)")
+        compat = PersistentCompatConnection(conn)
+
+        with patch.dict(os.environ, {"MOBILE_SYNC_TOKEN": "segredo"}, clear=False), \
+             patch.object(app_module, "conectar", return_value=compat):
+            resposta = self.client.post(
+                "/api/mobile/sync",
+                json={"changes": []},
+                headers={"Authorization": "Bearer segredo"},
+            )
+
+        self.assertEqual(resposta.status_code, 200)
+        changes = resposta.get_json()["changes"]
+        self.assertEqual(changes[0]["entity"], "tipos_servico")
+        self.assertEqual(changes[0]["payload"]["nome"], "Lavagem Completa")
+        self.assertEqual(changes[0]["payload"]["valor"], 80.0)
+        conn.close()
+
+    def test_api_mobile_sync_aplica_veiculo_offline(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(
+            """
+            CREATE TABLE clientes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT,
+                telefone TEXT,
+                placa_principal TEXT,
+                data_nascimento TEXT,
+                mobile_uuid TEXT,
+                mobile_updated_at TEXT
+            );
+            CREATE TABLE veiculos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                placa TEXT,
+                modelo TEXT,
+                cor TEXT,
+                cliente_id INTEGER,
+                status_atendimento TEXT,
+                atendimento_ativo INTEGER,
+                mobile_uuid TEXT,
+                mobile_updated_at TEXT
+            );
+            INSERT INTO clientes (nome, mobile_uuid) VALUES ('Cliente App', 'cliente-app-1');
+            """
+        )
+        compat = PersistentCompatConnection(conn)
+        payload = {
+            "changes": [
+                {
+                    "id": 9,
+                    "entity": "veiculos",
+                    "entity_uuid": "veiculo-app-1",
+                    "action": "upsert",
+                    "payload": {
+                        "cliente_uuid": "cliente-app-1",
+                        "placa": "APP1234",
+                        "modelo": "Onix",
+                        "cor": "Preto",
+                    },
+                }
+            ]
+        }
+
+        with patch.dict(os.environ, {"MOBILE_SYNC_TOKEN": "segredo"}, clear=False), \
+             patch.object(app_module, "conectar", return_value=compat):
+            resposta = self.client.post(
+                "/api/mobile/sync",
+                json=payload,
+                headers={"Authorization": "Bearer segredo"},
+            )
+
+        self.assertEqual(resposta.status_code, 200)
+        veiculo = conn.execute("SELECT * FROM veiculos WHERE mobile_uuid='veiculo-app-1'").fetchone()
+        self.assertIsNotNone(veiculo)
+        self.assertEqual(veiculo["placa"], "APP1234")
+        self.assertEqual(veiculo["modelo"], "Onix")
+        self.assertEqual(veiculo["cliente_id"], 1)
         conn.close()
 
     def test_api_mobile_login_gera_token_e_usuario_para_app(self):

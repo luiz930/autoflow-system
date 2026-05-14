@@ -17171,6 +17171,57 @@ def aplicar_change_mobile(c, entity, entity_uuid, action, payload):
             )
         return True
 
+    if entity == "veiculos":
+        if action == "delete":
+            c.execute(
+                "UPDATE veiculos SET mobile_updated_at=?, atendimento_ativo=0 WHERE mobile_uuid=?",
+                (agora_iso(), entity_uuid),
+            )
+            return True
+        cliente_uuid = normalizar_texto_campo(payload.get("cliente_uuid"))
+        cliente_id = None
+        if cliente_uuid:
+            c.execute("SELECT id FROM clientes WHERE mobile_uuid=? LIMIT 1", (cliente_uuid,))
+            cliente = c.fetchone()
+            if cliente:
+                cliente_id = cliente["id"]
+        c.execute("SELECT id FROM veiculos WHERE mobile_uuid=? LIMIT 1", (entity_uuid,))
+        existente = c.fetchone()
+        valores = (
+            normalizar_texto_campo(payload.get("placa")).upper(),
+            normalizar_texto_campo(payload.get("modelo")),
+            normalizar_texto_campo(payload.get("cor")),
+            cliente_id,
+            normalizar_texto_campo(payload.get("status_atendimento")) or "SEM_ATENDIMENTO",
+            converter_inteiro(payload.get("atendimento_ativo"), 0),
+            entity_uuid,
+            str(payload.get("updated_at") or agora_iso()),
+        )
+        if not valores[0]:
+            return False
+        if existente:
+            c.execute(
+                """
+                UPDATE veiculos
+                SET placa=?, modelo=?, cor=?, cliente_id=?, status_atendimento=?,
+                    atendimento_ativo=?, mobile_uuid=?, mobile_updated_at=?
+                WHERE mobile_uuid=?
+                """,
+                valores + (entity_uuid,),
+            )
+        else:
+            c.execute(
+                """
+                INSERT INTO veiculos (
+                    placa, modelo, cor, cliente_id, status_atendimento,
+                    atendimento_ativo, mobile_uuid, mobile_updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                valores,
+            )
+        return True
+
     if entity == "servicos":
         if action == "delete":
             c.execute(
@@ -17180,7 +17231,15 @@ def aplicar_change_mobile(c, entity, entity_uuid, action, payload):
             return True
         c.execute("SELECT id FROM servicos WHERE mobile_uuid=? LIMIT 1", (entity_uuid,))
         existente = c.fetchone()
+        veiculo_id = None
+        veiculo_uuid = normalizar_texto_campo(payload.get("veiculo_uuid"))
+        if veiculo_uuid:
+            c.execute("SELECT id FROM veiculos WHERE mobile_uuid=? LIMIT 1", (veiculo_uuid,))
+            veiculo = c.fetchone()
+            if veiculo:
+                veiculo_id = veiculo["id"]
         valores = (
+            veiculo_id,
             normalizar_texto_campo(payload.get("status")) or "ABERTO",
             normalizar_texto_campo(payload.get("observacoes")),
             normalizar_texto_campo(payload.get("etapa_atual")) or "LAVAGEM",
@@ -17194,7 +17253,7 @@ def aplicar_change_mobile(c, entity, entity_uuid, action, payload):
             c.execute(
                 """
                 UPDATE servicos
-                SET status=?, observacoes=?, etapa_atual=?, entrada=?,
+                SET veiculo_id=COALESCE(?, veiculo_id), status=?, observacoes=?, etapa_atual=?, entrada=?,
                     criado_por_usuario=?, criado_por_nome=?,
                     mobile_uuid=?, mobile_updated_at=?
                 WHERE mobile_uuid=?
@@ -17205,12 +17264,22 @@ def aplicar_change_mobile(c, entity, entity_uuid, action, payload):
             c.execute(
                 """
                 INSERT INTO servicos (
-                    status, observacoes, etapa_atual, entrada,
+                    veiculo_id, status, observacoes, etapa_atual, entrada,
                     criado_por_usuario, criado_por_nome, mobile_uuid, mobile_updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 valores,
+            )
+        if veiculo_id:
+            c.execute(
+                """
+                UPDATE veiculos
+                SET status_atendimento='EM ANDAMENTO', atendimento_ativo=1,
+                    ultima_entrada=COALESCE(ultima_entrada, ?)
+                WHERE id=?
+                """,
+                (str(payload.get("entrada") or agora_iso()), veiculo_id),
             )
         return True
 
@@ -17323,6 +17392,31 @@ def montar_changes_mobile_site(c):
             })
     except Exception as erro:
         log_info("ERRO MOBILE PULL VEICULOS:", erro)
+
+    try:
+        c.execute(
+            """
+            SELECT id, nome, valor
+            FROM tipos_servico
+            ORDER BY nome ASC
+            LIMIT 200
+            """
+        )
+        for row in c.fetchall():
+            uuid = f"site-tipo-servico-{row['id']}"
+            changes.append({
+                "entity": "tipos_servico",
+                "entity_uuid": uuid,
+                "action": "upsert",
+                "payload": {
+                    "uuid": uuid,
+                    "nome": str(row["nome"] or ""),
+                    "valor": float(row["valor"] or 0),
+                    "updated_at": agora_iso(),
+                },
+            })
+    except Exception as erro:
+        log_info("ERRO MOBILE PULL TIPOS SERVICO:", erro)
 
     return changes
 

@@ -151,4 +151,22 @@ async function applyServerChange(change: ServerChange) {
       String(payload.updated_at || new Date().toISOString())
     );
   }
+
+  if (entity === "tipos_servico") {
+    await db.runAsync(
+      `
+      INSERT INTO tipos_servico (uuid, nome, valor, updated_at, deleted_at)
+      VALUES (?, ?, ?, ?, NULL)
+      ON CONFLICT(uuid) DO UPDATE SET
+        nome=excluded.nome,
+        valor=excluded.valor,
+        updated_at=excluded.updated_at,
+        deleted_at=NULL
+      `,
+      uuid,
+      String(payload.nome || "Servico"),
+      Number(payload.valor || 0),
+      String(payload.updated_at || new Date().toISOString())
+    );
+  }
 }

@@ -2,7 +2,21 @@ import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { BuscaPlacaResultado, buscarPorPlaca, ClienteLocal, listarClientes, listarServicos, resumoLocal, salvarCliente, salvarServico, ServicoLocal } from "../data/localRepository";
+import {
+  atualizarClienteVeiculo,
+  BuscaPlacaResultado,
+  buscarPorPlaca,
+  ClienteLocal,
+  listarClientes,
+  listarServicos,
+  listarTiposServico,
+  resumoLocal,
+  salvarCliente,
+  salvarClienteVeiculo,
+  salvarServico,
+  ServicoLocal,
+  TipoServicoLocal
+} from "../data/localRepository";
 import { colors, spacing } from "../theme";
 import { AppScreenKey } from "./AppShell";
 
@@ -47,7 +61,7 @@ export function screenTitle(screen: AppScreenKey) {
 
 export function NativeScreenContent({ screen, onOpenCamera, onRefreshPending, sync }: Props) {
   if (screen === "inicio") {
-    return <InicioPainel onOpenCamera={onOpenCamera} />;
+    return <InicioPainel onOpenCamera={onOpenCamera} onSaved={onRefreshPending} sync={sync} />;
   }
   if (screen === "painel") {
     return <PainelScreen onOpenCamera={onOpenCamera} />;
@@ -61,35 +75,118 @@ export function NativeScreenContent({ screen, onOpenCamera, onRefreshPending, sy
   return <ModuleScreen screen={screen} sync={sync} />;
 }
 
-function InicioPainel({ onOpenCamera }: { onOpenCamera: () => void }) {
+function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: () => void; onSaved: () => void; sync: Props["sync"] }) {
   const [resumo, setResumo] = useState({ clientes: 0, servicos: 0, fotos: 0, pendencias: 0 });
   const [placa, setPlaca] = useState("");
   const [resultados, setResultados] = useState<BuscaPlacaResultado[]>([]);
+  const [buscou, setBuscou] = useState(false);
+  const [selecionado, setSelecionado] = useState<BuscaPlacaResultado | null>(null);
+  const [editandoCliente, setEditandoCliente] = useState(false);
+  const [novoAtendimento, setNovoAtendimento] = useState(false);
+  const [tiposServico, setTiposServico] = useState<TipoServicoLocal[]>([]);
+  const [formCliente, setFormCliente] = useState({ nome: "", telefone: "", modelo: "", cor: "" });
+  const [tipoServico, setTipoServico] = useState("");
+  const [valorAdicional, setValorAdicional] = useState("");
+  const [entregaPrevista, setEntregaPrevista] = useState("");
+  const [observacoes, setObservacoes] = useState("");
 
   useEffect(() => {
     resumoLocal().then(setResumo);
+    listarTiposServico().then((items) => {
+      setTiposServico(items);
+      setTipoServico(items[0]?.nome || "");
+    });
   }, []);
 
   async function pesquisarPlaca(texto = placa) {
-    setResultados(await buscarPorPlaca(texto));
+    const normalizada = texto.trim().toUpperCase();
+    setPlaca(normalizada);
+    setBuscou(Boolean(normalizada));
+    const encontrados = await buscarPorPlaca(normalizada);
+    setResultados(encontrados);
+    const primeiro = encontrados[0] || null;
+    setSelecionado(primeiro);
+    setEditandoCliente(false);
+    setNovoAtendimento(false);
+    if (primeiro) {
+      setFormCliente({
+        nome: primeiro.cliente_nome || "",
+        telefone: primeiro.cliente_telefone || "",
+        modelo: primeiro.modelo || "",
+        cor: primeiro.cor || ""
+      });
+    } else {
+      setFormCliente({ nome: "", telefone: "", modelo: "", cor: "" });
+    }
+  }
+
+  async function cadastrarNovoCliente() {
+    if (!placa.trim()) {
+      return;
+    }
+    const salvo = await salvarClienteVeiculo({
+      placa,
+      nome: formCliente.nome,
+      telefone: formCliente.telefone,
+      modelo: formCliente.modelo,
+      cor: formCliente.cor
+    });
+    await onSaved();
+    await resumoLocal().then(setResumo);
+    await pesquisarPlaca(salvo.placa);
+  }
+
+  async function salvarEdicaoCliente() {
+    if (!selecionado) {
+      return;
+    }
+    await atualizarClienteVeiculo({
+      veiculo_uuid: selecionado.veiculo_uuid,
+      cliente_uuid: selecionado.cliente_uuid,
+      placa: selecionado.placa,
+      nome: formCliente.nome,
+      telefone: formCliente.telefone,
+      modelo: formCliente.modelo,
+      cor: formCliente.cor
+    });
+    await onSaved();
+    await pesquisarPlaca(selecionado.placa);
+  }
+
+  async function iniciarAtendimento() {
+    if (!selecionado) {
+      return;
+    }
+    const tipo = tiposServico.find((item) => item.nome === tipoServico);
+    await salvarServico({
+      veiculo_uuid: selecionado.veiculo_uuid,
+      tipo_nome: tipoServico || tipo?.nome || "Servico",
+      valor: tipo?.valor || 0,
+      valor_adicional: Number(String(valorAdicional || "0").replace(",", ".")) || 0,
+      entrega_prevista: entregaPrevista,
+      observacoes,
+      status: "EM ANDAMENTO"
+    });
+    setNovoAtendimento(false);
+    setObservacoes("");
+    setValorAdicional("");
+    setEntregaPrevista("");
+    await onSaved();
+    await resumoLocal().then(setResumo);
+    await pesquisarPlaca(selecionado.placa);
   }
 
   return (
     <>
       <View style={styles.searchHero}>
-        <Text style={styles.pill}>Busca rapida</Text>
-        <Text style={styles.heroTitle}>Buscar por placa</Text>
-        <Text style={styles.muted}>Consulta os clientes e veiculos sincronizados do site no banco local do app.</Text>
+        <Text style={styles.pill}>Pagina principal</Text>
+        <Text style={styles.heroTitle}>Digite a placa para comecar</Text>
+        <Text style={styles.muted}>Mesmo fluxo da home do site: buscar placa, cadastrar cliente ou iniciar atendimento.</Text>
         <View style={styles.searchRow}>
           <TextInput
             autoCapitalize="characters"
             onChangeText={(value) => {
-              setPlaca(value);
-              if (value.trim().length >= 2) {
-                pesquisarPlaca(value);
-              } else {
-                setResultados([]);
-              }
+              setPlaca(value.toUpperCase());
             }}
             placeholder="Digite a placa"
             placeholderTextColor={colors.muted}
@@ -100,23 +197,112 @@ function InicioPainel({ onOpenCamera }: { onOpenCamera: () => void }) {
             <Ionicons color="#111827" name="search" size={22} />
           </Pressable>
         </View>
-        {resultados.length === 0 ? (
-          <Text style={styles.muted}>Sincronize em Configuracoes para baixar os dados do site.</Text>
-        ) : (
-          <View style={styles.resultList}>
-            {resultados.map((item) => (
-              <View key={`${item.placa}-${item.cliente_nome}`} style={styles.resultItem}>
-                <View style={styles.itemRow}>
-                  <Text style={styles.itemTitle}>{item.placa}</Text>
-                  <Text style={styles.badge}>{item.atendimento_ativo ? "Em atendimento" : "Cliente"}</Text>
-                </View>
-                <Text style={styles.muted}>{item.cliente_nome || "Cliente sem nome"} | {item.cliente_telefone || "Sem telefone"}</Text>
-                <Text style={styles.muted}>{item.modelo || "Modelo nao informado"} {item.cor ? `/${item.cor}` : ""}</Text>
-              </View>
-            ))}
-          </View>
-        )}
+        <View style={styles.rowWrap}>
+          <Pressable onPress={sync.onSyncNow} style={styles.secondaryButtonWide}>
+            <Text style={styles.secondaryButtonText}>Sincronizar dados</Text>
+          </Pressable>
+          <Text style={styles.muted}>{sync.message}</Text>
+        </View>
       </View>
+
+      {!buscou && (
+        <View style={styles.centerStateCard}>
+          <Text style={styles.cardTitle}>Digite uma placa para comecar</Text>
+          <Text style={styles.muted}>O app procura primeiro no banco local sincronizado com o site.</Text>
+        </View>
+      )}
+
+      {buscou && selecionado && (
+        <>
+          <View style={styles.card}>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.cardTitle}>Cliente</Text>
+                <Text style={styles.muted}>{selecionado.placa}</Text>
+              </View>
+              <Text style={styles.badge}>{selecionado.atendimento_ativo ? "Em andamento" : "Encontrado"}</Text>
+            </View>
+            <Text style={styles.infoLine}>Nome: {selecionado.cliente_nome || "Nao informado"}</Text>
+            <Text style={styles.infoLine}>Telefone: {selecionado.cliente_telefone || "Nao informado"}</Text>
+            <Text style={styles.infoLine}>Carro: {selecionado.modelo || "Nao informado"} {selecionado.cor ? `- ${selecionado.cor}` : ""}</Text>
+            <Pressable onPress={() => setEditandoCliente((value) => !value)} style={styles.secondaryButtonWide}>
+              <Text style={styles.secondaryButtonText}>{editandoCliente ? "Fechar edicao" : "Editar cliente"}</Text>
+            </Pressable>
+            {editandoCliente && (
+              <View style={styles.stackForm}>
+                <TextInput value={formCliente.nome} onChangeText={(nome) => setFormCliente((old) => ({ ...old, nome }))} placeholder="Nome" placeholderTextColor={colors.muted} style={styles.input} />
+                <TextInput value={formCliente.telefone} onChangeText={(telefone) => setFormCliente((old) => ({ ...old, telefone }))} placeholder="Telefone" placeholderTextColor={colors.muted} style={styles.input} />
+                <TextInput value={formCliente.modelo} onChangeText={(modelo) => setFormCliente((old) => ({ ...old, modelo }))} placeholder="Modelo" placeholderTextColor={colors.muted} style={styles.input} />
+                <TextInput value={formCliente.cor} onChangeText={(cor) => setFormCliente((old) => ({ ...old, cor }))} placeholder="Cor" placeholderTextColor={colors.muted} style={styles.input} />
+                <Pressable onPress={salvarEdicaoCliente} style={styles.primaryButton}>
+                  <Text style={styles.primaryButtonText}>Salvar alteracoes</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Atendimento</Text>
+            <Pressable onPress={() => setNovoAtendimento((value) => !value)} style={styles.primaryButton}>
+              <Text style={styles.primaryButtonText}>{novoAtendimento ? "Fechar atendimento" : "+ Novo Atendimento"}</Text>
+            </Pressable>
+            {novoAtendimento && (
+              <View style={styles.stackForm}>
+                <Text style={styles.muted}>Fotos de entrada</Text>
+                <Pressable onPress={onOpenCamera} style={styles.secondaryButtonWide}>
+                  <Text style={styles.secondaryButtonText}>Abrir camera</Text>
+                </Pressable>
+                <TextInput value={tipoServico} onChangeText={setTipoServico} placeholder="Tipo de servico" placeholderTextColor={colors.muted} style={styles.input} />
+                {tiposServico.length > 0 && (
+                  <View style={styles.rowWrap}>
+                    {tiposServico.slice(0, 6).map((item) => (
+                      <Pressable key={item.uuid} onPress={() => setTipoServico(item.nome)} style={tipoServico === item.nome ? styles.primaryButtonCompact : styles.secondaryButtonWide}>
+                        <Text style={tipoServico === item.nome ? styles.primaryButtonText : styles.secondaryButtonText}>{item.nome}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+                <TextInput value={valorAdicional} onChangeText={setValorAdicional} keyboardType="decimal-pad" placeholder="Valor adicional manual" placeholderTextColor={colors.muted} style={styles.input} />
+                <TextInput value={entregaPrevista} onChangeText={setEntregaPrevista} placeholder="Horario de entrega combinado (HH:MM)" placeholderTextColor={colors.muted} style={styles.input} />
+                <TextInput value={observacoes} onChangeText={setObservacoes} placeholder="Observacoes" placeholderTextColor={colors.muted} style={styles.input} />
+                <Text style={styles.muted}>Quando informar o horario combinado, o painel usa esse horario para destacar a entrega.</Text>
+                <Pressable onPress={iniciarAtendimento} style={styles.primaryButton}>
+                  <Text style={styles.primaryButtonText}>Iniciar Atendimento</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        </>
+      )}
+
+      {buscou && !selecionado && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Novo Cliente</Text>
+          <TextInput value={placa} onChangeText={setPlaca} placeholder="Placa" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="characters" />
+          <TextInput value={formCliente.nome} onChangeText={(nome) => setFormCliente((old) => ({ ...old, nome }))} placeholder="Nome" placeholderTextColor={colors.muted} style={styles.input} />
+          <TextInput value={formCliente.telefone} onChangeText={(telefone) => setFormCliente((old) => ({ ...old, telefone }))} placeholder="Telefone" placeholderTextColor={colors.muted} style={styles.input} />
+          <TextInput value={formCliente.modelo} onChangeText={(modelo) => setFormCliente((old) => ({ ...old, modelo }))} placeholder="Modelo" placeholderTextColor={colors.muted} style={styles.input} />
+          <TextInput value={formCliente.cor} onChangeText={(cor) => setFormCliente((old) => ({ ...old, cor }))} placeholder="Cor" placeholderTextColor={colors.muted} style={styles.input} />
+          <Pressable onPress={cadastrarNovoCliente} style={styles.primaryButton}>
+            <Text style={styles.primaryButtonText}>Cadastrar</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {resultados.length > 1 && (
+        <View style={styles.resultList}>
+          {resultados.map((item) => (
+            <Pressable key={`${item.veiculo_uuid}-${item.placa}`} onPress={() => setSelecionado(item)} style={styles.resultItem}>
+              <View style={styles.itemRow}>
+                <Text style={styles.itemTitle}>{item.placa}</Text>
+                <Text style={styles.badge}>{item.atendimento_ativo ? "Em atendimento" : "Cliente"}</Text>
+              </View>
+              <Text style={styles.muted}>{item.cliente_nome || "Cliente sem nome"} | {item.modelo || "Modelo nao informado"}</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+
       <View style={styles.grid}>
         <Metric label="Clientes" value={resumo.clientes} icon="person" />
         <Metric label="Servicos" value={resumo.servicos} icon="water" />
@@ -725,6 +911,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSoft,
     padding: spacing.md,
     gap: spacing.xs
+  },
+  centerStateCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "rgba(250, 204, 21, 0.08)",
+    padding: spacing.lg,
+    alignItems: "center",
+    gap: spacing.sm
+  },
+  stackForm: {
+    gap: spacing.sm
+  },
+  infoLine: {
+    color: colors.text,
+    lineHeight: 22
   },
   pageHeaderCard: {
     borderRadius: 22,
