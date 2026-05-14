@@ -65,6 +65,92 @@ class AppRegressionTests(unittest.TestCase):
         self.assertIn("empresa_id", colunas_usuarios)
         self.assertIn("empresa_id", colunas_clientes)
 
+    def test_api_mobile_sync_exige_token_configurado(self):
+        with patch.dict(os.environ, {"MOBILE_SYNC_TOKEN": ""}, clear=False):
+            resposta = self.client.post("/api/mobile/sync", json={"changes": []})
+
+        self.assertEqual(resposta.status_code, 401)
+        self.assertFalse(resposta.get_json()["ok"])
+
+    def test_api_mobile_sync_registra_eventos_aceitos(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        compat = PersistentCompatConnection(conn)
+
+        payload = {
+            "changes": [
+                {
+                    "id": 7,
+                    "entity": "fotos",
+                    "entity_uuid": "foto-local-1",
+                    "action": "upsert",
+                    "payload": {"uri_local": "file:///foto.jpg", "usuario": "admin"},
+                }
+            ]
+        }
+
+        with patch.dict(os.environ, {"MOBILE_SYNC_TOKEN": "segredo"}, clear=False), \
+             patch.object(app_module, "conectar", return_value=compat):
+            resposta = self.client.post(
+                "/api/mobile/sync",
+                json=payload,
+                headers={"Authorization": "Bearer segredo"},
+            )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.get_json()["accepted_ids"], [7])
+        row = conn.execute("SELECT * FROM mobile_sync_eventos").fetchone()
+        self.assertEqual(row["entity"], "fotos")
+        self.assertEqual(row["entity_uuid"], "foto-local-1")
+        self.assertIn('"usuario": "admin"', row["payload_json"])
+        conn.close()
+
+    def test_api_mobile_login_gera_token_e_usuario_para_app(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            """
+            CREATE TABLE usuarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                usuario TEXT UNIQUE,
+                senha TEXT,
+                nome TEXT,
+                perfil TEXT,
+                ativo INTEGER DEFAULT 1,
+                criado_em TEXT,
+                tentativas_login INTEGER DEFAULT 0,
+                bloqueado_ate TEXT,
+                ultimo_login_em TEXT,
+                senha_alteracao_obrigatoria INTEGER DEFAULT 0,
+                senha_atualizada_em TEXT,
+                foto_perfil TEXT,
+                hud_config_json TEXT
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO usuarios (usuario, senha, nome, perfil, ativo) VALUES (?, ?, ?, ?, 1)",
+            ("admin", app_module.senha_hash_bcrypt("Senha@123"), "Administrador", "admin"),
+        )
+        conn.commit()
+        compat = PersistentCompatConnection(conn)
+
+        with patch.object(app_module, "conectar", return_value=compat):
+            resposta = self.client.post(
+                "/api/mobile/login",
+                json={"usuario": "admin", "senha": "Senha@123"},
+            )
+
+        self.assertEqual(resposta.status_code, 200)
+        dados = resposta.get_json()
+        self.assertTrue(dados["ok"])
+        self.assertTrue(dados["token"])
+        self.assertEqual(dados["usuario"]["usuario"], "admin")
+        token_row = conn.execute("SELECT * FROM mobile_tokens").fetchone()
+        self.assertEqual(token_row["usuario"], "admin")
+        self.assertNotEqual(token_row["token_hash"], dados["token"])
+        conn.close()
+
     def test_excluir_sincronizacao_cliente_marca_como_excluida_sem_apagar(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row

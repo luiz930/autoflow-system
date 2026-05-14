@@ -25,3 +25,8 @@ env/
 
 Thumbs.db
 .DS_Store
+
+mobile/.build-tools/
+mobile/node_modules/
+mobile/android/
+mobile/dist/

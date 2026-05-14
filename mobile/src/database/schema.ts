@@ -1,0 +1,98 @@
+export const schemaSql = `
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS usuarios (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  usuario TEXT UNIQUE NOT NULL,
+  senha TEXT NOT NULL,
+  nome TEXT,
+  perfil TEXT,
+  ativo INTEGER DEFAULT 1,
+  criado_em TEXT,
+  tentativas_login INTEGER DEFAULT 0,
+  bloqueado_ate TEXT,
+  ultimo_login_em TEXT,
+  senha_alteracao_obrigatoria INTEGER DEFAULT 0,
+  senha_atualizada_em TEXT,
+  foto_perfil TEXT,
+  hud_config_json TEXT,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS clientes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  nome TEXT NOT NULL,
+  telefone TEXT,
+  placa_principal TEXT,
+  data_nascimento TEXT,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS veiculos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  cliente_uuid TEXT,
+  placa TEXT NOT NULL,
+  modelo TEXT,
+  cor TEXT,
+  status_atendimento TEXT DEFAULT 'SEM_ATENDIMENTO',
+  atendimento_ativo INTEGER DEFAULT 0,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS servicos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  veiculo_uuid TEXT,
+  valor REAL,
+  entrada TEXT,
+  entrega_prevista TEXT,
+  entrega TEXT,
+  status TEXT,
+  observacoes TEXT,
+  etapa_atual TEXT DEFAULT 'LAVAGEM',
+  criado_por_usuario TEXT,
+  criado_por_nome TEXT,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS fotos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE NOT NULL,
+  servico_uuid TEXT,
+  tipo TEXT,
+  uri_local TEXT NOT NULL,
+  mime_type TEXT DEFAULT 'image/jpeg',
+  usuario TEXT,
+  usuario_nome TEXT,
+  tamanho_bytes INTEGER,
+  largura INTEGER,
+  altura INTEGER,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sync_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity TEXT NOT NULL,
+  entity_uuid TEXT NOT NULL,
+  action TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  synced_at TEXT,
+  attempts INTEGER DEFAULT 0,
+  last_error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sync_state (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+`;

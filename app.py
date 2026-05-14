@@ -15274,7 +15274,7 @@ def validar_csrf_basico():
     if not should_enforce_csrf(request, csrf_protection_ativa()):
         return
 
-    if request.endpoint in {"healthz"}:
+    if request.endpoint in {"healthz", "api_mobile_login", "api_mobile_sync"}:
         return
 
     token = extract_csrf_token(request)
@@ -15292,6 +15292,9 @@ def preparar_sincronizacoes():
         return
 
     endpoint = request.endpoint or ""
+    if endpoint in {"api_mobile_login", "api_mobile_sync"}:
+        return
+
     sessao_ativa = bool(session.get("usuario"))
 
     if not INIT_DB_EXECUTADO:
@@ -16977,6 +16980,311 @@ def login():
 def logout():
     session.clear()
     return redirect("/login")
+
+def token_sync_mobile_configurado():
+    return str(os.environ.get("MOBILE_SYNC_TOKEN") or "").strip()
+
+def hash_token_mobile(token):
+    return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
+
+def bearer_token_request():
+    cabecalho = str(request.headers.get("Authorization") or "").strip()
+    if not cabecalho.lower().startswith("bearer "):
+        return ""
+    return cabecalho.split(" ", 1)[1].strip()
+
+def autorizar_sync_mobile():
+    token_configurado = token_sync_mobile_configurado()
+
+    token_recebido = bearer_token_request()
+    if not token_recebido:
+        return False
+
+    if token_configurado and secrets.compare_digest(token_recebido, token_configurado):
+        return True
+
+    conn = None
+    try:
+        conn = conectar()
+        c = conn.cursor()
+        garantir_schema_sync_mobile(c)
+        c.execute(
+            """
+            SELECT usuario_id
+            FROM mobile_tokens
+            WHERE token_hash=?
+              AND revogado_em IS NULL
+              AND (expira_em IS NULL OR expira_em > ?)
+            LIMIT 1
+            """,
+            (hash_token_mobile(token_recebido), agora_iso()),
+        )
+        row = c.fetchone()
+        if row:
+            c.execute(
+                "UPDATE mobile_tokens SET ultimo_uso_em=? WHERE token_hash=?",
+                (agora_iso(), hash_token_mobile(token_recebido)),
+            )
+            conn.commit()
+            return True
+    except Exception as erro:
+        log_info("ERRO AUTORIZAR MOBILE:", erro)
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+    return False
+
+def garantir_schema_sync_mobile(cursor):
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS mobile_sync_eventos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mobile_change_id INTEGER,
+        entity TEXT NOT NULL,
+        entity_uuid TEXT NOT NULL,
+        action TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        recebido_em TEXT DEFAULT CURRENT_TIMESTAMP,
+        processado_em TEXT,
+        erro TEXT
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS mobile_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario_id INTEGER,
+        usuario TEXT,
+        token_hash TEXT UNIQUE NOT NULL,
+        criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+        expira_em TEXT,
+        ultimo_uso_em TEXT,
+        revogado_em TEXT
+    )
+    """)
+    for tabela in ("clientes", "veiculos", "servicos", "fotos"):
+        try:
+            adicionar_coluna_se_preciso(cursor, tabela, "mobile_uuid TEXT")
+            adicionar_coluna_se_preciso(cursor, tabela, "mobile_updated_at TEXT")
+        except Exception:
+            pass
+
+def serializar_usuario_mobile(user):
+    return {
+        "id": int(user["id"]),
+        "usuario": str(user["usuario"] or ""),
+        "nome": str(user["nome"] or user["usuario"] or ""),
+        "perfil": normalizar_perfil_usuario(user["perfil"]),
+        "ativo": int(user["ativo"] if user["ativo"] is not None else 1),
+        "senha": str(user["senha"] or ""),
+        "criado_em": str(user["criado_em"] or ""),
+        "senha_alteracao_obrigatoria": int(user["senha_alteracao_obrigatoria"] or 0),
+        "senha_atualizada_em": str(user["senha_atualizada_em"] or ""),
+        "foto_perfil": str(user["foto_perfil"] or ""),
+        "hud_config_json": str(user["hud_config_json"] or ""),
+    }
+
+@app.route("/api/mobile/login", methods=["POST"])
+def api_mobile_login():
+    dados = request.get_json(silent=True) or {}
+    usuario = normalizar_texto_campo(dados.get("usuario"))
+    senha = str(dados.get("senha") or "")
+    if not usuario or not senha:
+        return jsonify({"ok": False, "erro": "Informe usuario e senha."}), 400
+
+    conn = conectar()
+    c = conn.cursor()
+    garantir_schema_sync_mobile(c)
+    c.execute("SELECT * FROM usuarios WHERE usuario=?", (usuario,))
+    user = c.fetchone()
+
+    if (
+        not user
+        or not int(user["ativo"] if user["ativo"] is not None else 1)
+        or not verificar_senha_usuario(senha, user["senha"])
+    ):
+        conn.close()
+        return jsonify({"ok": False, "erro": "Usuario ou senha invalidos."}), 401
+
+    token = secrets.token_urlsafe(48)
+    expira_em = (agora() + timedelta(days=30)).isoformat(timespec="seconds")
+    c.execute(
+        """
+        INSERT INTO mobile_tokens (usuario_id, usuario, token_hash, criado_em, expira_em)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (user["id"], user["usuario"], hash_token_mobile(token), agora_iso(), expira_em),
+    )
+    limpar_status_login_usuario(c, user["id"], registrar_login=True)
+    conn.commit()
+    c.execute("SELECT * FROM usuarios WHERE id=?", (user["id"],))
+    user = c.fetchone()
+    conn.close()
+
+    return jsonify({
+        "ok": True,
+        "token": token,
+        "expira_em": expira_em,
+        "usuario": serializar_usuario_mobile(user),
+        "server_time": agora_iso(),
+    })
+
+def aplicar_change_mobile(c, entity, entity_uuid, action, payload):
+    action = normalizar_texto_campo(action).lower()
+    if action not in {"upsert", "delete"}:
+        return False
+
+    if entity == "clientes":
+        if action == "delete":
+            c.execute("UPDATE clientes SET mobile_updated_at=?, nome=COALESCE(nome, '') WHERE mobile_uuid=?", (agora_iso(), entity_uuid))
+            return True
+        c.execute("SELECT id FROM clientes WHERE mobile_uuid=? LIMIT 1", (entity_uuid,))
+        existente = c.fetchone()
+        valores = (
+            normalizar_texto_campo(payload.get("nome")) or "Cliente mobile",
+            normalizar_texto_campo(payload.get("telefone")),
+            normalizar_texto_campo(payload.get("placa_principal")),
+            normalizar_texto_campo(payload.get("data_nascimento")),
+            entity_uuid,
+            str(payload.get("updated_at") or agora_iso()),
+        )
+        if existente:
+            c.execute(
+                """
+                UPDATE clientes
+                SET nome=?, telefone=?, placa_principal=?, data_nascimento=?,
+                    mobile_uuid=?, mobile_updated_at=?
+                WHERE mobile_uuid=?
+                """,
+                valores + (entity_uuid,),
+            )
+        else:
+            c.execute(
+                """
+                INSERT INTO clientes (
+                    nome, telefone, placa_principal, data_nascimento, mobile_uuid, mobile_updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                valores,
+            )
+        return True
+
+    if entity == "fotos":
+        if action == "delete":
+            c.execute("UPDATE fotos SET mobile_updated_at=? WHERE mobile_uuid=?", (agora_iso(), entity_uuid))
+            return True
+        c.execute("SELECT id FROM fotos WHERE mobile_uuid=? LIMIT 1", (entity_uuid,))
+        existente = c.fetchone()
+        valores = (
+            normalizar_texto_campo(payload.get("tipo")) or "operacional",
+            normalizar_texto_campo(payload.get("uri_local")),
+            normalizar_texto_campo(payload.get("usuario")),
+            normalizar_texto_campo(payload.get("usuario_nome")),
+            converter_inteiro(payload.get("tamanho_bytes"), 0),
+            converter_inteiro(payload.get("largura"), 0),
+            converter_inteiro(payload.get("altura"), 0),
+            normalizar_texto_campo(payload.get("mime_type")) or "image/jpeg",
+            entity_uuid,
+            str(payload.get("updated_at") or payload.get("created_at") or agora_iso()),
+        )
+        if existente:
+            c.execute(
+                """
+                UPDATE fotos
+                SET tipo=?, caminho=?, usuario=?, usuario_nome=?, tamanho_bytes=?,
+                    largura=?, altura=?, mime_type=?, mobile_uuid=?, mobile_updated_at=?
+                WHERE mobile_uuid=?
+                """,
+                valores + (entity_uuid,),
+            )
+        else:
+            c.execute(
+                """
+                INSERT INTO fotos (
+                    tipo, caminho, usuario, usuario_nome, tamanho_bytes,
+                    largura, altura, mime_type, mobile_uuid, mobile_updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                valores,
+            )
+        return True
+
+    return False
+
+@app.route("/api/mobile/sync", methods=["POST"])
+def api_mobile_sync():
+    if not autorizar_sync_mobile():
+        return jsonify({
+            "ok": False,
+            "erro": "Token de sincronizacao mobile ausente ou invalido."
+        }), 401
+
+    dados = request.get_json(silent=True) or {}
+    changes = dados.get("changes") or []
+    if not isinstance(changes, list):
+        return jsonify({"ok": False, "erro": "Formato invalido."}), 400
+
+    changes = changes[:100]
+    accepted_ids = []
+    conn = conectar()
+    c = conn.cursor()
+    garantir_schema_sync_mobile(c)
+
+    for item in changes:
+        if not isinstance(item, dict):
+            continue
+        entity = normalizar_texto_campo(item.get("entity"))
+        entity_uuid = normalizar_texto_campo(item.get("entity_uuid"))
+        action = normalizar_texto_campo(item.get("action"))
+        mobile_change_id = item.get("id")
+        payload = item.get("payload") or {}
+        if not entity or not entity_uuid or not action:
+            continue
+
+        try:
+            mobile_change_id_int = int(mobile_change_id)
+        except Exception:
+            mobile_change_id_int = None
+
+        processado_em = None
+        erro_processamento = None
+        try:
+            if aplicar_change_mobile(c, entity, entity_uuid, action, payload):
+                processado_em = agora_iso()
+        except Exception as erro:
+            erro_processamento = str(erro)
+
+        c.execute(
+            """
+            INSERT INTO mobile_sync_eventos (
+                mobile_change_id, entity, entity_uuid, action, payload_json, processado_em, erro
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                mobile_change_id_int,
+                entity,
+                entity_uuid,
+                action,
+                json.dumps(payload, ensure_ascii=True, sort_keys=True),
+                processado_em,
+                erro_processamento,
+            ),
+        )
+        if mobile_change_id_int is not None:
+            accepted_ids.append(mobile_change_id_int)
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "ok": True,
+        "accepted_ids": accepted_ids,
+        "changes": [],
+    })
 
 
 @app.route("/empresas")

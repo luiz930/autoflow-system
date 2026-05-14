@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Wagen App",
+    "slug": "wagen-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "package": "com.wagen.mobile",
+      "permissions": [
+        "CAMERA"
+      ]
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.wagen.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "O app usa a camera para registrar fotos dos atendimentos."
+      }
+    },
+    "plugins": [
+      "expo-sqlite",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permitir que o Wagen registre fotos dos atendimentos."
+        }
+      ],
+      "expo-font",
+      "expo-asset"
+    ]
+  }
+}
