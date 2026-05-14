@@ -72,6 +72,49 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(resposta.status_code, 401)
         self.assertFalse(resposta.get_json()["ok"])
 
+    def test_api_mobile_hud_retorna_payload_do_site_com_token(self):
+        payload_hud = {
+            "total": 12,
+            "andamento": 4,
+            "banco_online_resumo": "Online",
+            "sync_bancos_resumo": "Atualizado",
+            "versao": "Versao: 1.0.0",
+        }
+
+        with patch.dict(os.environ, {"MOBILE_SYNC_TOKEN": "segredo"}, clear=False), \
+             patch.object(app_module, "obter_payload_hud", return_value=payload_hud), \
+             patch.object(app_module, "obter_versao_sistema", return_value="Versao: 1.0.0") as versao_mock:
+            resposta = self.client.get(
+                "/api/mobile/hud",
+                headers={"Authorization": "Bearer segredo"},
+            )
+
+        self.assertEqual(resposta.status_code, 200)
+        dados = resposta.get_json()
+        self.assertTrue(dados["ok"])
+        self.assertEqual(dados["hud"]["total"], 12)
+        self.assertEqual(dados["versao_sistema"], "Versao: 1.0.0")
+        versao_mock.assert_any_call(permitir_sem_sessao=True)
+
+    def test_api_mobile_configuracao_salva_versao_no_site(self):
+        with patch.dict(os.environ, {"MOBILE_SYNC_TOKEN": "segredo"}, clear=False), \
+             patch.object(app_module, "salvar_campos_configuracao_empresa", return_value={"versao_sistema": "1.0.2"}) as salvar_mock, \
+             patch.object(app_module, "obter_versao_sistema", return_value="Versao: 1.0.2") as versao_mock, \
+             patch.object(app_module, "registrar_auditoria"):
+            resposta = self.client.post(
+                "/api/mobile/configuracao",
+                json={"versao_sistema": "1.0.2"},
+                headers={"Authorization": "Bearer segredo"},
+            )
+
+        self.assertEqual(resposta.status_code, 200)
+        dados = resposta.get_json()
+        self.assertTrue(dados["ok"])
+        self.assertEqual(dados["versao_sistema"], "Versao: 1.0.2")
+        salvar_mock.assert_called_once()
+        self.assertEqual(salvar_mock.call_args.args[0]["versao_sistema"], "1.0.2")
+        versao_mock.assert_any_call(permitir_sem_sessao=True)
+
     def test_api_mobile_sync_registra_eventos_aceitos(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row

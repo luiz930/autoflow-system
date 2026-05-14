@@ -21,6 +21,7 @@ import {
   ServicoLocal,
   TipoServicoLocal
 } from "../data/localRepository";
+import { MobileHudPayload } from "../sync/types";
 import { colors, spacing } from "../theme";
 import { AppScreenKey } from "./AppShell";
 import { CameraTarget } from "./CameraScreen";
@@ -33,7 +34,11 @@ type Props = {
     pending: number;
     message: string;
     endpointUrl: string;
-    onSyncNow: () => void;
+    hud: MobileHudPayload | null;
+    version: string;
+    onRefreshHud: () => Promise<void>;
+    onSyncNow: () => Promise<void>;
+    onUpdateVersion: (version: string) => Promise<string>;
   };
 };
 
@@ -82,6 +87,9 @@ export function NativeScreenContent({ screen, onOpenCamera, onRefreshPending, sy
   }
   if (screen === "checklist") {
     return <ChecklistScreen sync={sync} />;
+  }
+  if (screen === "configuracoes") {
+    return <ConfiguracoesScreen sync={sync} />;
   }
   return <ModuleScreen screen={screen} sync={sync} />;
 }
@@ -206,6 +214,8 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: (target: 
 
   return (
     <>
+      <HudSiteCard sync={sync} />
+
       <View style={styles.searchHero}>
         <Text style={styles.pill}>Pagina principal</Text>
         <Text style={styles.heroTitle}>Digite a placa para comecar</Text>
@@ -362,6 +372,58 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: (target: 
       </View>
     </>
   );
+}
+
+function HudSiteCard({ sync }: { sync: Props["sync"] }) {
+  const hud = sync.hud || {};
+  const versao = sync.version || String(hud.versao || "").replace(/^Vers[aã]o:\s*/i, "");
+  const totalHoje = hudNumber(hud, ["total", "servicos_ativos", "servicos_hoje"]);
+  const andamento = hudNumber(hud, ["andamento", "servicos_ativos"]);
+  const atrasados = hudNumber(hud, ["atrasados", "entregas_atrasadas"]);
+  const ticket = hudNumber(hud, ["ticket", "ticket_medio"]);
+  const statusBanco = String(hud.banco_online_resumo || hud.sync_bancos_resumo || "HUD do site");
+  const mensagemBanco = String(hud.banco_online_mensagem || hud.sync_bancos_mensagem || sync.message);
+
+  return (
+    <View style={styles.hudCard}>
+      <View style={styles.sectionHeader}>
+        <View>
+          <Text style={styles.pill}>HUD do site</Text>
+          <Text style={styles.heroTitleSmall}>Operacao em tempo real</Text>
+          <Text style={styles.muted}>{statusBanco}</Text>
+        </View>
+        <Pressable onPress={sync.onRefreshHud} style={styles.cameraFab}>
+          <Ionicons color={colors.primaryText} name="refresh" size={21} />
+        </Pressable>
+      </View>
+      <View style={styles.grid}>
+        <HudMetric label="Total" value={totalHoje} icon="speedometer" />
+        <HudMetric label="Andamento" value={andamento} icon="car-sport" />
+        <HudMetric label="Atrasados" value={atrasados} icon="alert-circle" />
+        <HudMetric label="Ticket" value={ticket ? `R$ ${ticket.toFixed(2)}` : "R$ 0,00"} icon="cash" />
+      </View>
+      <View style={styles.hudStatusRow}>
+        <View style={styles.hudStatusItem}>
+          <Text style={styles.muted}>Banco</Text>
+          <Text style={styles.itemTitle}>{mensagemBanco}</Text>
+        </View>
+        <View style={styles.hudStatusItem}>
+          <Text style={styles.muted}>Versao</Text>
+          <Text style={styles.itemTitle}>{versao || "Sincronizando"}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function hudNumber(hud: MobileHudPayload, keys: string[]) {
+  for (const key of keys) {
+    const value = Number(hud[key]);
+    if (Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return 0;
 }
 
 function PainelScreen({ onOpenCamera }: { onOpenCamera: (target: CameraTarget) => void }) {
@@ -613,6 +675,59 @@ function ChecklistScreen({ sync }: { sync: Props["sync"] }) {
           </View>
         ))}
       </ListCard>
+    </>
+  );
+}
+
+function ConfiguracoesScreen({ sync }: { sync: Props["sync"] }) {
+  const [version, setVersion] = useState(sync.version || "");
+  const [status, setStatus] = useState(sync.message);
+
+  useEffect(() => {
+    if (sync.version) {
+      setVersion(sync.version);
+    }
+  }, [sync.version]);
+
+  async function salvarVersao() {
+    const texto = version.trim();
+    if (!texto) {
+      setStatus("Informe a versao antes de salvar.");
+      return;
+    }
+    setStatus(await sync.onUpdateVersion(texto));
+  }
+
+  return (
+    <>
+      <View style={styles.pageHeaderCard}>
+        <View>
+          <Text style={styles.pill}>Configuracoes</Text>
+          <Text style={styles.cardTitle}>Versao e sincronizacao do site</Text>
+          <Text style={styles.muted}>A versao salva aqui e a mesma usada nas configuracoes do site.</Text>
+        </View>
+        <Ionicons color={colors.primary} name="settings" size={28} />
+      </View>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Versao do sistema</Text>
+        <Text style={styles.muted}>Atual no site: {sync.version || "Sincronizando"}</Text>
+        <TextInput
+          value={version}
+          onChangeText={setVersion}
+          placeholder="Ex.: 1.0.1"
+          placeholderTextColor={colors.muted}
+          style={styles.input}
+        />
+        <Pressable onPress={salvarVersao} style={styles.primaryButton}>
+          <Ionicons color={colors.primaryText} name="save" size={22} />
+          <Text style={styles.primaryButtonText}>Salvar versao no site</Text>
+        </Pressable>
+      </View>
+      <SyncPanel sync={sync} />
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Retorno</Text>
+        <Text style={styles.muted}>{status}</Text>
+      </View>
     </>
   );
 }
@@ -1019,6 +1134,16 @@ function Metric({ label, value, icon }: { label: string; value: number; icon: ke
   );
 }
 
+function HudMetric({ label, value, icon }: { label: string; value: number | string; icon: keyof typeof Ionicons.glyphMap }) {
+  return (
+    <View style={styles.metric}>
+      <Ionicons color={colors.primary} name={icon} size={20} />
+      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.muted}>{label}</Text>
+    </View>
+  );
+}
+
 function ListCard({ title, empty, children }: { title: string; empty: string; children: ReactNode }) {
   const list = Array.isArray(children) ? children.flat().filter(Boolean) : children;
   const isEmpty = Array.isArray(list) ? list.length === 0 : !list;
@@ -1039,6 +1164,14 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md
   },
+  hudCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.panel,
+    padding: spacing.lg,
+    gap: spacing.md
+  },
   searchHero: {
     borderRadius: 22,
     borderWidth: 1,
@@ -1050,6 +1183,11 @@ const styles = StyleSheet.create({
   heroTitle: {
     color: colors.text,
     fontSize: 30,
+    fontWeight: "900"
+  },
+  heroTitleSmall: {
+    color: colors.text,
+    fontSize: 22,
     fontWeight: "900"
   },
   searchRow: {
@@ -1091,6 +1229,19 @@ const styles = StyleSheet.create({
   infoLine: {
     color: colors.text,
     lineHeight: 22
+  },
+  hudStatusRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md
+  },
+  hudStatusItem: {
+    flexBasis: "47%",
+    flexGrow: 1,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceSoft,
+    padding: spacing.md,
+    gap: spacing.xs
   },
   pageHeaderCard: {
     borderRadius: 22,

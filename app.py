@@ -15274,7 +15274,7 @@ def validar_csrf_basico():
     if not should_enforce_csrf(request, csrf_protection_ativa()):
         return
 
-    if request.endpoint in {"healthz", "api_mobile_login", "api_mobile_sync"}:
+    if request.endpoint in {"healthz", "api_mobile_login", "api_mobile_sync", "api_mobile_configuracao"}:
         return
 
     token = extract_csrf_token(request)
@@ -15292,7 +15292,7 @@ def preparar_sincronizacoes():
         return
 
     endpoint = request.endpoint or ""
-    if endpoint in {"api_mobile_login", "api_mobile_sync"}:
+    if endpoint in {"api_mobile_login", "api_mobile_sync", "api_mobile_hud", "api_mobile_configuracao"}:
         return
 
     sessao_ativa = bool(session.get("usuario"))
@@ -16993,15 +16993,21 @@ def bearer_token_request():
         return ""
     return cabecalho.split(" ", 1)[1].strip()
 
-def autorizar_sync_mobile():
+def autorizar_mobile_token_detalhado():
     token_configurado = token_sync_mobile_configurado()
 
     token_recebido = bearer_token_request()
     if not token_recebido:
-        return False
+        return None
 
     if token_configurado and secrets.compare_digest(token_recebido, token_configurado):
-        return True
+        return {
+            "id": 0,
+            "usuario": "mobile",
+            "nome": "Mobile",
+            "perfil": "admin",
+            "empresa_id": 1,
+        }
 
     conn = None
     try:
@@ -17010,11 +17016,13 @@ def autorizar_sync_mobile():
         garantir_schema_sync_mobile(c)
         c.execute(
             """
-            SELECT usuario_id
-            FROM mobile_tokens
-            WHERE token_hash=?
-              AND revogado_em IS NULL
-              AND (expira_em IS NULL OR expira_em > ?)
+            SELECT mt.usuario_id, mt.usuario AS token_usuario,
+                   u.id, u.usuario, u.nome, u.perfil, COALESCE(u.empresa_id, 1) AS empresa_id
+            FROM mobile_tokens mt
+            LEFT JOIN usuarios u ON u.id = mt.usuario_id
+            WHERE mt.token_hash=?
+              AND mt.revogado_em IS NULL
+              AND (mt.expira_em IS NULL OR mt.expira_em > ?)
             LIMIT 1
             """,
             (hash_token_mobile(token_recebido), agora_iso()),
@@ -17026,7 +17034,14 @@ def autorizar_sync_mobile():
                 (agora_iso(), hash_token_mobile(token_recebido)),
             )
             conn.commit()
-            return True
+            usuario_info = row_para_dict(row)
+            return {
+                "id": converter_inteiro(usuario_info.get("id"), 0),
+                "usuario": normalizar_texto_campo(usuario_info.get("usuario") or usuario_info.get("token_usuario") or "mobile"),
+                "nome": normalizar_texto_campo(usuario_info.get("nome") or usuario_info.get("usuario") or usuario_info.get("token_usuario") or "Mobile"),
+                "perfil": normalizar_perfil_usuario(usuario_info.get("perfil") or "funcionario"),
+                "empresa_id": normalize_empresa_id(usuario_info.get("empresa_id") or 1),
+            }
     except Exception as erro:
         log_info("ERRO AUTORIZAR MOBILE:", erro)
     finally:
@@ -17035,7 +17050,31 @@ def autorizar_sync_mobile():
                 conn.close()
         except Exception:
             pass
-    return False
+    return None
+
+def autorizar_sync_mobile():
+    return bool(autorizar_mobile_token_detalhado())
+
+def aplicar_contexto_sessao_mobile(usuario_info):
+    usuario_info = usuario_info or {}
+    usuario = normalizar_texto_campo(usuario_info.get("usuario") or "mobile")
+    nome = normalizar_texto_campo(usuario_info.get("nome") or usuario or "Mobile")
+    perfil = normalizar_perfil_usuario(usuario_info.get("perfil") or "funcionario")
+    empresa_id = normalize_empresa_id(usuario_info.get("empresa_id") or 1)
+
+    session["usuario_id"] = converter_inteiro(usuario_info.get("id"), 0)
+    session["usuario"] = usuario
+    session["usuario_nome"] = nome
+    session["usuario_iniciais"] = obter_iniciais_usuario(nome, usuario)
+    session["usuario_perfil"] = perfil
+    session["empresa_id"] = empresa_id
+    return {
+        "id": session["usuario_id"],
+        "usuario": usuario,
+        "nome": nome,
+        "perfil": perfil,
+        "empresa_id": empresa_id,
+    }
 
 def garantir_schema_sync_mobile(cursor):
     cursor.execute("""
@@ -17127,6 +17166,68 @@ def api_mobile_login():
         "token": token,
         "expira_em": expira_em,
         "usuario": serializar_usuario_mobile(user),
+        "server_time": agora_iso(),
+        "versao_sistema": obter_versao_sistema(permitir_sem_sessao=True),
+    })
+
+@app.route("/api/mobile/hud")
+def api_mobile_hud():
+    usuario_info = autorizar_mobile_token_detalhado()
+    if not usuario_info:
+        return jsonify({
+            "ok": False,
+            "erro": "Token de sincronizacao mobile ausente ou invalido."
+        }), 401
+
+    contexto = aplicar_contexto_sessao_mobile(usuario_info)
+    payload = obter_payload_hud()
+    if isinstance(payload, dict) and payload.get("erro"):
+        return jsonify({"ok": False, "erro": payload.get("erro")}), 401
+
+    return jsonify({
+        "ok": True,
+        "hud": payload,
+        "usuario": contexto,
+        "versao_sistema": obter_versao_sistema(permitir_sem_sessao=True),
+        "server_time": agora_iso(),
+    })
+
+@app.route("/api/mobile/configuracao", methods=["GET", "POST"])
+def api_mobile_configuracao():
+    usuario_info = autorizar_mobile_token_detalhado()
+    if not usuario_info:
+        return jsonify({
+            "ok": False,
+            "erro": "Token de sincronizacao mobile ausente ou invalido."
+        }), 401
+
+    contexto = aplicar_contexto_sessao_mobile(usuario_info)
+    empresa_id = normalize_empresa_id(contexto.get("empresa_id") or 1)
+
+    if request.method == "POST":
+        dados = request.get_json(silent=True) or {}
+        versao = normalizar_versao_sistema(dados.get("versao_sistema"))
+        if not versao:
+            return jsonify({"ok": False, "erro": "Informe uma versao valida."}), 400
+
+        salvar_campos_configuracao_empresa({"versao_sistema": versao}, empresa_id=empresa_id)
+        try:
+            registrar_auditoria(
+                "mobile_atualizou_versao_sistema",
+                "configuracao_empresa",
+                empresa_id,
+                detalhes={"versao_sistema": versao, "origem": "app_mobile"},
+                usuario=contexto,
+            )
+        except Exception as erro:
+            log_info("ERRO AUDITORIA VERSAO MOBILE:", erro)
+
+    versao_atual = obter_versao_sistema(permitir_sem_sessao=True)
+    return jsonify({
+        "ok": True,
+        "versao_sistema": versao_atual,
+        "app_version": versao_atual,
+        "empresa_id": empresa_id,
         "server_time": agora_iso(),
     })
 

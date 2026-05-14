@@ -1,6 +1,6 @@
 import { getDatabase } from "../database/db";
 import { normalizeServerUrl } from "../config";
-import { QueueRow, SyncConfig, SyncResult } from "./types";
+import { MobileConfigResult, MobileHudPayload, MobileHudResult, QueueRow, SyncConfig, SyncResult } from "./types";
 
 const SYNC_BATCH_SIZE = 50;
 
@@ -88,6 +88,82 @@ export async function runSync(config: SyncConfig): Promise<SyncResult> {
       );
     }
     return { sent: 0, pulled: 0, error: message };
+  }
+}
+
+function authHeaders(config: SyncConfig) {
+  return {
+    ...(config.token ? { Authorization: `Bearer ${config.token}` } : {})
+  };
+}
+
+function normalizeVersionText(value: unknown) {
+  return String(value || "").replace(/^Vers[aã]o:\s*/i, "").trim();
+}
+
+export async function fetchMobileHud(config: SyncConfig): Promise<MobileHudResult> {
+  const endpointUrl = normalizeServerUrl(config.endpointUrl);
+  try {
+    const response = await fetch(`${endpointUrl}/api/mobile/hud`, {
+      headers: authHeaders(config)
+    });
+    if (!response.ok) {
+      throw new Error(`Servidor retornou HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    if (!data.ok) {
+      throw new Error(String(data.erro || "Falha ao carregar HUD do site."));
+    }
+    const hud: MobileHudPayload = data.hud || {};
+    return {
+      hud,
+      version: normalizeVersionText(data.versao_sistema || hud.versao)
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function fetchMobileConfig(config: SyncConfig): Promise<MobileConfigResult> {
+  const endpointUrl = normalizeServerUrl(config.endpointUrl);
+  try {
+    const response = await fetch(`${endpointUrl}/api/mobile/configuracao`, {
+      headers: authHeaders(config)
+    });
+    if (!response.ok) {
+      throw new Error(`Servidor retornou HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    if (!data.ok) {
+      throw new Error(String(data.erro || "Falha ao carregar configuracao do site."));
+    }
+    return { version: normalizeVersionText(data.versao_sistema || data.app_version) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function updateMobileVersion(config: SyncConfig, version: string): Promise<MobileConfigResult> {
+  const endpointUrl = normalizeServerUrl(config.endpointUrl);
+  try {
+    const response = await fetch(`${endpointUrl}/api/mobile/configuracao`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(config)
+      },
+      body: JSON.stringify({ versao_sistema: version })
+    });
+    if (!response.ok) {
+      throw new Error(`Servidor retornou HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    if (!data.ok) {
+      throw new Error(String(data.erro || "Falha ao salvar versao no site."));
+    }
+    return { version: normalizeVersionText(data.versao_sistema || data.app_version) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
   }
 }
 
