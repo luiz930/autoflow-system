@@ -1079,6 +1079,30 @@ class AppRegressionTests(unittest.TestCase):
 
         conn.close()
 
+    def test_troca_de_senha_preserva_manter_conectado(self):
+        conn, compat = self.criar_banco_usuario_senha()
+        with self.client.session_transaction() as sess:
+            sess.permanent = True
+        token = self.autenticar_cliente_para_senha()
+
+        with patch.object(app_module, "conectar", return_value=compat), \
+             patch.object(app_module, "sincronizar_sessao_usuario"), \
+             patch.object(app_module, "registrar_auditoria_assincrona"):
+            response = self.client.post(
+                "/configuracoes/senha",
+                data={
+                    "_csrf_token": token,
+                    "senha_atual": "SenhaAtual1!",
+                    "nova_senha": "NovaSenha1!",
+                    "confirmar_senha": "NovaSenha1!",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        with self.client.session_transaction() as sess:
+            self.assertTrue(sess.permanent)
+        conn.close()
+
     def test_atualizar_minha_senha_nao_da_500_se_auditoria_falhar(self):
         conn, compat = self.criar_banco_usuario_senha()
         token = self.autenticar_cliente_para_senha()

@@ -8500,6 +8500,7 @@ def limpar_status_login_usuario(c, usuario_id, registrar_login=False):
     )
 
 def preencher_sessao_usuario(usuario_row, limpar=True, manter_conectado=None):
+    sessao_permanente_anterior = bool(session.permanent)
     if limpar:
         session.clear()
     perfil_usuario = normalizar_perfil_usuario(
@@ -8537,8 +8538,7 @@ def preencher_sessao_usuario(usuario_row, limpar=True, manter_conectado=None):
     session["usuario_perfil"] = perfil_usuario
     session["senha_alteracao_obrigatoria"] = usuario_precisa_trocar_senha(usuario_row)
     session["usuario_sync_em"] = time.time()
-    if manter_conectado is not None:
-        session.permanent = bool(manter_conectado)
+    session.permanent = bool(sessao_permanente_anterior if manter_conectado is None else manter_conectado)
 
 def sincronizar_sessao_usuario(force=False):
     if not session.get("usuario"):
