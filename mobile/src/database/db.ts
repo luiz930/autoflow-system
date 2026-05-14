@@ -69,6 +69,7 @@ async function migrateDatabase(db: SQLite.SQLiteDatabase) {
   await addColumnIfMissing(db, "servicos", "valor_adicional", "REAL DEFAULT 0");
   await addColumnIfMissing(db, "servicos", "fotos_entrada", "INTEGER DEFAULT 0");
   await addColumnIfMissing(db, "servicos", "fotos_detalhe", "INTEGER DEFAULT 0");
+  await addColumnIfMissing(db, "servicos", "fotos_saida", "INTEGER DEFAULT 0");
   await addColumnIfMissing(db, "veiculos", "ultima_entrada", "TEXT");
   await addColumnIfMissing(db, "veiculos", "ultima_entrega", "TEXT");
 }

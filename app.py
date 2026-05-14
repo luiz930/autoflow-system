@@ -17244,6 +17244,7 @@ def aplicar_change_mobile(c, entity, entity_uuid, action, payload):
             normalizar_texto_campo(payload.get("observacoes")),
             normalizar_texto_campo(payload.get("etapa_atual")) or "LAVAGEM",
             str(payload.get("entrada") or agora_iso()),
+            str(payload.get("entrega") or ""),
             normalizar_texto_campo(payload.get("criado_por_usuario")),
             normalizar_texto_campo(payload.get("criado_por_nome")),
             entity_uuid,
@@ -17254,6 +17255,7 @@ def aplicar_change_mobile(c, entity, entity_uuid, action, payload):
                 """
                 UPDATE servicos
                 SET veiculo_id=COALESCE(?, veiculo_id), status=?, observacoes=?, etapa_atual=?, entrada=?,
+                    entrega=COALESCE(NULLIF(?, ''), entrega),
                     criado_por_usuario=?, criado_por_nome=?,
                     mobile_uuid=?, mobile_updated_at=?
                 WHERE mobile_uuid=?
@@ -17264,22 +17266,32 @@ def aplicar_change_mobile(c, entity, entity_uuid, action, payload):
             c.execute(
                 """
                 INSERT INTO servicos (
-                    veiculo_id, status, observacoes, etapa_atual, entrada,
+                    veiculo_id, status, observacoes, etapa_atual, entrada, entrega,
                     criado_por_usuario, criado_por_nome, mobile_uuid, mobile_updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?)
                 """,
                 valores,
             )
         if veiculo_id:
+            status_servico = normalizar_texto_campo(payload.get("status")).upper()
+            finalizado = status_servico == "FINALIZADO"
             c.execute(
                 """
                 UPDATE veiculos
-                SET status_atendimento='EM ANDAMENTO', atendimento_ativo=1,
-                    ultima_entrada=COALESCE(ultima_entrada, ?)
+                SET status_atendimento=?,
+                    atendimento_ativo=?,
+                    ultima_entrada=COALESCE(ultima_entrada, ?),
+                    ultima_entrega=COALESCE(NULLIF(?, ''), ultima_entrega)
                 WHERE id=?
                 """,
-                (str(payload.get("entrada") or agora_iso()), veiculo_id),
+                (
+                    "FINALIZADO" if finalizado else "EM ANDAMENTO",
+                    0 if finalizado else 1,
+                    str(payload.get("entrada") or agora_iso()),
+                    str(payload.get("entrega") or ""),
+                    veiculo_id,
+                ),
             )
         return True
 
@@ -17289,15 +17301,36 @@ def aplicar_change_mobile(c, entity, entity_uuid, action, payload):
             return True
         c.execute("SELECT id FROM fotos WHERE mobile_uuid=? LIMIT 1", (entity_uuid,))
         existente = c.fetchone()
+        servico_id = None
+        servico_uuid = normalizar_texto_campo(payload.get("servico_uuid"))
+        if servico_uuid:
+            c.execute("SELECT id FROM servicos WHERE mobile_uuid=? LIMIT 1", (servico_uuid,))
+            servico = c.fetchone()
+            if servico:
+                servico_id = servico["id"]
+        tipo_foto = normalizar_texto_campo(payload.get("tipo")).lower() or "entrada"
+        if tipo_foto not in {"entrada", "detalhe", "saida"}:
+            tipo_foto = "entrada"
+        arquivo_blob = None
+        arquivo_base64 = normalizar_texto_campo(payload.get("arquivo_base64"))
+        if arquivo_base64:
+            try:
+                arquivo_blob = base64.b64decode(arquivo_base64)
+            except Exception:
+                arquivo_blob = None
         valores = (
-            normalizar_texto_campo(payload.get("tipo")) or "operacional",
+            empresa_atual_id(),
+            servico_id,
+            tipo_foto,
             normalizar_texto_campo(payload.get("uri_local")),
             normalizar_texto_campo(payload.get("usuario")),
             normalizar_texto_campo(payload.get("usuario_nome")),
             converter_inteiro(payload.get("tamanho_bytes"), 0),
             converter_inteiro(payload.get("largura"), 0),
             converter_inteiro(payload.get("altura"), 0),
+            arquivo_blob,
             normalizar_texto_campo(payload.get("mime_type")) or "image/jpeg",
+            f"{entity_uuid}.jpg",
             entity_uuid,
             str(payload.get("updated_at") or payload.get("created_at") or agora_iso()),
         )
@@ -17305,8 +17338,10 @@ def aplicar_change_mobile(c, entity, entity_uuid, action, payload):
             c.execute(
                 """
                 UPDATE fotos
-                SET tipo=?, caminho=?, usuario=?, usuario_nome=?, tamanho_bytes=?,
-                    largura=?, altura=?, mime_type=?, mobile_uuid=?, mobile_updated_at=?
+                SET empresa_id=?, servico_id=COALESCE(?, servico_id), tipo=?, caminho=?,
+                    usuario=?, usuario_nome=?, tamanho_bytes=?, largura=?, altura=?,
+                    arquivo_blob=COALESCE(?, arquivo_blob), mime_type=?, arquivo_nome=?,
+                    mobile_uuid=?, mobile_updated_at=?
                 WHERE mobile_uuid=?
                 """,
                 valores + (entity_uuid,),
@@ -17315,10 +17350,10 @@ def aplicar_change_mobile(c, entity, entity_uuid, action, payload):
             c.execute(
                 """
                 INSERT INTO fotos (
-                    tipo, caminho, usuario, usuario_nome, tamanho_bytes,
-                    largura, altura, mime_type, mobile_uuid, mobile_updated_at
+                    empresa_id, servico_id, tipo, caminho, usuario, usuario_nome, tamanho_bytes,
+                    largura, altura, arquivo_blob, mime_type, arquivo_nome, mobile_uuid, mobile_updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 valores,
             )

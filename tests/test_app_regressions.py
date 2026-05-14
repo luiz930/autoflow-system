@@ -117,6 +117,7 @@ class AppRegressionTests(unittest.TestCase):
                 observacoes TEXT,
                 etapa_atual TEXT,
                 entrada TEXT,
+                entrega TEXT,
                 criado_por_usuario TEXT,
                 criado_por_nome TEXT,
                 mobile_uuid TEXT,
@@ -299,6 +300,73 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(veiculo["placa"], "APP1234")
         self.assertEqual(veiculo["modelo"], "Onix")
         self.assertEqual(veiculo["cliente_id"], 1)
+        conn.close()
+
+    def test_api_mobile_sync_aplica_foto_offline_vinculada_ao_servico(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(
+            """
+            CREATE TABLE servicos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mobile_uuid TEXT
+            );
+            CREATE TABLE fotos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                empresa_id INTEGER,
+                servico_id INTEGER,
+                tipo TEXT,
+                caminho TEXT,
+                usuario TEXT,
+                usuario_nome TEXT,
+                tamanho_bytes INTEGER,
+                largura INTEGER,
+                altura INTEGER,
+                arquivo_blob BLOB,
+                mime_type TEXT,
+                arquivo_nome TEXT,
+                mobile_uuid TEXT,
+                mobile_updated_at TEXT
+            );
+            INSERT INTO servicos (mobile_uuid) VALUES ('servico-app-1');
+            """
+        )
+        compat = PersistentCompatConnection(conn)
+
+        with patch.dict(os.environ, {"MOBILE_SYNC_TOKEN": "segredo"}, clear=False), \
+             patch.object(app_module, "conectar", return_value=compat):
+            resposta = self.client.post(
+                "/api/mobile/sync",
+                json={
+                    "changes": [
+                        {
+                            "id": 10,
+                            "entity": "fotos",
+                            "entity_uuid": "foto-app-1",
+                            "action": "upsert",
+                            "payload": {
+                                "servico_uuid": "servico-app-1",
+                                "tipo": "saida",
+                                "uri_local": "file:///foto.jpg",
+                                "arquivo_base64": "Zm90bw==",
+                                "mime_type": "image/jpeg",
+                                "usuario": "admin",
+                                "usuario_nome": "Admin",
+                            },
+                        }
+                    ]
+                },
+                headers={"Authorization": "Bearer segredo"},
+            )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.get_json()["accepted_ids"], [10])
+        foto = conn.execute("SELECT * FROM fotos WHERE mobile_uuid='foto-app-1'").fetchone()
+        servico = conn.execute("SELECT * FROM servicos WHERE mobile_uuid='servico-app-1'").fetchone()
+        self.assertIsNotNone(foto)
+        self.assertEqual(foto["servico_id"], servico["id"])
+        self.assertEqual(foto["tipo"], "saida")
+        self.assertEqual(foto["arquivo_blob"], b"foto")
         conn.close()
 
     def test_api_mobile_login_gera_token_e_usuario_para_app(self):

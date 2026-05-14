@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS servicos (
   criado_por_nome TEXT,
   fotos_entrada INTEGER DEFAULT 0,
   fotos_detalhe INTEGER DEFAULT 0,
+  fotos_saida INTEGER DEFAULT 0,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
   deleted_at TEXT
 );

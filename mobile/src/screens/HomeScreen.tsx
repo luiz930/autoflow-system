@@ -6,7 +6,7 @@ import { getSetting, setSetting } from "../database/db";
 import { pendingSyncCount, runSync } from "../sync/syncService";
 import { colors, spacing } from "../theme";
 import { AppScreenKey, AppShell } from "./AppShell";
-import { CameraScreen } from "./CameraScreen";
+import { CameraScreen, CameraTarget } from "./CameraScreen";
 import { NativeScreenContent, screenTitle } from "./NativeScreens";
 
 type Props = {
@@ -17,7 +17,7 @@ type Props = {
 export function HomeScreen({ session, onLogout }: Props) {
   const [pending, setPending] = useState(0);
   const [syncMessage, setSyncMessage] = useState("Banco local ativo");
-  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraTarget, setCameraTarget] = useState<CameraTarget | null>(null);
   const [activeScreen, setActiveScreen] = useState<AppScreenKey>("inicio");
   const [endpointUrl, setEndpointUrl] = useState("");
   const [syncToken, setSyncToken] = useState("");
@@ -41,8 +41,8 @@ export function HomeScreen({ session, onLogout }: Props) {
     await refreshPending();
   }
 
-  if (cameraOpen) {
-    return <CameraScreen session={session} onClose={() => setCameraOpen(false)} onSaved={refreshPending} />;
+  if (cameraTarget) {
+    return <CameraScreen session={session} target={cameraTarget} onClose={() => setCameraTarget(null)} onSaved={refreshPending} />;
   }
 
   return (
@@ -56,7 +56,7 @@ export function HomeScreen({ session, onLogout }: Props) {
       <NativeScreenContent
         key={activeScreen}
         screen={activeScreen}
-        onOpenCamera={() => setCameraOpen(true)}
+        onOpenCamera={setCameraTarget}
         onRefreshPending={refreshPending}
         sync={{
           pending,

@@ -7,6 +7,7 @@ import {
   BuscaPlacaResultado,
   buscarPorPlaca,
   ClienteLocal,
+  finalizarServico,
   listarClientes,
   listarServicos,
   listarTiposServico,
@@ -19,10 +20,11 @@ import {
 } from "../data/localRepository";
 import { colors, spacing } from "../theme";
 import { AppScreenKey } from "./AppShell";
+import { CameraTarget } from "./CameraScreen";
 
 type Props = {
   screen: AppScreenKey;
-  onOpenCamera: () => void;
+  onOpenCamera: (target: CameraTarget) => void;
   onRefreshPending: () => void;
   sync: {
     pending: number;
@@ -75,7 +77,7 @@ export function NativeScreenContent({ screen, onOpenCamera, onRefreshPending, sy
   return <ModuleScreen screen={screen} sync={sync} />;
 }
 
-function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: () => void; onSaved: () => void; sync: Props["sync"] }) {
+function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: (target: CameraTarget) => void; onSaved: () => void; sync: Props["sync"] }) {
   const [resumo, setResumo] = useState({ clientes: 0, servicos: 0, fotos: 0, pendencias: 0 });
   const [placa, setPlaca] = useState("");
   const [resultados, setResultados] = useState<BuscaPlacaResultado[]>([]);
@@ -158,7 +160,7 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: () => voi
       return;
     }
     const tipo = tiposServico.find((item) => item.nome === tipoServico);
-    await salvarServico({
+    const servicoUuid = await salvarServico({
       veiculo_uuid: selecionado.veiculo_uuid,
       tipo_nome: tipoServico || tipo?.nome || "Servico",
       valor: tipo?.valor || 0,
@@ -174,6 +176,26 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: () => voi
     await onSaved();
     await resumoLocal().then(setResumo);
     await pesquisarPlaca(selecionado.placa);
+    onOpenCamera({
+      servico_uuid: servicoUuid,
+      tipo: "entrada",
+      titulo: "Fotos de entrada"
+    });
+  }
+
+  async function abrirCameraAtendimento(tipo: "entrada" | "detalhe" | "saida") {
+    if (!selecionado?.servico_uuid) {
+      return;
+    }
+    if (tipo === "saida") {
+      await finalizarServico(selecionado.servico_uuid);
+      await onSaved();
+    }
+    onOpenCamera({
+      servico_uuid: selecionado.servico_uuid,
+      tipo,
+      titulo: tipo === "entrada" ? "Fotos de entrada" : tipo === "detalhe" ? "Fotos de detalhe" : "Fotos de finalizacao"
+    });
   }
 
   return (
@@ -243,15 +265,34 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: () => voi
 
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Atendimento</Text>
+            {selecionado.servico_uuid && (
+              <View style={styles.photoFlow}>
+                <Text style={styles.muted}>Fluxo de fotos do atendimento aberto</Text>
+                <View style={styles.photoFlowRow}>
+                  <Pressable onPress={() => abrirCameraAtendimento("entrada")} style={styles.photoFlowButton}>
+                    <Ionicons color={colors.text} name="camera" size={18} />
+                    <Text style={styles.photoFlowTitle}>Entrada</Text>
+                    <Text style={styles.photoFlowCount}>{Number(selecionado.fotos_entrada || 0)}</Text>
+                  </Pressable>
+                  <Pressable onPress={() => abrirCameraAtendimento("detalhe")} style={styles.photoFlowButton}>
+                    <Ionicons color={colors.text} name="images" size={18} />
+                    <Text style={styles.photoFlowTitle}>Detalhe</Text>
+                    <Text style={styles.photoFlowCount}>{Number(selecionado.fotos_detalhe || 0)}</Text>
+                  </Pressable>
+                  <Pressable onPress={() => abrirCameraAtendimento("saida")} style={styles.photoFlowButton}>
+                    <Ionicons color={colors.text} name="checkmark-done" size={18} />
+                    <Text style={styles.photoFlowTitle}>Finalizacao</Text>
+                    <Text style={styles.photoFlowCount}>{Number(selecionado.fotos_saida || 0)}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
             <Pressable onPress={() => setNovoAtendimento((value) => !value)} style={styles.primaryButton}>
               <Text style={styles.primaryButtonText}>{novoAtendimento ? "Fechar atendimento" : "+ Novo Atendimento"}</Text>
             </Pressable>
             {novoAtendimento && (
               <View style={styles.stackForm}>
-                <Text style={styles.muted}>Fotos de entrada</Text>
-                <Pressable onPress={onOpenCamera} style={styles.secondaryButtonWide}>
-                  <Text style={styles.secondaryButtonText}>Abrir camera</Text>
-                </Pressable>
+                <Text style={styles.muted}>Ao iniciar, o app abre a camera para registrar as fotos de entrada.</Text>
                 <TextInput value={tipoServico} onChangeText={setTipoServico} placeholder="Tipo de servico" placeholderTextColor={colors.muted} style={styles.input} />
                 {tiposServico.length > 0 && (
                   <View style={styles.rowWrap}>
@@ -311,17 +352,13 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: () => voi
       </View>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Operacao</Text>
-        <Text style={styles.muted}>Atalhos principais do mesmo fluxo operacional do site.</Text>
-        <Pressable onPress={onOpenCamera} style={styles.primaryButton}>
-          <Ionicons color="#111827" name="camera" size={22} />
-          <Text style={styles.primaryButtonText}>Registrar foto</Text>
-        </Pressable>
+        <Text style={styles.muted}>As fotos agora ficam dentro do atendimento, separadas em entrada, detalhe e finalizacao como no site.</Text>
       </View>
     </>
   );
 }
 
-function PainelScreen({ onOpenCamera }: { onOpenCamera: () => void }) {
+function PainelScreen({ onOpenCamera }: { onOpenCamera: (target: CameraTarget) => void }) {
   return (
     <>
       <View style={styles.toolbarCard}>
@@ -330,9 +367,6 @@ function PainelScreen({ onOpenCamera }: { onOpenCamera: () => void }) {
           <Text style={styles.cardTitle}>Controle dos servicos em andamento</Text>
           <Text style={styles.muted}>Fluxo separado por lavagem, finalizacao, prioridade e fotos.</Text>
         </View>
-        <Pressable onPress={onOpenCamera} style={styles.cameraFab}>
-          <Ionicons color="#111827" name="camera" size={22} />
-        </Pressable>
       </View>
       <View style={styles.grid}>
         <Metric label="Em atendimento" value={0} icon="car" />
@@ -408,7 +442,7 @@ function ClientesScreen({ onSaved }: { onSaved: () => void }) {
   );
 }
 
-function ServicosScreen({ onSaved, onOpenCamera }: { onSaved: () => void; onOpenCamera: () => void }) {
+function ServicosScreen({ onSaved, onOpenCamera }: { onSaved: () => void; onOpenCamera: (target: CameraTarget) => void }) {
   const [servicos, setServicos] = useState<ServicoLocal[]>([]);
   const [observacoes, setObservacoes] = useState("");
 
@@ -421,10 +455,15 @@ function ServicosScreen({ onSaved, onOpenCamera }: { onSaved: () => void; onOpen
   }, []);
 
   async function submit() {
-    await salvarServico({ observacoes });
+    const servicoUuid = await salvarServico({ observacoes });
     setObservacoes("");
     await refresh();
     onSaved();
+    onOpenCamera({
+      servico_uuid: servicoUuid,
+      tipo: "entrada",
+      titulo: "Fotos de entrada"
+    });
   }
 
   return (
@@ -435,9 +474,6 @@ function ServicosScreen({ onSaved, onOpenCamera }: { onSaved: () => void; onOpen
         <View style={styles.row}>
           <Pressable onPress={submit} style={styles.primaryButton}>
             <Text style={styles.primaryButtonText}>Abrir servico</Text>
-          </Pressable>
-          <Pressable onPress={onOpenCamera} style={styles.secondaryButton}>
-            <Ionicons color={colors.text} name="camera" size={20} />
           </Pressable>
         </View>
       </View>
@@ -964,6 +1000,40 @@ const styles = StyleSheet.create({
     borderColor: "rgba(250, 204, 21, 0.12)",
     backgroundColor: colors.surfaceSoft,
     padding: spacing.md
+  },
+  photoFlow: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(250, 204, 21, 0.16)",
+    backgroundColor: colors.surfaceSoft,
+    padding: spacing.md,
+    gap: spacing.sm
+  },
+  photoFlowRow: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  photoFlowButton: {
+    flex: 1,
+    minHeight: 92,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    padding: spacing.sm
+  },
+  photoFlowTitle: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "900",
+    textAlign: "center"
+  },
+  photoFlowCount: {
+    color: colors.primary,
+    fontSize: 18,
+    fontWeight: "900"
   },
   grid: {
     flexDirection: "row",

@@ -19,6 +19,9 @@ export type ServicoLocal = {
   etapa_atual?: string;
   entrada?: string;
   entrega_prevista?: string;
+  fotos_entrada?: number;
+  fotos_detalhe?: number;
+  fotos_saida?: number;
   updated_at?: string;
 };
 
@@ -38,7 +41,16 @@ export type BuscaPlacaResultado = {
   atendimento_ativo?: number;
   cliente_nome?: string;
   cliente_telefone?: string;
+  servico_uuid?: string;
+  servico_status?: string;
+  servico_etapa?: string;
+  servico_tipo?: string;
+  fotos_entrada?: number;
+  fotos_detalhe?: number;
+  fotos_saida?: number;
 };
+
+export type FotoTipo = "entrada" | "detalhe" | "saida";
 
 export async function listarClientes() {
   const db = await getDatabase();
@@ -70,9 +82,19 @@ export async function buscarPorPlaca(placa: string) {
       v.status_atendimento,
       v.atendimento_ativo,
       c.nome AS cliente_nome,
-      c.telefone AS cliente_telefone
+      c.telefone AS cliente_telefone,
+      s.uuid AS servico_uuid,
+      s.status AS servico_status,
+      s.etapa_atual AS servico_etapa,
+      s.tipo_nome AS servico_tipo,
+      s.fotos_entrada,
+      s.fotos_detalhe,
+      s.fotos_saida
     FROM veiculos v
     LEFT JOIN clientes c ON c.uuid = v.cliente_uuid
+    LEFT JOIN servicos s ON s.veiculo_uuid = v.uuid
+      AND s.deleted_at IS NULL
+      AND UPPER(COALESCE(s.status, '')) IN ('ABERTO', 'EM ANDAMENTO')
     WHERE v.deleted_at IS NULL
       AND UPPER(v.placa) LIKE ?
     ORDER BY v.updated_at DESC, v.placa ASC
@@ -226,7 +248,7 @@ export async function listarServicos() {
   const db = await getDatabase();
   return db.getAllAsync<ServicoLocal>(
     `
-    SELECT uuid, veiculo_uuid, tipo_nome, valor, valor_adicional, status, observacoes, etapa_atual, entrada, entrega_prevista, updated_at
+    SELECT uuid, veiculo_uuid, tipo_nome, valor, valor_adicional, status, observacoes, etapa_atual, entrada, entrega_prevista, fotos_entrada, fotos_detalhe, fotos_saida, updated_at
     FROM servicos
     WHERE deleted_at IS NULL
     ORDER BY updated_at DESC, entrada DESC
@@ -245,6 +267,7 @@ export async function salvarServico(dados: {
   status?: string;
   fotos_entrada?: number;
   fotos_detalhe?: number;
+  fotos_saida?: number;
 }) {
   const db = await getDatabase();
   const uuid = newUuid();
@@ -261,6 +284,7 @@ export async function salvarServico(dados: {
     entrega_prevista: dados.entrega_prevista || "",
     fotos_entrada: Number(dados.fotos_entrada || 0),
     fotos_detalhe: Number(dados.fotos_detalhe || 0),
+    fotos_saida: Number(dados.fotos_saida || 0),
     updated_at: new Date().toISOString()
   };
   await db.runAsync(
@@ -268,9 +292,9 @@ export async function salvarServico(dados: {
     INSERT INTO servicos (
       uuid, veiculo_uuid, tipo_nome, valor, valor_adicional, status,
       observacoes, etapa_atual, entrada, entrega_prevista,
-      fotos_entrada, fotos_detalhe, updated_at
+      fotos_entrada, fotos_detalhe, fotos_saida, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     payload.uuid,
     payload.veiculo_uuid,
@@ -284,6 +308,7 @@ export async function salvarServico(dados: {
     payload.entrega_prevista,
     payload.fotos_entrada,
     payload.fotos_detalhe,
+    payload.fotos_saida,
     payload.updated_at
   );
   if (payload.veiculo_uuid) {
@@ -302,6 +327,106 @@ export async function salvarServico(dados: {
     );
   }
   await enqueueSync("servicos", uuid, "upsert", payload);
+  return uuid;
+}
+
+export async function salvarFotoAtendimento(dados: {
+  servico_uuid: string;
+  tipo: FotoTipo;
+  uri_local: string;
+  arquivo_base64?: string;
+  mime_type?: string;
+  usuario?: string;
+  usuario_nome?: string;
+  tamanho_bytes?: number;
+  largura?: number;
+  altura?: number;
+}) {
+  const db = await getDatabase();
+  const uuid = newUuid();
+  const updatedAt = new Date().toISOString();
+  const tipo = dados.tipo === "saida" ? "saida" : dados.tipo === "detalhe" ? "detalhe" : "entrada";
+  const payload = {
+    uuid,
+    servico_uuid: dados.servico_uuid,
+    tipo,
+    uri_local: dados.uri_local,
+    arquivo_base64: dados.arquivo_base64 || "",
+    mime_type: dados.mime_type || "image/jpeg",
+    usuario: dados.usuario || "",
+    usuario_nome: dados.usuario_nome || "",
+    tamanho_bytes: Number(dados.tamanho_bytes || 0),
+    largura: Number(dados.largura || 0),
+    altura: Number(dados.altura || 0),
+    created_at: updatedAt,
+    updated_at: updatedAt
+  };
+  await db.runAsync(
+    `
+    INSERT INTO fotos (
+      uuid, servico_uuid, tipo, uri_local, mime_type, usuario, usuario_nome,
+      tamanho_bytes, largura, altura, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    payload.uuid,
+    payload.servico_uuid,
+    payload.tipo,
+    payload.uri_local,
+    payload.mime_type,
+    payload.usuario,
+    payload.usuario_nome,
+    payload.tamanho_bytes,
+    payload.largura,
+    payload.altura,
+    payload.created_at,
+    payload.updated_at
+  );
+  const counterColumn = tipo === "saida" ? "fotos_saida" : tipo === "detalhe" ? "fotos_detalhe" : "fotos_entrada";
+  await db.runAsync(
+    `UPDATE servicos SET ${counterColumn}=${counterColumn}+1, updated_at=? WHERE uuid=?`,
+    updatedAt,
+    dados.servico_uuid
+  );
+  await enqueueSync("fotos", uuid, "upsert", payload);
+}
+
+export async function finalizarServico(servicoUuid: string) {
+  const db = await getDatabase();
+  const updatedAt = new Date().toISOString();
+  await db.runAsync(
+    `
+    UPDATE servicos
+    SET status='FINALIZADO', etapa_atual='FINALIZACAO', entrega=?, updated_at=?
+    WHERE uuid=?
+    `,
+    updatedAt,
+    updatedAt,
+    servicoUuid
+  );
+  const servico = await db.getFirstAsync<ServicoLocal>(
+    "SELECT * FROM servicos WHERE uuid=? LIMIT 1",
+    servicoUuid
+  );
+  if (servico?.veiculo_uuid) {
+    await db.runAsync(
+      `
+      UPDATE veiculos
+      SET status_atendimento='FINALIZADO', atendimento_ativo=0, ultima_entrega=?, updated_at=?
+      WHERE uuid=?
+      `,
+      updatedAt,
+      updatedAt,
+      servico.veiculo_uuid
+    );
+  }
+  await enqueueSync("servicos", servicoUuid, "upsert", {
+    ...servico,
+    status: "FINALIZADO",
+    etapa_atual: "FINALIZACAO",
+    entrega: updatedAt,
+    updated_at: updatedAt
+  });
 }
 
 export async function resumoLocal() {

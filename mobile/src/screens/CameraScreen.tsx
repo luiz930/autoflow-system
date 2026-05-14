@@ -5,16 +5,24 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { UserSession } from "../auth/authRepository";
-import { enqueueSync, newUuid } from "../database/db";
+import { FotoTipo, salvarFotoAtendimento } from "../data/localRepository";
+import { newUuid } from "../database/db";
 import { colors, spacing } from "../theme";
+
+export type CameraTarget = {
+  servico_uuid: string;
+  tipo: FotoTipo;
+  titulo: string;
+};
 
 type Props = {
   session: UserSession;
+  target: CameraTarget;
   onClose: () => void;
   onSaved: () => void;
 };
 
-export function CameraScreen({ session, onClose, onSaved }: Props) {
+export function CameraScreen({ session, target, onClose, onSaved }: Props) {
   const cameraRef = useRef<CameraView | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [saving, setSaving] = useState(false);
@@ -35,17 +43,23 @@ export function CameraScreen({ session, onClose, onSaved }: Props) {
       await FileSystem.makeDirectoryAsync(targetDir, { intermediates: true });
       const targetUri = `${targetDir}${uuid}.jpg`;
       await FileSystem.copyAsync({ from: photo.uri, to: targetUri });
+      const info = await FileSystem.getInfoAsync(targetUri);
+      const arquivoBase64 = await FileSystem.readAsStringAsync(targetUri, {
+        encoding: FileSystem.EncodingType.Base64
+      });
 
-      const payload = {
-        uuid,
+      await salvarFotoAtendimento({
+        servico_uuid: target.servico_uuid,
+        tipo: target.tipo,
         uri_local: targetUri,
-        tipo: "operacional",
+        arquivo_base64: arquivoBase64,
+        mime_type: "image/jpeg",
         usuario: session.usuario,
         usuario_nome: session.nome,
-        created_at: new Date().toISOString()
-      };
-
-      await enqueueSync("fotos", uuid, "upsert", payload);
+        tamanho_bytes: info.exists ? Number(info.size || 0) : 0,
+        largura: Number(photo.width || 0),
+        altura: Number(photo.height || 0)
+      });
       await onSaved();
       onClose();
     } finally {
@@ -75,6 +89,9 @@ export function CameraScreen({ session, onClose, onSaved }: Props) {
   return (
     <View style={styles.root}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back" />
+      <View style={styles.header}>
+        <Text style={styles.headerText}>{target.titulo}</Text>
+      </View>
       <View style={styles.toolbar}>
         <Pressable onPress={onClose} style={styles.iconButton}>
           <Ionicons color={colors.text} name="close" size={26} />
@@ -96,6 +113,20 @@ const styles = StyleSheet.create({
   },
   camera: {
     flex: 1
+  },
+  header: {
+    position: "absolute",
+    left: spacing.lg,
+    right: spacing.lg,
+    top: spacing.xl,
+    backgroundColor: "rgba(17, 24, 39, 0.9)",
+    borderRadius: 14,
+    padding: spacing.md
+  },
+  headerText: {
+    color: colors.text,
+    fontWeight: "900",
+    textAlign: "center"
   },
   toolbar: {
     position: "absolute",
