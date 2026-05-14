@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(250, 204, 21, 0.45)",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.surface
+    backgroundColor: colors.panel
   },
   logoText: {
     color: colors.primary,
@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 22,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.panel,
     padding: spacing.lg,
     gap: spacing.md
   },
@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
     minHeight: 50,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(250, 204, 21, 0.18)",
+    borderColor: colors.borderInput,
     backgroundColor: colors.surfaceSoft,
     color: colors.text,
     paddingHorizontal: spacing.md
@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary
   },
   primaryButtonText: {
-    color: "#111827",
+    color: colors.primaryText,
     fontWeight: "900"
   },
   secondaryButton: {

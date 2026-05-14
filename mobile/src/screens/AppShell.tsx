@@ -73,7 +73,7 @@ type Props = {
 
 export function AppShell({ active, title, subtitle, onSelect, onLogout, children }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const desktopSidebar = width >= 780;
 
   function selectScreen(screen: AppScreenKey) {
@@ -83,14 +83,15 @@ export function AppShell({ active, title, subtitle, onSelect, onLogout, children
 
   return (
     <View style={styles.root}>
+      <View pointerEvents="none" style={styles.topGlow} />
       <View style={styles.appFrame}>
-        {desktopSidebar && <Sidebar active={active} onSelect={selectScreen} />}
+        {desktopSidebar && <Sidebar active={active} height={height} onSelect={selectScreen} />}
 
         {!desktopSidebar && (
           <Modal visible={sidebarOpen} transparent animationType="slide" onRequestClose={() => setSidebarOpen(false)}>
             <View style={styles.modalLayer}>
-              <Sidebar active={active} onSelect={selectScreen} overlay />
               <Pressable style={styles.drawerBackdrop} onPress={() => setSidebarOpen(false)} />
+              <Sidebar active={active} height={height} onSelect={selectScreen} overlay />
             </View>
           </Modal>
         )}
@@ -99,7 +100,7 @@ export function AppShell({ active, title, subtitle, onSelect, onLogout, children
           <View style={styles.topbar}>
             {!desktopSidebar && (
               <Pressable onPress={() => setSidebarOpen(true)} style={styles.menuButton}>
-                <Ionicons color="#111827" name="menu" size={22} />
+                <Ionicons color={colors.primaryText} name="menu" size={22} />
               </Pressable>
             )}
             <View style={styles.headerText}>
@@ -119,9 +120,9 @@ export function AppShell({ active, title, subtitle, onSelect, onLogout, children
   );
 }
 
-function Sidebar({ active, onSelect, overlay = false }: { active: AppScreenKey; onSelect: (screen: AppScreenKey) => void; overlay?: boolean }) {
+function Sidebar({ active, height, onSelect, overlay = false }: { active: AppScreenKey; height: number; onSelect: (screen: AppScreenKey) => void; overlay?: boolean }) {
   return (
-    <View style={[styles.sidebar, overlay && styles.sidebarOverlay]}>
+    <View style={[styles.sidebar, { height, maxHeight: height }, overlay && styles.sidebarOverlay]}>
       <ScrollView
         alwaysBounceVertical
         nestedScrollEnabled
@@ -149,7 +150,7 @@ function Sidebar({ active, onSelect, overlay = false }: { active: AppScreenKey; 
                 onPress={() => onSelect(item.key)}
                 style={[styles.sidebarItem, active === item.key && styles.sidebarItemActive]}
               >
-                <Ionicons color={active === item.key ? "#111827" : colors.text} name={item.icon} size={18} />
+                <Ionicons color={active === item.key ? colors.primaryText : colors.text} name={item.icon} size={18} />
                 <Text style={[styles.sidebarItemText, active === item.key && styles.sidebarItemTextActive]}>{item.label}</Text>
               </Pressable>
             ))}
@@ -165,35 +166,51 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg
   },
+  topGlow: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 180,
+    backgroundColor: colors.primarySoft,
+    opacity: 0.52
+  },
   appFrame: {
     flex: 1,
     flexDirection: "row",
-    backgroundColor: colors.bg
+    backgroundColor: "transparent"
   },
   modalLayer: {
-    flex: 1,
-    flexDirection: "row"
+    flex: 1
   },
   sidebar: {
     width: 260,
-    height: "100%",
-    maxHeight: "100%",
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceStrong,
     borderRightWidth: 2,
     borderRightColor: colors.primary,
     paddingHorizontal: spacing.md,
+    paddingTop: 0,
     zIndex: 30,
     elevation: 30,
-    flexShrink: 0
+    flexShrink: 0,
+    overflow: "hidden"
   },
   sidebarOverlay: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
     shadowColor: "#000",
     shadowOpacity: 0.45,
     shadowRadius: 18,
     elevation: 16
   },
   drawerBackdrop: {
-    flex: 1,
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backgroundColor: "rgba(0, 0, 0, 0.62)",
     zIndex: 20,
     elevation: 20
@@ -204,7 +221,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 18,
-    backgroundColor: "rgba(250, 204, 21, 0.06)",
+    backgroundColor: colors.headerSoft,
     alignItems: "center",
     padding: spacing.lg
   },
@@ -239,7 +256,8 @@ const styles = StyleSheet.create({
   sidebarNav: {
     gap: spacing.md,
     paddingBottom: spacing.xl * 4,
-    paddingTop: spacing.xs
+    paddingTop: spacing.xs,
+    minHeight: "110%"
   },
   sidebarScroller: {
     flex: 1,
@@ -249,8 +267,8 @@ const styles = StyleSheet.create({
   sidebarGroup: {
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(250, 204, 21, 0.14)",
-    backgroundColor: "rgba(11, 11, 11, 0.34)",
+    borderColor: colors.borderSoft,
+    backgroundColor: colors.panel,
     padding: spacing.sm,
     gap: spacing.sm
   },
@@ -267,7 +285,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(250, 204, 21, 0.18)",
+    borderColor: colors.borderInput,
     backgroundColor: colors.surfaceSoft,
     alignItems: "center",
     flexDirection: "row",
@@ -284,7 +302,7 @@ const styles = StyleSheet.create({
     flex: 1
   },
   sidebarItemTextActive: {
-    color: "#111827"
+    color: colors.primaryText
   },
   main: {
     flex: 1
@@ -298,7 +316,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 22,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.panel,
     padding: spacing.md
   },
   headerText: {

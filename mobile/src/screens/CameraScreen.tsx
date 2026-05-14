@@ -105,7 +105,7 @@ export function CameraScreen({ session, target, onClose, onSaved }: Props) {
           <Ionicons color={colors.text} name="close" size={26} />
         </Pressable>
         <Pressable onPress={takePhoto} style={styles.captureButton}>
-          <Ionicons color="#111827" name="camera" size={30} />
+          <Ionicons color={colors.primaryText} name="camera" size={30} />
         </Pressable>
         <Pressable onPress={onClose} style={styles.doneButton}>
           <Text style={styles.doneButtonText}>Concluir</Text>
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   primaryButtonText: {
-    color: "#111827",
+    color: colors.primaryText,
     fontWeight: "900"
   },
   secondaryButton: {

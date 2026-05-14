@@ -212,7 +212,7 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: (target: 
             value={placa}
           />
           <Pressable onPress={() => pesquisarPlaca()} style={styles.searchButton}>
-            <Ionicons color="#111827" name="search" size={22} />
+            <Ionicons color={colors.primaryText} name="search" size={22} />
           </Pressable>
         </View>
         <View style={styles.rowWrap}>
@@ -901,7 +901,7 @@ function SyncPanel({ sync }: { sync: Props["sync"] }) {
           <Text style={styles.muted}>{sync.endpointUrl}</Text>
         </View>
         <Pressable onPress={sync.onSyncNow} style={styles.cameraFab}>
-          <Ionicons color="#111827" name="sync" size={22} />
+          <Ionicons color={colors.primaryText} name="sync" size={22} />
         </Pressable>
       </View>
       <Text style={styles.muted}>{sync.message}</Text>
@@ -943,7 +943,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.panel,
     padding: spacing.lg,
     gap: spacing.md
   },
@@ -951,7 +951,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.panel,
     padding: spacing.lg,
     gap: spacing.md
   },
@@ -988,7 +988,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: "rgba(250, 204, 21, 0.08)",
+    backgroundColor: colors.headerSoft,
     padding: spacing.lg,
     alignItems: "center",
     gap: spacing.sm
@@ -1004,7 +1004,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: "rgba(250, 204, 21, 0.06)",
+    backgroundColor: colors.headerSoft,
     padding: spacing.lg,
     gap: spacing.md,
     flexDirection: "row",
@@ -1015,7 +1015,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.panel,
     padding: spacing.lg,
     gap: spacing.md,
     flexDirection: "row",
@@ -1026,21 +1026,21 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.panel,
     padding: spacing.lg,
     gap: spacing.md
   },
   servicePreview: {
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(250, 204, 21, 0.12)",
+    borderColor: colors.borderSoft,
     backgroundColor: colors.surfaceSoft,
     padding: spacing.md
   },
   photoFlow: {
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(250, 204, 21, 0.16)",
+    borderColor: colors.borderSoft,
     backgroundColor: colors.surfaceSoft,
     padding: spacing.md,
     gap: spacing.sm
@@ -1108,7 +1108,7 @@ const styles = StyleSheet.create({
   },
   pill: {
     alignSelf: "flex-start",
-    color: "#111827",
+    color: colors.primaryText,
     backgroundColor: colors.primary,
     borderRadius: 999,
     paddingHorizontal: spacing.sm,
@@ -1130,7 +1130,7 @@ const styles = StyleSheet.create({
     minHeight: 50,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(250, 204, 21, 0.18)",
+    borderColor: colors.borderInput,
     backgroundColor: colors.surfaceSoft,
     color: colors.text,
     paddingHorizontal: spacing.md
@@ -1147,7 +1147,7 @@ const styles = StyleSheet.create({
     flex: 1
   },
   primaryButtonText: {
-    color: "#111827",
+    color: colors.primaryText,
     fontWeight: "900"
   },
   secondaryButton: {
@@ -1200,7 +1200,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.panel,
     padding: spacing.md
   },
   calendarDayActive: {
@@ -1211,7 +1211,7 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   calendarDayTextActive: {
-    color: "#111827"
+    color: colors.primaryText
   },
   financeBand: {
     flexDirection: "row",
@@ -1229,7 +1229,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.panel,
     padding: spacing.md,
     gap: spacing.xs
   },
@@ -1242,7 +1242,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(250, 204, 21, 0.18)",
+    borderColor: colors.borderInput,
     backgroundColor: colors.surfaceSoft,
     justifyContent: "center",
     paddingHorizontal: spacing.md,
@@ -1269,13 +1269,13 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     borderRightColor: colors.border,
     borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.panel,
     padding: spacing.lg,
     gap: spacing.md
   },
   tableRow: {
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(250, 204, 21, 0.12)",
+    borderBottomColor: colors.borderSoft,
     paddingVertical: spacing.md,
     gap: spacing.xs
   },
@@ -1290,7 +1290,7 @@ const styles = StyleSheet.create({
     gap: spacing.md
   },
   badge: {
-    color: "#111827",
+    color: colors.primaryText,
     backgroundColor: colors.primary,
     borderRadius: 999,
     paddingHorizontal: spacing.sm,
