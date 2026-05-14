@@ -11,6 +11,12 @@ export type UserSession = {
   onlineToken?: string;
 };
 
+export type LoginPreferences = {
+  lembrarDados: boolean;
+  manterConectado: boolean;
+  usuario: string;
+};
+
 type UserRow = {
   id: number;
   usuario: string;
@@ -38,6 +44,9 @@ type MobileLoginResponse = {
     hud_config_json?: string;
   };
 };
+
+const LOGIN_PREFS_KEY = "login_preferences";
+const PERSISTED_SESSION_KEY = "login_persisted_session";
 
 async function saveRemoteUser(data: NonNullable<MobileLoginResponse["usuario"]>) {
   const db = await getDatabase();
@@ -141,4 +150,66 @@ export async function loginOffline(usuario: string, senha: string): Promise<User
     perfil: user.perfil || "funcionario",
     onlineToken: await getSetting("sync_token")
   };
+}
+
+export async function getLoginPreferences(): Promise<LoginPreferences> {
+  const raw = await getSetting(LOGIN_PREFS_KEY);
+  if (!raw) {
+    return { lembrarDados: false, manterConectado: false, usuario: "" };
+  }
+
+  try {
+    const data = JSON.parse(raw) as Partial<LoginPreferences>;
+    return {
+      lembrarDados: Boolean(data.lembrarDados),
+      manterConectado: Boolean(data.manterConectado),
+      usuario: typeof data.usuario === "string" ? data.usuario : ""
+    };
+  } catch {
+    return { lembrarDados: false, manterConectado: false, usuario: "" };
+  }
+}
+
+export async function saveLoginPreferences(preferences: LoginPreferences) {
+  await setSetting(
+    LOGIN_PREFS_KEY,
+    JSON.stringify({
+      lembrarDados: preferences.lembrarDados,
+      manterConectado: preferences.manterConectado,
+      usuario: preferences.lembrarDados ? preferences.usuario.trim() : ""
+    })
+  );
+}
+
+export async function savePersistedSession(session: UserSession | null) {
+  await setSetting(PERSISTED_SESSION_KEY, session ? JSON.stringify(session) : "");
+}
+
+export async function getPersistedSession(): Promise<UserSession | null> {
+  const raw = await getSetting(PERSISTED_SESSION_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const session = JSON.parse(raw) as Partial<UserSession>;
+    if (!session.usuario || !session.id) {
+      return null;
+    }
+
+    return {
+      id: Number(session.id),
+      usuario: String(session.usuario),
+      nome: String(session.nome || session.usuario),
+      perfil: String(session.perfil || "funcionario"),
+      onlineToken: session.onlineToken ? String(session.onlineToken) : undefined
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function clearPersistedSession() {
+  await savePersistedSession(null);
+  await setSetting("sync_token", "");
 }

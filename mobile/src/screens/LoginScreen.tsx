@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -9,7 +9,14 @@ import {
   View
 } from "react-native";
 
-import { loginOffline, loginOnline, UserSession } from "../auth/authRepository";
+import {
+  getLoginPreferences,
+  loginOffline,
+  loginOnline,
+  saveLoginPreferences,
+  savePersistedSession,
+  UserSession
+} from "../auth/authRepository";
 import { DEFAULT_SERVER_URL } from "../config";
 import { runSync } from "../sync/syncService";
 import { colors, spacing } from "../theme";
@@ -22,8 +29,30 @@ export function LoginScreen({ onLoggedIn }: Props) {
   const [usuario, setUsuario] = useState("");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
+  const [lembrarDados, setLembrarDados] = useState(false);
+  const [manterConectado, setManterConectado] = useState(false);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    getLoginPreferences().then((preferences) => {
+      setLembrarDados(preferences.lembrarDados);
+      setManterConectado(preferences.manterConectado);
+      if (preferences.lembrarDados) {
+        setUsuario(preferences.usuario);
+      }
+    });
+  }, []);
+
+  async function concluirLogin(session: UserSession) {
+    await saveLoginPreferences({
+      lembrarDados,
+      manterConectado,
+      usuario
+    });
+    await savePersistedSession(manterConectado ? session : null);
+    onLoggedIn(session);
+  }
 
   async function submit() {
     setErro("");
@@ -31,10 +60,10 @@ export function LoginScreen({ onLoggedIn }: Props) {
     try {
       const session = await loginOnline(DEFAULT_SERVER_URL, usuario, senha);
       await runSync({ endpointUrl: DEFAULT_SERVER_URL, token: session.onlineToken || "" });
-      onLoggedIn(session);
+      await concluirLogin(session);
     } catch (error) {
       try {
-        onLoggedIn(await loginOffline(usuario, senha));
+        await concluirLogin(await loginOffline(usuario, senha));
       } catch {
         setErro(error instanceof Error ? error.message : "Nao foi possivel entrar.");
       }
@@ -84,6 +113,20 @@ export function LoginScreen({ onLoggedIn }: Props) {
             <Text style={styles.secondaryButtonText}>{mostrarSenha ? "Ocultar" : "Mostrar"}</Text>
           </Pressable>
         </View>
+
+        <Pressable onPress={() => setLembrarDados((value) => !value)} style={styles.optionRow}>
+          <View style={[styles.checkbox, lembrarDados && styles.checkboxChecked]}>
+            {lembrarDados ? <Text style={styles.checkboxMark}>X</Text> : null}
+          </View>
+          <Text style={styles.optionText}>Lembrar meus dados de login</Text>
+        </Pressable>
+
+        <Pressable onPress={() => setManterConectado((value) => !value)} style={styles.optionRow}>
+          <View style={[styles.checkbox, manterConectado && styles.checkboxChecked]}>
+            {manterConectado ? <Text style={styles.checkboxMark}>X</Text> : null}
+          </View>
+          <Text style={styles.optionText}>Manter-me conectado</Text>
+        </Pressable>
 
         <Pressable disabled={loading} onPress={submit} style={styles.primaryButton}>
           <Text style={styles.primaryButtonText}>{loading ? "Entrando..." : "Entrar"}</Text>
@@ -186,6 +229,36 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: colors.text,
     fontWeight: "800"
+  },
+  optionRow: {
+    minHeight: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.borderInput,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceSoft
+  },
+  checkboxChecked: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary
+  },
+  checkboxMark: {
+    color: colors.primaryText,
+    fontSize: 16,
+    fontWeight: "900"
+  },
+  optionText: {
+    flex: 1,
+    color: colors.text,
+    fontWeight: "700"
   },
   error: {
     color: colors.danger,

@@ -22,7 +22,7 @@ def build_flask_security_config(secret_key, secure_cookie=False):
         "SESSION_COOKIE_HTTPONLY": True,
         "SESSION_COOKIE_SAMESITE": "Lax",
         "SESSION_COOKIE_SECURE": bool(secure_cookie),
-        "PERMANENT_SESSION_LIFETIME": timedelta(hours=12),
+        "PERMANENT_SESSION_LIFETIME": timedelta(days=30),
     }
 
 

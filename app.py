@@ -8499,7 +8499,7 @@ def limpar_status_login_usuario(c, usuario_id, registrar_login=False):
         (None, atualizado_em, usuario_id)
     )
 
-def preencher_sessao_usuario(usuario_row, limpar=True):
+def preencher_sessao_usuario(usuario_row, limpar=True, manter_conectado=None):
     if limpar:
         session.clear()
     perfil_usuario = normalizar_perfil_usuario(
@@ -8537,7 +8537,8 @@ def preencher_sessao_usuario(usuario_row, limpar=True):
     session["usuario_perfil"] = perfil_usuario
     session["senha_alteracao_obrigatoria"] = usuario_precisa_trocar_senha(usuario_row)
     session["usuario_sync_em"] = time.time()
-    session.permanent = True
+    if manter_conectado is not None:
+        session.permanent = bool(manter_conectado)
 
 def sincronizar_sessao_usuario(force=False):
     if not session.get("usuario"):
@@ -17235,6 +17236,7 @@ def login():
     if request.method == "POST":
         usuario = (request.form.get("usuario") or "").strip()
         senha = request.form.get("senha") or ""
+        manter_conectado = request.form.get("manter_conectado") == "1"
 
         if not usuario or not senha:
             registrar_evento_telemetria_app(
@@ -17348,7 +17350,7 @@ def login():
             return render_template("login.html", erro=mensagem_erro_login_servidor(erro), app_version=versao_login)
 
         conn.close()
-        preencher_sessao_usuario(user)
+        preencher_sessao_usuario(user, manter_conectado=manter_conectado)
         registrar_evento_telemetria_app(
             "login_sucesso",
             categoria="auth",

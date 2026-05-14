@@ -1034,6 +1034,51 @@ class AppRegressionTests(unittest.TestCase):
             sess["senha_alteracao_obrigatoria"] = senha_pendente
             return app_module.issue_csrf_token(sess)
 
+    def test_login_exibe_opcoes_de_lembrar_dados_e_manter_conectado(self):
+        with open("templates/login.html", encoding="utf-8") as arquivo:
+            conteudo = arquivo.read()
+
+        self.assertIn('name="lembrar_dados_login"', conteudo)
+        self.assertIn('name="manter_conectado"', conteudo)
+        self.assertIn("Lembrar meus dados de login", conteudo)
+        self.assertIn("Manter-me conectado", conteudo)
+
+    def test_login_manter_conectado_controla_sessao_permanente(self):
+        conn, compat = self.criar_banco_usuario_senha(senha="SenhaAtual1!")
+
+        with app_module.app.test_client() as client, \
+             patch.object(app_module, "csrf_protection_ativa", return_value=False), \
+             patch.object(app_module, "INIT_DB_EXECUTADO", True), \
+             patch.object(app_module, "conectar", return_value=compat):
+            response = client.post(
+                "/login",
+                data={"usuario": "admin", "senha": "SenhaAtual1!"},
+            )
+            self.assertEqual(response.status_code, 302)
+            with client.session_transaction() as sess:
+                self.assertFalse(sess.permanent)
+
+        conn.close()
+
+        conn, compat = self.criar_banco_usuario_senha(senha="SenhaAtual1!")
+        with app_module.app.test_client() as client, \
+             patch.object(app_module, "csrf_protection_ativa", return_value=False), \
+             patch.object(app_module, "INIT_DB_EXECUTADO", True), \
+             patch.object(app_module, "conectar", return_value=compat):
+            response = client.post(
+                "/login",
+                data={
+                    "usuario": "admin",
+                    "senha": "SenhaAtual1!",
+                    "manter_conectado": "1",
+                },
+            )
+            self.assertEqual(response.status_code, 302)
+            with client.session_transaction() as sess:
+                self.assertTrue(sess.permanent)
+
+        conn.close()
+
     def test_atualizar_minha_senha_nao_da_500_se_auditoria_falhar(self):
         conn, compat = self.criar_banco_usuario_senha()
         token = self.autenticar_cliente_para_senha()

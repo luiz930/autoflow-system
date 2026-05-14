@@ -8,9 +8,9 @@
 
 <div class="page-card">
 
-<form method="POST" class="stack-form">
+<form method="POST" class="stack-form" id="login-form">
 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-<input name="usuario" placeholder="Usuario" autocomplete="username" required>
+<input id="login-usuario" name="usuario" placeholder="Usuario" autocomplete="username" required>
 <div class="password-toggle-row">
     <input
         id="login-senha"
@@ -29,6 +29,14 @@
         Mostrar senha
     </button>
 </div>
+<label class="checkbox-line">
+    <input id="lembrar-dados-login" name="lembrar_dados_login" type="checkbox" value="1" autocomplete="off">
+    <span>Lembrar meus dados de login</span>
+</label>
+<label class="checkbox-line">
+    <input id="manter-conectado" name="manter_conectado" type="checkbox" value="1" autocomplete="off">
+    <span>Manter-me conectado</span>
+</label>
 <button type="submit">{{ login_button_text }}</button>
 </form>
 
@@ -39,5 +47,43 @@
 <p class="muted-text top-spacing" style="text-align:center;">{{ app_version }}</p>
 
 </div>
+
+<script>
+(function () {
+    const form = document.getElementById("login-form");
+    const usuario = document.getElementById("login-usuario");
+    const lembrar = document.getElementById("lembrar-dados-login");
+    const manter = document.getElementById("manter-conectado");
+    const chaveUsuario = "wagen_login_usuario_lembrado";
+    const chaveLembrar = "wagen_login_lembrar_dados";
+    const chaveManter = "wagen_login_manter_conectado";
+
+    if (!form || !usuario || !lembrar || !manter) {
+        return;
+    }
+
+    lembrar.checked = localStorage.getItem(chaveLembrar) === "1";
+    manter.checked = localStorage.getItem(chaveManter) === "1";
+    if (lembrar.checked) {
+        usuario.value = localStorage.getItem(chaveUsuario) || "";
+    }
+
+    form.addEventListener("submit", function () {
+        if (lembrar.checked) {
+            localStorage.setItem(chaveLembrar, "1");
+            localStorage.setItem(chaveUsuario, usuario.value.trim());
+        } else {
+            localStorage.removeItem(chaveLembrar);
+            localStorage.removeItem(chaveUsuario);
+        }
+
+        if (manter.checked) {
+            localStorage.setItem(chaveManter, "1");
+        } else {
+            localStorage.removeItem(chaveManter);
+        }
+    });
+})();
+</script>
 
 {% endblock %}

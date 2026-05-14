@@ -5,7 +5,7 @@ import { ActivityIndicator, SafeAreaView, StyleSheet, View } from "react-native"
 import { initDatabase } from "./src/database/db";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
-import { UserSession } from "./src/auth/authRepository";
+import { clearPersistedSession, getPersistedSession, UserSession } from "./src/auth/authRepository";
 import { colors } from "./src/theme";
 
 export default function App() {
@@ -13,8 +13,17 @@ export default function App() {
   const [session, setSession] = useState<UserSession | null>(null);
 
   useEffect(() => {
-    initDatabase().finally(() => setReady(true));
+    initDatabase()
+      .then(async () => {
+        setSession(await getPersistedSession());
+      })
+      .finally(() => setReady(true));
   }, []);
+
+  async function logout() {
+    await clearPersistedSession();
+    setSession(null);
+  }
 
   const content = useMemo(() => {
     if (!ready) {
@@ -29,7 +38,7 @@ export default function App() {
       return <LoginScreen onLoggedIn={setSession} />;
     }
 
-    return <HomeScreen session={session} onLogout={() => setSession(null)} />;
+    return <HomeScreen session={session} onLogout={logout} />;
   }, [ready, session]);
 
   return (
