@@ -371,6 +371,7 @@ export async function salvarFotoAtendimento(dados: {
   servico_uuid: string;
   tipo: FotoTipo;
   uri_local: string;
+  thumbnail_uri?: string;
   arquivo_base64?: string;
   mime_type?: string;
   usuario?: string;
@@ -388,6 +389,7 @@ export async function salvarFotoAtendimento(dados: {
     servico_uuid: dados.servico_uuid,
     tipo,
     uri_local: dados.uri_local,
+    thumbnail_uri: dados.thumbnail_uri || "",
     mime_type: dados.mime_type || "image/jpeg",
     usuario: dados.usuario || "",
     usuario_nome: dados.usuario_nome || "",
@@ -400,15 +402,16 @@ export async function salvarFotoAtendimento(dados: {
   await db.runAsync(
     `
     INSERT INTO fotos (
-      uuid, servico_uuid, tipo, uri_local, mime_type, usuario, usuario_nome,
+      uuid, servico_uuid, tipo, uri_local, thumbnail_uri, mime_type, usuario, usuario_nome,
       tamanho_bytes, largura, altura, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     payload.uuid,
     payload.servico_uuid,
     payload.tipo,
     payload.uri_local,
+    payload.thumbnail_uri,
     payload.mime_type,
     payload.usuario,
     payload.usuario_nome,

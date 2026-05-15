@@ -3,7 +3,19 @@ import * as FileSystem from "expo-file-system";
 import { getDatabase } from "../database/db";
 import { getSetting, setSetting } from "../database/db";
 import { normalizeServerUrl } from "../config";
-import { MobileConfigResult, MobileHudPayload, MobileHudResult, MobileSiteState, QueueRow, SyncConfig, SyncDiagnostics, SyncResult } from "./types";
+import {
+  AppUpdateInfo,
+  MobileConfigResult,
+  MobileHudPayload,
+  MobileHudResult,
+  MobileSiteState,
+  PendingPhotoPreviewRow,
+  QueuePreviewRow,
+  QueueRow,
+  SyncConfig,
+  SyncDiagnostics,
+  SyncResult
+} from "./types";
 
 const SYNC_BATCH_SIZE = 50;
 const PHOTO_UPLOAD_BATCH_SIZE = 6;
@@ -100,6 +112,58 @@ export async function getSyncDiagnostics(): Promise<SyncDiagnostics> {
     lastPhotosUploaded: Number(lastPhotosUploaded || 0),
     lastPullAt
   };
+}
+
+export async function listPendingQueue(limit = 10): Promise<QueuePreviewRow[]> {
+  const db = await getDatabase();
+  return db.getAllAsync<QueuePreviewRow>(
+    `
+    SELECT id, entity, entity_uuid, action, created_at, attempts, last_error
+    FROM sync_queue
+    WHERE synced_at IS NULL
+    ORDER BY id
+    LIMIT ?
+    `,
+    limit
+  );
+}
+
+export async function listPendingPhotos(limit = 10): Promise<PendingPhotoPreviewRow[]> {
+  const db = await getDatabase();
+  return db.getAllAsync<PendingPhotoPreviewRow>(
+    `
+    SELECT uuid, servico_uuid, tipo, uri_local, created_at, upload_attempts,
+           upload_last_error, tamanho_bytes
+    FROM fotos
+    WHERE deleted_at IS NULL
+      AND uploaded_at IS NULL
+      AND COALESCE(uri_local, '') <> ''
+      AND uri_local LIKE 'file:%'
+    ORDER BY id
+    LIMIT ?
+    `,
+    limit
+  );
+}
+
+export async function discardPendingQueueItem(id: number) {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ attempts: number; synced_at?: string }>(
+    "SELECT attempts, synced_at FROM sync_queue WHERE id = ?",
+    id
+  );
+  if (!row || row.synced_at) {
+    return "Item nao encontrado ou ja sincronizado.";
+  }
+  if (Number(row.attempts || 0) < 3) {
+    return "Descarte bloqueado: tente reenviar pelo menos 3 vezes antes.";
+  }
+  await db.runAsync(
+    "UPDATE sync_queue SET synced_at = CURRENT_TIMESTAMP, last_error = ? WHERE id = ? AND synced_at IS NULL",
+    "Descartado manualmente no app apos falhas repetidas.",
+    id
+  );
+  return "Item descartado da fila local.";
 }
 
 export async function runSync(config: SyncConfig): Promise<SyncResult> {
@@ -328,6 +392,25 @@ export async function fetchMobileConfig(config: SyncConfig): Promise<MobileConfi
     return { version: normalizeVersionText(data.versao_sistema || data.app_version) };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function fetchAppUpdateInfo(config: SyncConfig, installedVersion: string): Promise<AppUpdateInfo> {
+  const endpointUrl = normalizeServerUrl(config.endpointUrl);
+  try {
+    const response = await fetchWithTimeout(
+      `${endpointUrl}/api/mobile/app-update?installed_version=${encodeURIComponent(installedVersion)}`
+    );
+    if (!response.ok) {
+      throw new Error(`Servidor retornou HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    if (data.ok === false) {
+      throw new Error(String(data.erro || data.error || "Falha ao consultar atualizacao."));
+    }
+    return data;
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error), installed_version: installedVersion };
   }
 }
 

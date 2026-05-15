@@ -87,6 +87,28 @@ export type MobileConfigResult = {
   error?: string;
 };
 
+export type AppUpdateInfo = {
+  ok?: boolean;
+  app_name?: string;
+  package?: string;
+  installed_version?: string;
+  latest_version?: string;
+  version_name?: string;
+  version_code?: number;
+  update_available?: boolean;
+  download_url?: string;
+  page_url?: string;
+  file_name?: string;
+  file_size?: number;
+  file_size_mb?: number;
+  sha256?: string;
+  published_at?: string;
+  available?: boolean;
+  message?: string;
+  preserves_session?: boolean;
+  error?: string;
+};
+
 export type MobileHudResult = MobileConfigResult & {
   clima?: MobileWeatherPayload;
   hud?: MobileHudPayload;
@@ -99,4 +121,25 @@ export type QueueRow = {
   entity_uuid: string;
   action: string;
   payload_json: string;
+};
+
+export type QueuePreviewRow = {
+  id: number;
+  entity: string;
+  entity_uuid: string;
+  action: string;
+  created_at?: string;
+  attempts?: number;
+  last_error?: string;
+};
+
+export type PendingPhotoPreviewRow = {
+  uuid: string;
+  servico_uuid?: string;
+  tipo?: string;
+  uri_local?: string;
+  created_at?: string;
+  upload_attempts?: number;
+  upload_last_error?: string;
+  tamanho_bytes?: number;
 };

@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS fotos (
   servico_uuid TEXT,
   tipo TEXT,
   uri_local TEXT NOT NULL,
+  thumbnail_uri TEXT,
   mime_type TEXT DEFAULT 'image/jpeg',
   usuario TEXT,
   usuario_nome TEXT,

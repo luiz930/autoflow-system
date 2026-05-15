@@ -1,5 +1,6 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as FileSystem from "expo-file-system";
+import * as ImageManipulator from "expo-image-manipulator";
 import { useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -37,7 +38,7 @@ export function CameraScreen({ session, target, onClose, onSaved }: Props) {
 
     setSaving(true);
     try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.78 });
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.72 });
       if (!photo?.uri) {
         throw new Error("Nao foi possivel capturar a foto.");
       }
@@ -45,19 +46,31 @@ export function CameraScreen({ session, target, onClose, onSaved }: Props) {
       const targetDir = `${FileSystem.documentDirectory}fotos/`;
       await FileSystem.makeDirectoryAsync(targetDir, { intermediates: true });
       const targetUri = `${targetDir}${uuid}.jpg`;
-      await FileSystem.copyAsync({ from: photo.uri, to: targetUri });
+      const manipulations = Number(photo.width || 0) > 1600 ? [{ resize: { width: 1600 } }] : [];
+      const compressed = await ImageManipulator.manipulateAsync(photo.uri, manipulations, {
+        compress: 0.62,
+        format: ImageManipulator.SaveFormat.JPEG
+      });
+      await FileSystem.copyAsync({ from: compressed.uri, to: targetUri });
+      const thumbnail = await ImageManipulator.manipulateAsync(targetUri, [{ resize: { width: 420 } }], {
+        compress: 0.58,
+        format: ImageManipulator.SaveFormat.JPEG
+      });
+      const thumbnailUri = `${targetDir}${uuid}-thumb.jpg`;
+      await FileSystem.copyAsync({ from: thumbnail.uri, to: thumbnailUri });
       const info = await FileSystem.getInfoAsync(targetUri);
 
       await salvarFotoAtendimento({
         servico_uuid: target.servico_uuid,
         tipo: target.tipo,
         uri_local: targetUri,
+        thumbnail_uri: thumbnailUri,
         mime_type: "image/jpeg",
         usuario: session.usuario,
         usuario_nome: session.nome,
         tamanho_bytes: info.exists ? Number(info.size || 0) : 0,
-        largura: Number(photo.width || 0),
-        altura: Number(photo.height || 0)
+        largura: Number(compressed.width || photo.width || 0),
+        altura: Number(compressed.height || photo.height || 0)
       });
       if (target.finalizarAoSalvar && !finalizado) {
         await finalizarServico(target.servico_uuid);

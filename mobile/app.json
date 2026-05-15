@@ -2,7 +2,7 @@
   "expo": {
     "name": "Wagen App",
     "slug": "wagen-mobile",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "icon": "./src/assets/icon-round.png",
@@ -54,7 +54,8 @@
         }
       ],
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      "expo-local-authentication"
     ]
   }
 }

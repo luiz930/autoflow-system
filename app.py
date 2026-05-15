@@ -3268,6 +3268,9 @@ app.secret_key = app.config["SECRET_KEY"]
 
 VERSAO_SISTEMA_PADRAO = "1.0.0"
 APP_VERSION = f"Versao: {VERSAO_SISTEMA_PADRAO}"
+MOBILE_APP_VERSION = "0.1.1"
+MOBILE_APK_FILENAME = "wagen-mobile-release-assinado.apk"
+MOBILE_APK_RELATIVE_PATH = os.path.join("mobile", "dist", MOBILE_APK_FILENAME)
 VERSOES_SISTEMA_LEGADAS = {
     "0.7.5-alpha (Em Desenvolvimento)",
     "0.9.5-beta (Em Desenvolvimento)",
@@ -19087,6 +19090,110 @@ def montar_payload_mobile_site_state():
         "server_time": agora_iso(),
         "refresh_interval_seconds": 10,
     }
+
+
+def caminho_apk_mobile():
+    caminho_customizado = normalizar_texto_campo(os.environ.get("MOBILE_APK_PATH"))
+    if caminho_customizado:
+        return caminho_customizado
+    return os.path.join(app.root_path, MOBILE_APK_RELATIVE_PATH)
+
+
+def normalizar_versao_mobile(valor):
+    texto = normalizar_texto_campo(valor)
+    texto = re.sub(r"^v(?:ers[aã]o)?[:\s-]*", "", texto, flags=re.I).strip()
+    return texto or MOBILE_APP_VERSION
+
+
+def comparar_versao_mobile(instalada, disponivel):
+    def partes(versao):
+        numeros = re.findall(r"\d+", normalizar_versao_mobile(versao))
+        return [int(item) for item in numeros[:4]] or [0]
+
+    atual = partes(instalada)
+    nova = partes(disponivel)
+    tamanho = max(len(atual), len(nova))
+    atual += [0] * (tamanho - len(atual))
+    nova += [0] * (tamanho - len(nova))
+    return (nova > atual) - (nova < atual)
+
+
+def montar_info_apk_mobile(installed_version=""):
+    caminho = caminho_apk_mobile()
+    existe = os.path.exists(caminho)
+    tamanho = os.path.getsize(caminho) if existe else 0
+    modificado_em = (
+        datetime.fromtimestamp(os.path.getmtime(caminho), ZoneInfo("America/Sao_Paulo")).isoformat(timespec="seconds")
+        if existe else ""
+    )
+    sha256 = ""
+    if existe:
+        hash_obj = hashlib.sha256()
+        with open(caminho, "rb") as arquivo:
+            for bloco in iter(lambda: arquivo.read(1024 * 1024), b""):
+                hash_obj.update(bloco)
+        sha256 = hash_obj.hexdigest()
+
+    base_url = request.host_url.rstrip("/") if has_request_context() else ""
+    download_url = f"{base_url}/app/download" if base_url else "/app/download"
+    installed_version = normalizar_versao_mobile(installed_version)
+    latest_version = MOBILE_APP_VERSION
+    update_available = existe and comparar_versao_mobile(installed_version, latest_version) > 0
+
+    return {
+        "ok": True,
+        "app_name": "Wagen App",
+        "package": "com.wagen.mobile",
+        "installed_version": installed_version,
+        "latest_version": latest_version,
+        "version_name": latest_version,
+        "version_code": 2,
+        "update_available": update_available,
+        "download_url": download_url,
+        "page_url": f"{base_url}/app" if base_url else "/app",
+        "file_name": MOBILE_APK_FILENAME,
+        "file_size": tamanho,
+        "file_size_mb": round(tamanho / (1024 * 1024), 2) if tamanho else 0,
+        "sha256": sha256,
+        "published_at": modificado_em,
+        "available": existe,
+        "message": (
+            "Atualizacao disponivel para instalacao."
+            if update_available else
+            "App atualizado." if existe else
+            "APK ainda nao publicado no servidor."
+        ),
+        "preserves_session": True,
+    }
+
+
+@app.route("/app")
+def pagina_app_mobile():
+    info = montar_info_apk_mobile(request.args.get("installed_version") or "")
+    return render_template(
+        "app_instalador.html",
+        app_info=info,
+        app_version=obter_versao_sistema(permitir_sem_sessao=True),
+    )
+
+
+@app.route("/app/download")
+def baixar_app_mobile():
+    caminho = caminho_apk_mobile()
+    if not os.path.exists(caminho):
+        return "APK mobile nao publicado no servidor.", 404
+    return send_file(
+        caminho,
+        mimetype="application/vnd.android.package-archive",
+        as_attachment=True,
+        download_name=MOBILE_APK_FILENAME,
+    )
+
+
+@app.route("/api/mobile/app-update")
+def api_mobile_app_update():
+    info = montar_info_apk_mobile(request.args.get("installed_version") or "")
+    return jsonify(info)
 
 
 @app.route("/api/mobile/hud")

@@ -24,6 +24,7 @@ export type AppScreenKey =
   | "empresas"
   | "diagnostico"
   | "status"
+  | "atualizacao"
   | "autoSuporte"
   | "configSite"
   | "configuracoes";
@@ -52,6 +53,7 @@ export const menuItems: MenuItem[] = [
   { key: "empresas", label: "Empresas", icon: "business" },
   { key: "diagnostico", label: "Diagnostico", icon: "medkit" },
   { key: "status", label: "Status", icon: "pulse" },
+  { key: "atualizacao", label: "Atualizacao", icon: "download" },
   { key: "autoSuporte", label: "AutoSuporte", icon: "hardware-chip" },
   { key: "configSite", label: "Site", icon: "color-palette" },
   { key: "configuracoes", label: "Configuracoes", icon: "settings" }
@@ -61,7 +63,7 @@ const menuGroups: { label: string; items: MenuItem[] }[] = [
   { label: "Principal", items: menuItems.filter((item) => ["inicio", "painel"].includes(item.key)) },
   { label: "Operacao", items: menuItems.filter((item) => ["clientes", "historico", "retornos", "servicos", "checklist", "pneus"].includes(item.key)) },
   { label: "Gestao", items: menuItems.filter((item) => ["financeiro", "orcamentos", "notaFiscal", "clima"].includes(item.key)) },
-  { label: "Sistema", items: menuItems.filter((item) => ["auditoria", "changelog", "empresas", "diagnostico", "status", "autoSuporte", "configSite", "configuracoes"].includes(item.key)) }
+  { label: "Sistema", items: menuItems.filter((item) => ["auditoria", "changelog", "empresas", "diagnostico", "status", "atualizacao", "autoSuporte", "configSite", "configuracoes"].includes(item.key)) }
 ];
 
 type Props = {

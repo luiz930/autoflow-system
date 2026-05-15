@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import {
@@ -21,7 +21,17 @@ import {
   ServicoLocal,
   TipoServicoLocal
 } from "../data/localRepository";
-import { MobileHudPayload, MobileModuleCounter, MobileModuleRow, MobileSiteState, SyncDiagnostics } from "../sync/types";
+import { discardPendingQueueItem, listPendingPhotos, listPendingQueue } from "../sync/syncService";
+import {
+  AppUpdateInfo,
+  MobileHudPayload,
+  MobileModuleCounter,
+  MobileModuleRow,
+  MobileSiteState,
+  PendingPhotoPreviewRow,
+  QueuePreviewRow,
+  SyncDiagnostics
+} from "../sync/types";
 import { colors, spacing } from "../theme";
 import { AppScreenKey } from "./AppShell";
 import { CameraTarget } from "./CameraScreen";
@@ -31,6 +41,7 @@ type Props = {
   onOpenCamera: (target: CameraTarget) => void;
   onRefreshPending: () => void;
   sync: {
+    installedVersion: string;
     pending: number;
     pendingPhotos: number;
     message: string;
@@ -41,7 +52,9 @@ type Props = {
     diagnostics: SyncDiagnostics | null;
     updatedAt: string;
     version: string;
+    appUpdate: AppUpdateInfo | null;
     onRefreshHud: () => Promise<void>;
+    onCheckForUpdate: () => Promise<AppUpdateInfo>;
     onSyncNow: () => Promise<void>;
     onUpdateVersion: (version: string) => Promise<string>;
   };
@@ -65,6 +78,7 @@ const titles: Record<AppScreenKey, string> = {
   empresas: "Empresas",
   diagnostico: "Diagnostico",
   status: "Status do sistema",
+  atualizacao: "Atualizacao do app",
   autoSuporte: "AutoSuporte",
   configSite: "Configuracoes do site",
   configuracoes: "Configuracoes"
@@ -75,28 +89,33 @@ export function screenTitle(screen: AppScreenKey) {
 }
 
 export function NativeScreenContent({ screen, onOpenCamera, onRefreshPending, sync }: Props) {
+  let content: ReactNode;
   if (screen === "inicio") {
-    return <InicioPainel onOpenCamera={onOpenCamera} onSaved={onRefreshPending} sync={sync} />;
+    content = <InicioPainel onOpenCamera={onOpenCamera} onSaved={onRefreshPending} sync={sync} />;
+  } else if (screen === "painel") {
+    content = <PainelScreen onOpenCamera={onOpenCamera} sync={sync} />;
+  } else if (screen === "clientes") {
+    content = <ClientesScreen onSaved={onRefreshPending} sync={sync} />;
+  } else if (screen === "servicos") {
+    content = <ServicosScreen onSaved={onRefreshPending} onOpenCamera={onOpenCamera} sync={sync} />;
+  } else if (screen === "pneus") {
+    content = <PneusScreen sync={sync} />;
+  } else if (screen === "checklist") {
+    content = <ChecklistScreen sync={sync} />;
+  } else if (screen === "atualizacao") {
+    content = <AtualizacaoScreen sync={sync} />;
+  } else if (screen === "configuracoes") {
+    content = <ConfiguracoesScreen sync={sync} />;
+  } else {
+    content = <ModuleScreen screen={screen} sync={sync} />;
   }
-  if (screen === "painel") {
-    return <PainelScreen onOpenCamera={onOpenCamera} sync={sync} />;
-  }
-  if (screen === "clientes") {
-    return <ClientesScreen onSaved={onRefreshPending} sync={sync} />;
-  }
-  if (screen === "servicos") {
-    return <ServicosScreen onSaved={onRefreshPending} onOpenCamera={onOpenCamera} sync={sync} />;
-  }
-  if (screen === "pneus") {
-    return <PneusScreen sync={sync} />;
-  }
-  if (screen === "checklist") {
-    return <ChecklistScreen sync={sync} />;
-  }
-  if (screen === "configuracoes") {
-    return <ConfiguracoesScreen sync={sync} />;
-  }
-  return <ModuleScreen screen={screen} sync={sync} />;
+
+  return (
+    <>
+      <SyncStatusStrip sync={sync} />
+      {content}
+    </>
+  );
 }
 
 function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: (target: CameraTarget) => void; onSaved: () => void; sync: Props["sync"] }) {
@@ -518,6 +537,18 @@ function ClientesScreen({ onSaved, sync }: { onSaved: () => void; sync: Props["s
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
   const [placa, setPlaca] = useState("");
+  const [buscaRapida, setBuscaRapida] = useState("");
+  const clientesFiltrados = useMemo(() => {
+    const termo = buscaRapida.trim().toUpperCase();
+    if (!termo) {
+      return clientes;
+    }
+    return clientes.filter((item) => {
+      return [item.nome, item.telefone, item.placa_principal]
+        .map((valor) => String(valor || "").toUpperCase())
+        .some((valor) => valor.includes(termo));
+    });
+  }, [buscaRapida, clientes]);
 
   async function refresh() {
     setClientes(await listarClientes());
@@ -552,7 +583,15 @@ function ClientesScreen({ onSaved, sync }: { onSaved: () => void; sync: Props["s
         </Pressable>
       </View>
       <ListCard title="Clientes cadastrados" empty="Nenhum cliente offline ainda.">
-        {clientes.map((item) => (
+        <TextInput
+          value={buscaRapida}
+          onChangeText={setBuscaRapida}
+          placeholder="Busca rapida por cliente, telefone ou placa"
+          placeholderTextColor={colors.muted}
+          style={styles.input}
+          autoCapitalize="characters"
+        />
+        {clientesFiltrados.map((item) => (
           <View key={item.uuid} style={styles.listItem}>
             <Text style={styles.itemTitle}>{item.nome}</Text>
             <Text style={styles.muted}>{item.placa_principal || "-"} | {item.telefone || "-"}</Text>
@@ -695,6 +734,95 @@ function ChecklistScreen({ sync }: { sync: Props["sync"] }) {
   );
 }
 
+function AtualizacaoScreen({ sync }: { sync: Props["sync"] }) {
+  const [status, setStatus] = useState(sync.appUpdate?.message || "Verificando atualizacao...");
+  const update = sync.appUpdate || {};
+  const updateAvailable = Boolean(update.update_available);
+  const apkDisponivel = update.available !== false && Boolean(update.download_url);
+  const downloadUrl = update.download_url || update.page_url || "";
+
+  useEffect(() => {
+    if (sync.appUpdate?.message) {
+      setStatus(sync.appUpdate.message);
+    }
+  }, [sync.appUpdate?.message]);
+
+  async function verificar() {
+    setStatus("Consultando o site...");
+    const result = await sync.onCheckForUpdate();
+    setStatus(result.message || result.error || "Consulta concluida.");
+  }
+
+  async function baixar() {
+    if (!downloadUrl) {
+      setStatus("APK ainda nao publicado no site.");
+      return;
+    }
+    const supported = await Linking.canOpenURL(downloadUrl);
+    if (!supported) {
+      setStatus("O aparelho nao conseguiu abrir o link de download.");
+      return;
+    }
+    await Linking.openURL(downloadUrl);
+  }
+
+  return (
+    <>
+      <View style={styles.pageHeaderCard}>
+        <View>
+          <Text style={styles.pill}>Atualizacao</Text>
+          <Text style={styles.cardTitle}>Wagen App</Text>
+          <Text style={styles.muted}>Baixe o APK oficial sem perder login, banco local, fila ou fotos pendentes.</Text>
+        </View>
+        <Ionicons color={updateAvailable ? colors.primary : colors.success} name={updateAvailable ? "download" : "checkmark-circle"} size={30} />
+      </View>
+
+      <View style={updateAvailable ? styles.updateCardAttention : styles.card}>
+        <View style={styles.sectionHeader}>
+          <View>
+            <Text style={styles.cardTitle}>{updateAvailable ? "Atualizacao disponivel" : "App atualizado"}</Text>
+            <Text style={styles.muted}>{status}</Text>
+          </View>
+          <Text style={styles.badge}>{update.latest_version || sync.installedVersion}</Text>
+        </View>
+        <View style={styles.syncStatusGrid}>
+          <View style={styles.syncStatusItem}>
+            <Text style={styles.syncStatusValue}>{sync.installedVersion}</Text>
+            <Text style={styles.muted}>instalada</Text>
+          </View>
+          <View style={styles.syncStatusItem}>
+            <Text style={styles.syncStatusValue}>{update.latest_version || "-"}</Text>
+            <Text style={styles.muted}>site</Text>
+          </View>
+          <View style={styles.syncStatusItem}>
+            <Text style={styles.syncStatusValue}>{update.file_size_mb || 0}</Text>
+            <Text style={styles.muted}>MB</Text>
+          </View>
+          <View style={styles.syncStatusItem}>
+            <Text style={styles.syncStatusValue}>{update.preserves_session === false ? "Nao" : "Sim"}</Text>
+            <Text style={styles.muted}>preserva dados</Text>
+          </View>
+        </View>
+        <Text style={styles.muted}>Publicado: {formatDate(update.published_at)}</Text>
+        <Text style={styles.hashText}>SHA-256: {update.sha256 || "aguardando APK no site"}</Text>
+        <View style={styles.rowWrap}>
+          <Pressable onPress={verificar} style={styles.secondaryButtonWide}>
+            <Text style={styles.secondaryButtonText}>Verificar agora</Text>
+          </Pressable>
+          <Pressable disabled={!apkDisponivel} onPress={baixar} style={apkDisponivel ? styles.primaryButtonCompact : styles.disabledButton}>
+            <Text style={apkDisponivel ? styles.primaryButtonText : styles.disabledButtonText}>Baixar APK</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Atualizacao segura</Text>
+        <Text style={styles.muted}>Instale o APK por cima mantendo o mesmo pacote Android. O app usa migracoes SQLite e nao limpa sessao, token, fila de sincronizacao ou fotos locais durante a atualizacao.</Text>
+      </View>
+    </>
+  );
+}
+
 function ConfiguracoesScreen({ sync }: { sync: Props["sync"] }) {
   const [version, setVersion] = useState(sync.version || "");
   const [status, setStatus] = useState(sync.message);
@@ -740,6 +868,7 @@ function ConfiguracoesScreen({ sync }: { sync: Props["sync"] }) {
         </Pressable>
       </View>
       <SyncPanel sync={sync} />
+      <PendingQueuePanel sync={sync} />
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Retorno</Text>
         <Text style={styles.muted}>{status}</Text>
@@ -767,6 +896,7 @@ function ModuleScreen({ screen, sync }: { screen: AppScreenKey; sync: Props["syn
       {config.variant === "calendar" && <CalendarStrip />}
       {config.variant === "finance" && <FinanceSummary />}
       {config.variant === "diagnostic" && <DiagnosticSummary sync={sync} />}
+      {screen === "status" && <PendingQueuePanel sync={sync} />}
 
       <View style={styles.card}>
         <View style={styles.filterGrid}>
@@ -1080,6 +1210,20 @@ function moduleConfig(screen: AppScreenKey): ModuleConfig {
         ])
       ]
     },
+    atualizacao: {
+      kicker: "Atualizacao",
+      subtitle: "APK oficial, versao e instalacao",
+      icon: "download",
+      variant: "diagnostic",
+      filters: ["Versao", "APK", "Assinatura"],
+      actions: ["Verificar", "Baixar"],
+      sections: [
+        section("Atualizacao", "Instalador oficial do app", "download", [
+          row("APK assinado", "Instalacao por cima preserva dados locais.", "Release"),
+          row("Versao", "Comparacao entre app instalado e site.", "App")
+        ])
+      ]
+    },
     autoSuporte: {
       kicker: "Suporte",
       subtitle: "Acoes tecnicas e resultados protegidos",
@@ -1161,6 +1305,35 @@ function FinanceSummary() {
   );
 }
 
+function SyncStatusStrip({ sync }: { sync: Props["sync"] }) {
+  const diagnostics = sync.diagnostics;
+  const lastSuccess = diagnostics?.lastSuccessAt ? Date.parse(diagnostics.lastSuccessAt) : 0;
+  const lastError = diagnostics?.lastErrorAt ? Date.parse(diagnostics.lastErrorAt) : 0;
+  const online = Boolean(lastSuccess) && lastSuccess >= lastError && !diagnostics?.lastError;
+  const hasPending = sync.pending > 0 || sync.pendingPhotos > 0;
+  const progress = sync.syncing ? "64%" : hasPending ? "34%" : "100%";
+  const status = sync.syncing ? "Sincronizando" : online ? "Online" : diagnostics?.lastError ? "Offline" : "Aguardando";
+  const proximaTentativa = sync.message.match(/Nova tentativa em\s+(\d+s)/i)?.[1] || "";
+
+  return (
+    <View style={styles.syncStrip}>
+      <View style={styles.syncStripTop}>
+        <View style={styles.syncStripTitleRow}>
+          <View style={[styles.statusDot, online ? styles.statusDotOk : diagnostics?.lastError ? styles.statusDotError : styles.statusDotWarn]} />
+          <Text style={styles.syncStripTitle}>{status}</Text>
+        </View>
+        <Text style={styles.syncStripBadge}>{sync.pending} fila | {sync.pendingPhotos} fotos</Text>
+      </View>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: progress }]} />
+      </View>
+      <Text style={styles.muted} numberOfLines={2}>
+        {sync.message}{sync.updatedAt ? ` | Snapshot: ${formatDate(sync.updatedAt)}` : ""}{proximaTentativa ? ` | Proximo retry: ${proximaTentativa}` : ""}
+      </Text>
+    </View>
+  );
+}
+
 function DiagnosticSummary({ sync }: { sync: Props["sync"] }) {
   return (
     <View style={styles.diagnosticGrid}>
@@ -1179,6 +1352,84 @@ function DiagnosticSummary({ sync }: { sync: Props["sync"] }) {
         <Text style={styles.itemTitle}>{sync.pendingPhotos} foto(s)</Text>
         <Text style={styles.muted}>Upload separado do sync principal.</Text>
       </View>
+    </View>
+  );
+}
+
+function PendingQueuePanel({ sync }: { sync: Props["sync"] }) {
+  const [queue, setQueue] = useState<QueuePreviewRow[]>([]);
+  const [photos, setPhotos] = useState<PendingPhotoPreviewRow[]>([]);
+  const [status, setStatus] = useState("");
+
+  async function refresh() {
+    const [queueRows, photoRows] = await Promise.all([
+      listPendingQueue(8),
+      listPendingPhotos(8)
+    ]);
+    setQueue(queueRows);
+    setPhotos(photoRows);
+  }
+
+  useEffect(() => {
+    refresh();
+  }, [sync.pending, sync.pendingPhotos, sync.updatedAt]);
+
+  async function descartar(id: number) {
+    const message = await discardPendingQueueItem(id);
+    setStatus(message);
+    await refresh();
+  }
+
+  async function reenviar() {
+    setStatus("Tentando reenviar agora...");
+    await sync.onSyncNow();
+    setStatus("Tentativa concluida. Veja o status acima.");
+    await refresh();
+  }
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.sectionHeader}>
+        <View>
+          <Text style={styles.cardTitle}>Fila de pendencias</Text>
+          <Text style={styles.muted}>Acompanhe envios locais, fotos e falhas de sincronizacao.</Text>
+        </View>
+        <Pressable onPress={reenviar} style={styles.cameraFab}>
+          <Ionicons color={colors.primaryText} name="refresh" size={22} />
+        </Pressable>
+      </View>
+      {status ? <Text style={styles.muted}>{status}</Text> : null}
+      {queue.length === 0 && photos.length === 0 ? (
+        <Text style={styles.muted}>Nenhuma pendencia local no momento.</Text>
+      ) : null}
+      {queue.map((item) => (
+        <View key={`queue-${item.id}`} style={styles.listItem}>
+          <View style={styles.itemRow}>
+            <Text style={styles.itemTitle}>{item.entity} | {item.action}</Text>
+            <Text style={styles.badge}>{item.attempts || 0} falha(s)</Text>
+          </View>
+          <Text style={styles.muted}>UUID: {item.entity_uuid}</Text>
+          {item.last_error ? <Text style={styles.errorText}>Erro: {item.last_error}</Text> : null}
+          <View style={styles.rowWrap}>
+            <Pressable onPress={reenviar} style={styles.secondaryButtonWide}>
+              <Text style={styles.secondaryButtonText}>Reenviar</Text>
+            </Pressable>
+            <Pressable onPress={() => descartar(item.id)} style={styles.secondaryButtonWide}>
+              <Text style={styles.secondaryButtonText}>Descartar seguro</Text>
+            </Pressable>
+          </View>
+        </View>
+      ))}
+      {photos.map((item) => (
+        <View key={`photo-${item.uuid}`} style={styles.listItem}>
+          <View style={styles.itemRow}>
+            <Text style={styles.itemTitle}>Foto {item.tipo || "entrada"}</Text>
+            <Text style={styles.badge}>{formatBytes(item.tamanho_bytes || 0)}</Text>
+          </View>
+          <Text style={styles.muted}>Servico: {item.servico_uuid || "-"}</Text>
+          {item.upload_last_error ? <Text style={styles.errorText}>Erro: {item.upload_last_error}</Text> : null}
+        </View>
+      ))}
     </View>
   );
 }
@@ -1229,6 +1480,27 @@ function SyncPanel({ sync }: { sync: Props["sync"] }) {
   );
 }
 
+function formatBytes(bytes: number) {
+  if (!bytes) {
+    return "0 KB";
+  }
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(value?: string) {
+  if (!value) {
+    return "-";
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+  return new Date(timestamp).toLocaleString("pt-BR");
+}
+
 function section(title: string, subtitle: string, icon: keyof typeof Ionicons.glyphMap, rows: SectionConfig["rows"]): SectionConfig {
   return { title, subtitle, icon, rows };
 }
@@ -1269,11 +1541,73 @@ function ListCard({ title, empty, children }: { title: string; empty: string; ch
 }
 
 const styles = StyleSheet.create({
+  syncStrip: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.headerSoft,
+    padding: spacing.md,
+    gap: spacing.sm
+  },
+  syncStripTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md
+  },
+  syncStripTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm
+  },
+  syncStripTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900"
+  },
+  syncStripBadge: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999
+  },
+  statusDotOk: {
+    backgroundColor: colors.success
+  },
+  statusDotWarn: {
+    backgroundColor: colors.primary
+  },
+  statusDotError: {
+    backgroundColor: colors.danger
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceSoft,
+    overflow: "hidden"
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: colors.primary
+  },
   card: {
     borderRadius: 22,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.panel,
+    padding: spacing.lg,
+    gap: spacing.md
+  },
+  updateCardAttention: {
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.headerSoft,
     padding: spacing.lg,
     gap: spacing.md
   },
@@ -1681,6 +2015,25 @@ const styles = StyleSheet.create({
     color: colors.danger,
     lineHeight: 20,
     fontWeight: "700"
+  },
+  hashText: {
+    color: colors.muted,
+    lineHeight: 20,
+    fontFamily: "monospace"
+  },
+  disabledButton: {
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    minWidth: 120,
+    opacity: 0.62
+  },
+  disabledButtonText: {
+    color: colors.muted,
+    fontWeight: "900"
   },
   sectionHeader: {
     flexDirection: "row",

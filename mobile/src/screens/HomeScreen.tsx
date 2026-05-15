@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
 import { UserSession } from "../auth/authRepository";
-import { DEFAULT_SERVER_URL, normalizeServerUrl } from "../config";
+import { APP_MOBILE_VERSION, DEFAULT_SERVER_URL, normalizeServerUrl } from "../config";
 import { getSetting, setSetting } from "../database/db";
-import { fetchMobileConfig, fetchMobileHud, getSyncDiagnostics, runSync, updateMobileVersion } from "../sync/syncService";
-import { MobileHudPayload, MobileSiteState, SyncDiagnostics } from "../sync/types";
+import { fetchAppUpdateInfo, fetchMobileConfig, fetchMobileHud, getSyncDiagnostics, runSync, updateMobileVersion } from "../sync/syncService";
+import { AppUpdateInfo, MobileHudPayload, MobileSiteState, SyncDiagnostics } from "../sync/types";
 import { AppScreenKey, AppShell } from "./AppShell";
 import { CameraScreen, CameraTarget } from "./CameraScreen";
 import { NativeScreenContent, screenTitle } from "./NativeScreens";
@@ -54,6 +54,7 @@ export function HomeScreen({ session, onLogout }: Props) {
   const [hud, setHud] = useState<MobileHudPayload | null>(null);
   const [siteState, setSiteState] = useState<MobileSiteState | null>(null);
   const [diagnostics, setDiagnostics] = useState<SyncDiagnostics | null>(null);
+  const [appUpdate, setAppUpdate] = useState<AppUpdateInfo | null>(null);
   const [appVersion, setAppVersion] = useState("");
   const [updatedAt, setUpdatedAt] = useState("");
 
@@ -75,6 +76,7 @@ export function HomeScreen({ session, onLogout }: Props) {
       }
       setSyncToken(token);
       getSetting("site_version").then(setAppVersion);
+      checkForAppUpdate(endpointUrl || DEFAULT_SERVER_URL, token);
     });
     getSetting("site_state_cache").then((value) => {
       if (!value) {
@@ -195,10 +197,12 @@ export function HomeScreen({ session, onLogout }: Props) {
     }
 
     try {
-      const [hudResult, configResult] = await Promise.all([
+      const [hudResult, configResult, updateResult] = await Promise.all([
         fetchMobileHud({ endpointUrl: normalizedUrl, token: savedToken }),
-        fetchMobileConfig({ endpointUrl: normalizedUrl, token: savedToken })
+        fetchMobileConfig({ endpointUrl: normalizedUrl, token: savedToken }),
+        fetchAppUpdateInfo({ endpointUrl: normalizedUrl, token: savedToken }, APP_MOBILE_VERSION)
       ]);
+      setAppUpdate(updateResult);
 
       if (hudResult.hud) {
         setHud(hudResult.hud);
@@ -245,6 +249,14 @@ export function HomeScreen({ session, onLogout }: Props) {
     return `Versao ${savedVersion} salva no site`;
   }
 
+  async function checkForAppUpdate(url = endpointUrl, token = syncToken) {
+    const normalizedUrl = normalizeServerUrl(url || DEFAULT_SERVER_URL);
+    const savedToken = token.trim() || await getSetting("sync_token");
+    const updateResult = await fetchAppUpdateInfo({ endpointUrl: normalizedUrl, token: savedToken }, APP_MOBILE_VERSION);
+    setAppUpdate(updateResult);
+    return updateResult;
+  }
+
   async function handleLocalSaved() {
     await refreshSyncStatus();
     if (syncDebounceTimer.current) {
@@ -273,6 +285,7 @@ export function HomeScreen({ session, onLogout }: Props) {
         onOpenCamera={setCameraTarget}
         onRefreshPending={handleLocalSaved}
         sync={{
+          installedVersion: APP_MOBILE_VERSION,
           pending,
           pendingPhotos,
           message: syncMessage,
@@ -283,7 +296,9 @@ export function HomeScreen({ session, onLogout }: Props) {
           diagnostics,
           updatedAt,
           version: appVersion,
+          appUpdate,
           onRefreshHud: refreshHud,
+          onCheckForUpdate: checkForAppUpdate,
           onSyncNow: syncNow,
           onUpdateVersion: saveVersionOnSite
         }}

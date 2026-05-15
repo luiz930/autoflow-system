@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wagen App</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #05070d;
+      --panel: #101827;
+      --surface: #172033;
+      --border: rgba(255, 205, 31, 0.24);
+      --text: #f8fafc;
+      --muted: #a7b0c0;
+      --primary: #ffcd1f;
+      --primary-text: #111827;
+      --danger: #f87171;
+      --success: #4ade80;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top, rgba(255, 205, 31, 0.14), transparent 34%), var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    main {
+      width: min(980px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 24px;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: rgba(16, 24, 39, 0.94);
+      padding: 24px;
+    }
+    .logo {
+      width: 150px;
+      height: 150px;
+      object-fit: contain;
+      border-radius: 28px;
+      border: 1px solid var(--border);
+      background: #000;
+    }
+    .kicker {
+      display: inline-flex;
+      color: var(--primary-text);
+      background: var(--primary);
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 14px 0 8px;
+      font-size: clamp(32px, 6vw, 56px);
+      line-height: 0.98;
+    }
+    p { color: var(--muted); line-height: 1.55; }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .button {
+      min-height: 50px;
+      border: 0;
+      border-radius: 14px;
+      background: var(--primary);
+      color: var(--primary-text);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 18px;
+      font-weight: 900;
+      text-decoration: none;
+    }
+    .button.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--panel);
+      padding: 16px;
+      min-width: 0;
+    }
+    .label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .value {
+      margin-top: 8px;
+      color: var(--text);
+      font-size: 20px;
+      font-weight: 900;
+      overflow-wrap: anywhere;
+    }
+    .hash {
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      color: {{ 'var(--success)' if app_info.available else 'var(--danger)' }};
+      font-weight: 900;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+    @media (max-width: 720px) {
+      main { width: min(100% - 20px, 980px); padding: 18px 0; }
+      .hero { grid-template-columns: 1fr; }
+      .logo { width: 120px; height: 120px; }
+      .grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 460px) {
+      .grid { grid-template-columns: 1fr; }
+      .button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <img class="logo" src="/static/logo.jpg" alt="Wagen">
+      <div>
+        <span class="kicker">Instalador oficial</span>
+        <h1>Wagen App</h1>
+        <p>Baixe o APK oficial do app mobile Wagen. O pacote e assinado e preserva login, banco local, fila de sincronizacao e fotos pendentes ao atualizar por cima.</p>
+        <div class="status"><span class="dot"></span>{{ app_info.message }}</div>
+        <div class="actions">
+          {% if app_info.available %}
+            <a class="button" href="{{ app_info.download_url }}">Baixar APK</a>
+          {% else %}
+            <span class="button" aria-disabled="true">APK indisponivel</span>
+          {% endif %}
+          <a class="button secondary" href="/login">Voltar ao site</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid" aria-label="Detalhes do APK">
+      <div class="card">
+        <div class="label">Versao do app</div>
+        <div class="value">{{ app_info.latest_version }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Tamanho</div>
+        <div class="value">{{ app_info.file_size_mb }} MB</div>
+      </div>
+      <div class="card">
+        <div class="label">Pacote Android</div>
+        <div class="value">{{ app_info.package }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Publicado em</div>
+        <div class="value">{{ app_info.published_at or "-" }}</div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top: 14px;">
+      <div class="label">SHA-256</div>
+      <p class="hash">{{ app_info.sha256 or "Arquivo ainda nao publicado." }}</p>
+    </section>
+  </main>
+</body>
+</html>

@@ -18,7 +18,7 @@ import {
   savePersistedSession,
   UserSession
 } from "../auth/authRepository";
-import { DEFAULT_SERVER_URL } from "../config";
+import { APP_MOBILE_VERSION, DEFAULT_SERVER_URL } from "../config";
 import { runSync } from "../sync/syncService";
 import { colors, spacing } from "../theme";
 
@@ -34,6 +34,7 @@ export function LoginScreen({ onLoggedIn }: Props) {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [lembrarDados, setLembrarDados] = useState(false);
   const [manterConectado, setManterConectado] = useState(false);
+  const [protegerComBiometria, setProtegerComBiometria] = useState(false);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -41,6 +42,7 @@ export function LoginScreen({ onLoggedIn }: Props) {
     getLoginPreferences().then((preferences) => {
       setLembrarDados(preferences.lembrarDados);
       setManterConectado(preferences.manterConectado);
+      setProtegerComBiometria(preferences.protegerComBiometria);
       if (preferences.lembrarDados) {
         setUsuario(preferences.usuario);
       }
@@ -51,6 +53,7 @@ export function LoginScreen({ onLoggedIn }: Props) {
     await saveLoginPreferences({
       lembrarDados,
       manterConectado,
+      protegerComBiometria,
       usuario
     });
     await savePersistedSession(manterConectado ? session : null);
@@ -122,11 +125,34 @@ export function LoginScreen({ onLoggedIn }: Props) {
           <Text style={styles.optionText}>Lembrar meus dados de login</Text>
         </Pressable>
 
-        <Pressable onPress={() => setManterConectado((value) => !value)} style={styles.optionRow}>
+        <Pressable
+          onPress={() => {
+            setManterConectado((value) => {
+              if (value) {
+                setProtegerComBiometria(false);
+              }
+              return !value;
+            });
+          }}
+          style={styles.optionRow}
+        >
           <View style={[styles.checkbox, manterConectado && styles.checkboxChecked]}>
             {manterConectado ? <Text style={styles.checkboxMark}>X</Text> : null}
           </View>
           <Text style={styles.optionText}>Manter-me conectado</Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => {
+            setProtegerComBiometria((value) => !value);
+            setManterConectado(true);
+          }}
+          style={styles.optionRow}
+        >
+          <View style={[styles.checkbox, protegerComBiometria && styles.checkboxChecked]}>
+            {protegerComBiometria ? <Text style={styles.checkboxMark}>X</Text> : null}
+          </View>
+          <Text style={styles.optionText}>Proteger abertura com biometria ou PIN</Text>
         </Pressable>
 
         <Pressable disabled={loading} onPress={submit} style={styles.primaryButton}>
@@ -135,7 +161,7 @@ export function LoginScreen({ onLoggedIn }: Props) {
 
         {erro ? <Text style={styles.error}>{erro}</Text> : null}
         <Text style={styles.version}>Conectado ao site Wagen</Text>
-        <Text style={styles.version}>App 0.1.0 offline-first</Text>
+        <Text style={styles.version}>App {APP_MOBILE_VERSION} offline-first</Text>
       </View>
     </KeyboardAvoidingView>
   );

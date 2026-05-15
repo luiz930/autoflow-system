@@ -140,6 +140,37 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(salvar_mock.call_args.args[0]["versao_sistema"], "1.0.2")
         versao_mock.assert_any_call(permitir_sem_sessao=True)
 
+    def test_app_mobile_update_endpoint_e_instalador_publico(self):
+        arquivo = tempfile.NamedTemporaryFile(delete=False, suffix=".apk")
+        try:
+            arquivo.write(b"apk-wagen")
+            arquivo.close()
+
+            with patch.object(app_module, "caminho_apk_mobile", return_value=arquivo.name), \
+                 patch.object(app_module, "MOBILE_APP_VERSION", "0.2.0"):
+                resposta = self.client.get("/api/mobile/app-update?installed_version=0.1.0")
+                pagina = self.client.get("/app")
+                download = self.client.get("/app/download")
+
+            dados = resposta.get_json()
+            self.assertEqual(resposta.status_code, 200)
+            self.assertTrue(dados["ok"])
+            self.assertTrue(dados["available"])
+            self.assertTrue(dados["update_available"])
+            self.assertEqual(dados["latest_version"], "0.2.0")
+            self.assertEqual(dados["file_size"], len(b"apk-wagen"))
+            self.assertRegex(dados["sha256"], r"^[a-f0-9]{64}$")
+            self.assertEqual(pagina.status_code, 200)
+            self.assertIn(b"Wagen App", pagina.data)
+            self.assertEqual(download.status_code, 200)
+            self.assertEqual(download.data, b"apk-wagen")
+            download.close()
+        finally:
+            try:
+                os.unlink(arquivo.name)
+            except OSError:
+                pass
+
     def test_sync_bancos_resolve_automatico_apenas_quando_mais_recente_e_seguro(self):
         origem = {"id": 1, "nome": "Cliente novo", "atualizado_em": "2026-05-14T12:00:00"}
         destino = {"id": 1, "nome": "Cliente antigo", "atualizado_em": "2026-05-14T11:00:00"}

@@ -14,6 +14,7 @@ export type UserSession = {
 export type LoginPreferences = {
   lembrarDados: boolean;
   manterConectado: boolean;
+  protegerComBiometria: boolean;
   usuario: string;
 };
 
@@ -47,6 +48,7 @@ type MobileLoginResponse = {
 
 const LOGIN_PREFS_KEY = "login_preferences";
 const PERSISTED_SESSION_KEY = "login_persisted_session";
+const BIOMETRIC_LOCK_KEY = "biometric_lock_enabled";
 
 async function saveRemoteUser(data: NonNullable<MobileLoginResponse["usuario"]>) {
   const db = await getDatabase();
@@ -155,7 +157,7 @@ export async function loginOffline(usuario: string, senha: string): Promise<User
 export async function getLoginPreferences(): Promise<LoginPreferences> {
   const raw = await getSetting(LOGIN_PREFS_KEY);
   if (!raw) {
-    return { lembrarDados: false, manterConectado: false, usuario: "" };
+    return { lembrarDados: false, manterConectado: false, protegerComBiometria: false, usuario: "" };
   }
 
   try {
@@ -163,10 +165,11 @@ export async function getLoginPreferences(): Promise<LoginPreferences> {
     return {
       lembrarDados: Boolean(data.lembrarDados),
       manterConectado: Boolean(data.manterConectado),
+      protegerComBiometria: Boolean(data.protegerComBiometria),
       usuario: typeof data.usuario === "string" ? data.usuario : ""
     };
   } catch {
-    return { lembrarDados: false, manterConectado: false, usuario: "" };
+    return { lembrarDados: false, manterConectado: false, protegerComBiometria: false, usuario: "" };
   }
 }
 
@@ -176,9 +179,11 @@ export async function saveLoginPreferences(preferences: LoginPreferences) {
     JSON.stringify({
       lembrarDados: preferences.lembrarDados,
       manterConectado: preferences.manterConectado,
+      protegerComBiometria: preferences.protegerComBiometria && preferences.manterConectado,
       usuario: preferences.lembrarDados ? preferences.usuario.trim() : ""
     })
   );
+  await setBiometricLockEnabled(preferences.protegerComBiometria && preferences.manterConectado);
 }
 
 export async function savePersistedSession(session: UserSession | null) {
@@ -207,6 +212,14 @@ export async function getPersistedSession(): Promise<UserSession | null> {
   } catch {
     return null;
   }
+}
+
+export async function setBiometricLockEnabled(enabled: boolean) {
+  await setSetting(BIOMETRIC_LOCK_KEY, enabled ? "1" : "");
+}
+
+export async function getBiometricLockEnabled() {
+  return (await getSetting(BIOMETRIC_LOCK_KEY)) === "1";
 }
 
 export async function clearPersistedSession() {
