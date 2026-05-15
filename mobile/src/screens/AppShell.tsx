@@ -93,7 +93,13 @@ export function AppShell({ active, title, subtitle, onSelect, onLogout, children
           <Modal visible={sidebarOpen} transparent animationType="slide" onRequestClose={() => setSidebarOpen(false)}>
             <SafeAreaView style={styles.mobileMenuScreen}>
               <View style={styles.mobileMenuTopbar}>
-                <Text style={styles.mobileMenuTitle}>Menu</Text>
+                <View style={styles.mobileMenuBrand}>
+                  <Image accessibilityLabel="Wagen" resizeMode="contain" source={wagenLogo} style={styles.mobileMenuLogo} />
+                  <View>
+                    <Text style={styles.mobileMenuTitle}>Wagen</Text>
+                    <Text style={styles.mobileMenuSubtitle}>Menu do app</Text>
+                  </View>
+                </View>
                 <Pressable onPress={() => setSidebarOpen(false)} style={styles.iconButton}>
                   <Ionicons color={colors.text} name="close" size={22} />
                 </Pressable>
@@ -205,8 +211,28 @@ const styles = StyleSheet.create({
   },
   mobileMenuTitle: {
     color: colors.text,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "900"
+  },
+  mobileMenuBrand: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm
+  },
+  mobileMenuLogo: {
+    width: 46,
+    height: 46,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "#000"
+  },
+  mobileMenuSubtitle: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    textTransform: "uppercase"
   },
   sidebar: {
     width: 260,
