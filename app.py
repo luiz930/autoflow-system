@@ -396,6 +396,35 @@ TABELAS_COM_ATUALIZADO_EM_SYNC = [
     "manutencao_arquivos",
     "auditoria",
 ]
+
+TABELAS_EMPRESA_EXCLUSAO_RELACIONADAS = [
+    ("servico_cobrancas_extras", "servico_id", "servicos"),
+    ("servico_adicionais", "servico_id", "servicos"),
+    ("servico_checklist", "servico_id", "servicos"),
+    ("orcamento_itens", "orcamento_id", "orcamentos"),
+    ("nota_fiscal_itens", "nota_fiscal_id", "notas_fiscais"),
+]
+
+TABELAS_EMPRESA_EXCLUSAO_DIRETAS = [
+    "fotos",
+    "retornos_clientes",
+    "historico_lavagens_sync",
+    "sincronizacoes_clientes",
+    "notificacoes",
+    "telemetria_eventos",
+    "integracao_fiscal",
+    "configuracao_backup",
+    "manutencao_arquivos",
+    "orcamentos",
+    "notas_fiscais",
+    "servicos",
+    "veiculos",
+    "clientes",
+    "configuracao_empresa",
+    "licencas",
+    "login_persistente_tokens",
+    "usuarios",
+]
 FOTO_MAX_DIMENSAO = 1600
 FOTO_QUALIDADE_JPEG = 82
 FOTO_PERFIL_MAX_DIMENSAO = 640
@@ -10117,9 +10146,9 @@ PAGINAS_MENU_CONFIGURAVEIS = [
     {
         "id": "empresas",
         "grupo": "Apoio / Administracao",
-        "titulo": "Empresas",
+        "titulo": "Empresa",
         "descricao": "Cadastro de empresas, licencas e troca de empresa ativa.",
-        "endpoints": {"pagina_empresas", "salvar_empresa_admin", "gerar_licenca_empresa_admin", "renovar_licenca_empresa_admin", "trocar_empresa_ativa"},
+        "endpoints": {"pagina_empresas", "salvar_empresa_admin", "gerar_licenca_empresa_admin", "renovar_licenca_empresa_admin", "trocar_empresa_ativa", "excluir_empresa_admin"},
     },
     {
         "id": "diagnostico",
@@ -10474,6 +10503,7 @@ def endpoint_liberado_com_licenca_bloqueada(endpoint):
         "salvar_empresa_admin",
         "gerar_licenca_empresa_admin",
         "renovar_licenca_empresa_admin",
+        "excluir_empresa_admin",
         "trocar_empresa_ativa",
         "pagina_diagnostico",
         "validar_diagnostico",
@@ -20148,6 +20178,309 @@ def api_mobile_foto_upload():
         conn.close()
 
 
+def validar_identificador_sql_empresa(nome):
+    texto = normalizar_texto_campo(nome)
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", texto):
+        raise ValueError("Identificador de tabela invalido.")
+    return texto
+
+
+def nome_exibicao_empresa(empresa):
+    dados = dict(empresa or {})
+    return (
+        normalizar_texto_campo(dados.get("nome_fantasia"))
+        or normalizar_texto_campo(dados.get("razao_social"))
+        or normalizar_texto_campo(dados.get("slug"))
+        or f"Empresa {dados.get('id') or ''}".strip()
+    )
+
+
+def executar_delete_contabilizado(cursor, tabela, sql, params, contagem):
+    cursor.execute(sql, params)
+    afetados = getattr(cursor, "rowcount", 0)
+    try:
+        afetados = max(0, int(afetados or 0))
+    except Exception:
+        afetados = 0
+    contagem[tabela] = int(contagem.get(tabela, 0) or 0) + afetados
+    return afetados
+
+
+def remover_upload_empresa_seguro(caminho):
+    texto = str(caminho or "").strip()
+    if not texto or texto.startswith(("http://", "https://")):
+        return
+
+    caminho_abs = caminho_absoluto_foto_servico(texto)
+    if not caminho_abs or not os.path.isfile(caminho_abs):
+        return
+
+    if not arquivo_dentro_da_pasta(caminho_abs, caminho_uploads_absoluto()):
+        return
+
+    remover_arquivo_se_existir(caminho_abs)
+
+
+def coletar_uploads_empresa_exclusao(cursor, conn, empresa_id, usuario_preservado_id=0):
+    uploads = set()
+
+    if tabela_existe_no_backend(conn, "usuarios"):
+        colunas = set(obter_colunas_tabela(conn, "usuarios"))
+        if "foto_perfil" in colunas:
+            if usuario_preservado_id and "id" in colunas:
+                cursor.execute(
+                    "SELECT foto_perfil FROM usuarios WHERE empresa_id=? AND id<>?",
+                    (empresa_id, usuario_preservado_id),
+                )
+            else:
+                cursor.execute("SELECT foto_perfil FROM usuarios WHERE empresa_id=?", (empresa_id,))
+            uploads.update(str(row["foto_perfil"] or "").strip() for row in cursor.fetchall())
+
+    if tabela_existe_no_backend(conn, "fotos"):
+        colunas = set(obter_colunas_tabela(conn, "fotos"))
+        if "empresa_id" in colunas and "caminho" in colunas:
+            cursor.execute("SELECT caminho FROM fotos WHERE empresa_id=?", (empresa_id,))
+            uploads.update(str(row["caminho"] or "").strip() for row in cursor.fetchall())
+
+    if tabela_existe_no_backend(conn, "configuracao_empresa"):
+        colunas = set(obter_colunas_tabela(conn, "configuracao_empresa"))
+        campos = [campo for campo in ("marca_logo_url", "marca_favicon_url") if campo in colunas]
+        if campos:
+            cursor.execute(
+                f"SELECT {', '.join(campos)} FROM configuracao_empresa WHERE empresa_id=?",
+                (empresa_id,),
+            )
+            for row in cursor.fetchall():
+                for campo in campos:
+                    uploads.add(str(row[campo] or "").strip())
+
+    if tabela_existe_no_backend(conn, "empresas"):
+        colunas = set(obter_colunas_tabela(conn, "empresas"))
+        if "logo_url" in colunas:
+            cursor.execute("SELECT logo_url FROM empresas WHERE id=?", (empresa_id,))
+            row = cursor.fetchone()
+            if row:
+                uploads.add(str(row["logo_url"] or "").strip())
+
+    return [item for item in uploads if item]
+
+
+def garantir_empresa_fallback_exclusao(cursor, conn, empresa_id_excluida):
+    cursor.execute(
+        """
+        SELECT id
+        FROM empresas
+        WHERE id<>?
+        ORDER BY COALESCE(ativa, 1) DESC, id ASC
+        LIMIT 1
+        """,
+        (empresa_id_excluida,),
+    )
+    existente = cursor.fetchone()
+    if existente:
+        return normalize_empresa_id(existente["id"])
+
+    slug = normalizar_slug_empresa(f"sistema-{empresa_id_excluida}-{int(time.time())}", fallback="sistema")
+    empresa_id = salvar_empresa_domain(
+        cursor,
+        {
+            "slug": slug,
+            "nome_fantasia": "Sistema",
+            "razao_social": "",
+            "documento": "",
+            "email": "",
+            "telefone": "",
+            "ativa": 1,
+            "storage_provider": "database",
+            "dominio_personalizado": "",
+            "plano_codigo": "starter",
+            "licenca_status": "trial",
+        },
+        agora_iso(),
+    )
+    if not empresa_id:
+        cursor.execute("SELECT id FROM empresas WHERE slug=?", (slug,))
+        row = cursor.fetchone()
+        empresa_id = normalize_empresa_id(row["id"] if row else 1)
+
+    salvar_licenca_domain(
+        cursor,
+        empresa_id,
+        {
+            "codigo_plano": "starter",
+            "status": "trial",
+        },
+        agora_iso(),
+    )
+    return normalize_empresa_id(empresa_id)
+
+
+def usuario_logado_pertence_empresa(cursor, conn, empresa_id, usuario_id):
+    if not usuario_id or not tabela_existe_no_backend(conn, "usuarios"):
+        return False
+    colunas = set(obter_colunas_tabela(conn, "usuarios"))
+    if "id" not in colunas or "empresa_id" not in colunas:
+        return False
+    cursor.execute(
+        "SELECT 1 FROM usuarios WHERE id=? AND empresa_id=? LIMIT 1",
+        (usuario_id, empresa_id),
+    )
+    return cursor.fetchone() is not None
+
+
+def mover_usuario_logado_para_empresa(cursor, conn, usuario_id, empresa_id_destino):
+    if not usuario_id or not tabela_existe_no_backend(conn, "usuarios"):
+        return
+
+    colunas_usuarios = set(obter_colunas_tabela(conn, "usuarios"))
+    if "empresa_id" in colunas_usuarios:
+        campos = ["empresa_id=?"]
+        params = [empresa_id_destino]
+        if "atualizado_em" in colunas_usuarios:
+            campos.append("atualizado_em=?")
+            params.append(agora_iso())
+        params.append(usuario_id)
+        cursor.execute(
+            f"UPDATE usuarios SET {', '.join(campos)} WHERE id=?",
+            tuple(params),
+        )
+
+    for tabela in ("login_persistente_tokens", "mobile_tokens"):
+        if not tabela_existe_no_backend(conn, tabela):
+            continue
+        colunas = set(obter_colunas_tabela(conn, tabela))
+        if "empresa_id" in colunas and "usuario_id" in colunas:
+            cursor.execute(
+                f"UPDATE {tabela} SET empresa_id=? WHERE usuario_id=?",
+                (empresa_id_destino, usuario_id),
+            )
+
+
+def excluir_tokens_empresa(cursor, conn, empresa_id, contagem):
+    for tabela in ("mobile_tokens", "login_persistente_tokens"):
+        if not tabela_existe_no_backend(conn, tabela):
+            continue
+        tabela_sql = validar_identificador_sql_empresa(tabela)
+        colunas = set(obter_colunas_tabela(conn, tabela_sql))
+        if "empresa_id" in colunas:
+            executar_delete_contabilizado(
+                cursor,
+                tabela_sql,
+                f"DELETE FROM {tabela_sql} WHERE empresa_id=?",
+                (empresa_id,),
+                contagem,
+            )
+        elif "usuario_id" in colunas and tabela_existe_no_backend(conn, "usuarios"):
+            executar_delete_contabilizado(
+                cursor,
+                tabela_sql,
+                f"DELETE FROM {tabela_sql} WHERE usuario_id IN (SELECT id FROM usuarios WHERE empresa_id=?)",
+                (empresa_id,),
+                contagem,
+            )
+
+
+def excluir_relacionamentos_empresa(cursor, conn, empresa_id, contagem):
+    for tabela, coluna_fk, tabela_pai in TABELAS_EMPRESA_EXCLUSAO_RELACIONADAS:
+        tabela_sql = validar_identificador_sql_empresa(tabela)
+        coluna_sql = validar_identificador_sql_empresa(coluna_fk)
+        tabela_pai_sql = validar_identificador_sql_empresa(tabela_pai)
+        if not tabela_existe_no_backend(conn, tabela_sql) or not tabela_existe_no_backend(conn, tabela_pai_sql):
+            continue
+        colunas = set(obter_colunas_tabela(conn, tabela_sql))
+        colunas_pai = set(obter_colunas_tabela(conn, tabela_pai_sql))
+        if coluna_sql not in colunas or "id" not in colunas_pai or "empresa_id" not in colunas_pai:
+            continue
+        executar_delete_contabilizado(
+            cursor,
+            tabela_sql,
+            f"DELETE FROM {tabela_sql} WHERE {coluna_sql} IN (SELECT id FROM {tabela_pai_sql} WHERE empresa_id=?)",
+            (empresa_id,),
+            contagem,
+        )
+
+
+def excluir_tabelas_diretas_empresa(cursor, conn, empresa_id, contagem):
+    for tabela in TABELAS_EMPRESA_EXCLUSAO_DIRETAS:
+        tabela_sql = validar_identificador_sql_empresa(tabela)
+        if not tabela_existe_no_backend(conn, tabela_sql):
+            continue
+        colunas = set(obter_colunas_tabela(conn, tabela_sql))
+        if "empresa_id" not in colunas:
+            continue
+        executar_delete_contabilizado(
+            cursor,
+            tabela_sql,
+            f"DELETE FROM {tabela_sql} WHERE empresa_id=?",
+            (empresa_id,),
+            contagem,
+        )
+
+
+def excluir_empresa_sistema(empresa_id):
+    empresa_id = normalize_empresa_id(empresa_id)
+    usuario_logado_id = converter_inteiro(session.get("usuario_id"), 0)
+    empresa_sessao_atual = empresa_atual_id()
+    conn = conectar()
+    c = conn.cursor()
+    fallback_id = None
+    uploads_para_remover = []
+    contagem = {}
+
+    try:
+        empresa = obter_empresa_domain(c, empresa_id)
+        if not empresa:
+            raise ValueError("Empresa nao encontrada.")
+
+        preservar_usuario_logado = usuario_logado_pertence_empresa(c, conn, empresa_id, usuario_logado_id)
+        uploads_para_remover = coletar_uploads_empresa_exclusao(
+            c,
+            conn,
+            empresa_id,
+            usuario_preservado_id=usuario_logado_id if preservar_usuario_logado else 0,
+        )
+
+        if preservar_usuario_logado or empresa_sessao_atual == empresa_id:
+            fallback_id = garantir_empresa_fallback_exclusao(c, conn, empresa_id)
+            if preservar_usuario_logado:
+                mover_usuario_logado_para_empresa(c, conn, usuario_logado_id, fallback_id)
+
+        excluir_relacionamentos_empresa(c, conn, empresa_id, contagem)
+        excluir_tokens_empresa(c, conn, empresa_id, contagem)
+        excluir_tabelas_diretas_empresa(c, conn, empresa_id, contagem)
+        executar_delete_contabilizado(
+            c,
+            "empresas",
+            "DELETE FROM empresas WHERE id=?",
+            (empresa_id,),
+            contagem,
+        )
+
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    if fallback_id and empresa_sessao_atual == empresa_id:
+        session["empresa_id"] = fallback_id
+        session.modified = True
+
+    for caminho in uploads_para_remover:
+        remover_upload_empresa_seguro(caminho)
+
+    limpar_cache_auto_suporte()
+    limpar_caches_interface()
+
+    return {
+        "empresa_id": empresa_id,
+        "empresa_nome": nome_exibicao_empresa(empresa),
+        "fallback_id": fallback_id,
+        "contagem": contagem,
+    }
+
+
 @app.route("/empresas")
 def pagina_empresas():
     if not session.get("usuario"):
@@ -20326,6 +20659,39 @@ def renovar_licenca_empresa_admin(empresa_id):
         session["empresas_feedback"] = {"tipo": "sucesso", "mensagem": "Licenca renovada e assinada novamente."}
     except Exception as erro:
         session["empresas_feedback"] = {"tipo": "erro", "mensagem": f"Nao foi possivel renovar a licenca: {erro}"}
+    return redirect("/empresas")
+
+
+@app.route("/empresas/<int:empresa_id>/excluir", methods=["POST"])
+def excluir_empresa_admin(empresa_id):
+    if not session.get("usuario"):
+        return redirect("/login")
+    if not usuario_gerencia_empresas():
+        definir_feedback_configuracoes("erro", "Somente desenvolvedores podem excluir empresas.")
+        return redirect("/configuracoes")
+
+    try:
+        resultado = excluir_empresa_sistema(empresa_id)
+        registrar_auditoria(
+            "excluiu_empresa",
+            "empresa",
+            entidade_id=empresa_id,
+            detalhes={
+                "empresa_nome": resultado.get("empresa_nome"),
+                "fallback_id": resultado.get("fallback_id"),
+                "contagem": resultado.get("contagem"),
+            },
+        )
+        session["empresas_feedback"] = {
+            "tipo": "sucesso",
+            "mensagem": (
+                f"Empresa {resultado.get('empresa_nome')} excluida. "
+                "Cadastros, licenca, configuracoes visuais e tokens vinculados foram removidos."
+            ),
+        }
+    except Exception as erro:
+        session["empresas_feedback"] = {"tipo": "erro", "mensagem": f"Nao foi possivel excluir a empresa: {erro}"}
+
     return redirect("/empresas")
 
 

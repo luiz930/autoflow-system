@@ -1161,6 +1161,117 @@ class AppRegressionTests(unittest.TestCase):
         conn.commit()
         return conn, PersistentCompatConnection(conn)
 
+    def criar_banco_empresas_exclusao(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(
+            """
+            CREATE TABLE empresas (
+                id INTEGER PRIMARY KEY,
+                slug TEXT UNIQUE,
+                razao_social TEXT,
+                nome_fantasia TEXT,
+                documento TEXT,
+                email TEXT,
+                telefone TEXT,
+                ativa INTEGER DEFAULT 1,
+                storage_provider TEXT,
+                dominio_personalizado TEXT,
+                plano_codigo TEXT,
+                licenca_status TEXT,
+                criado_em TEXT,
+                atualizado_em TEXT
+            );
+            CREATE TABLE licencas (
+                id INTEGER PRIMARY KEY,
+                empresa_id INTEGER,
+                codigo_plano TEXT,
+                status TEXT,
+                limite_usuarios INTEGER,
+                limite_atendimentos_mes INTEGER,
+                limite_unidades INTEGER,
+                limite_storage_mb INTEGER,
+                validade_em TEXT,
+                recursos_json TEXT,
+                codigo_licenca TEXT,
+                assinatura TEXT,
+                payload_json TEXT,
+                emitida_em TEXT,
+                renovada_em TEXT,
+                ultimo_status_validacao TEXT,
+                criado_em TEXT,
+                atualizado_em TEXT
+            );
+            CREATE TABLE configuracao_empresa (
+                id INTEGER PRIMARY KEY,
+                empresa_id INTEGER,
+                marca_nome TEXT,
+                marca_logo_url TEXT,
+                marca_favicon_url TEXT,
+                atualizado_em TEXT
+            );
+            CREATE TABLE usuarios (
+                id INTEGER PRIMARY KEY,
+                empresa_id INTEGER,
+                usuario TEXT,
+                nome TEXT,
+                perfil TEXT,
+                ativo INTEGER,
+                foto_perfil TEXT,
+                atualizado_em TEXT
+            );
+            CREATE TABLE login_persistente_tokens (
+                id INTEGER PRIMARY KEY,
+                usuario_id INTEGER,
+                usuario TEXT,
+                empresa_id INTEGER
+            );
+            CREATE TABLE mobile_tokens (
+                id INTEGER PRIMARY KEY,
+                usuario_id INTEGER,
+                usuario TEXT
+            );
+            CREATE TABLE clientes (id INTEGER PRIMARY KEY, empresa_id INTEGER, nome TEXT);
+            CREATE TABLE veiculos (id INTEGER PRIMARY KEY, empresa_id INTEGER, cliente_id INTEGER);
+            CREATE TABLE servicos (id INTEGER PRIMARY KEY, empresa_id INTEGER, veiculo_id INTEGER);
+            CREATE TABLE servico_adicionais (id INTEGER PRIMARY KEY, servico_id INTEGER);
+            CREATE TABLE orcamentos (id INTEGER PRIMARY KEY, empresa_id INTEGER, numero TEXT);
+            CREATE TABLE orcamento_itens (id INTEGER PRIMARY KEY, orcamento_id INTEGER);
+            CREATE TABLE notas_fiscais (id INTEGER PRIMARY KEY, empresa_id INTEGER, rps_numero TEXT);
+            CREATE TABLE nota_fiscal_itens (id INTEGER PRIMARY KEY, nota_fiscal_id INTEGER);
+            """
+        )
+        conn.execute(
+            "INSERT INTO empresas (id, slug, nome_fantasia, ativa, plano_codigo, licenca_status) VALUES (1, 'controle', 'Controle', 1, 'starter', 'trial')"
+        )
+        conn.execute(
+            "INSERT INTO empresas (id, slug, nome_fantasia, ativa, plano_codigo, licenca_status) VALUES (2, 'antiga', 'Empresa Antiga', 1, 'pro', 'ativa')"
+        )
+        conn.execute("INSERT INTO licencas (id, empresa_id, codigo_plano, status) VALUES (2, 2, 'pro', 'ativa')")
+        conn.execute(
+            "INSERT INTO configuracao_empresa (id, empresa_id, marca_nome, marca_logo_url, marca_favicon_url) VALUES (2, 2, 'Marca Antiga', 'static/uploads/logo-antigo.png', 'static/uploads/favicon-antigo.png')"
+        )
+        conn.execute(
+            "INSERT INTO usuarios (id, empresa_id, usuario, nome, perfil, ativo, foto_perfil) VALUES (1, 2, 'dev', 'Dev', 'desenvolvedor', 1, '')"
+        )
+        conn.execute(
+            "INSERT INTO usuarios (id, empresa_id, usuario, nome, perfil, ativo, foto_perfil) VALUES (2, 2, 'operador', 'Operador', 'funcionario', 1, '')"
+        )
+        conn.execute("INSERT INTO login_persistente_tokens (id, usuario_id, usuario, empresa_id) VALUES (1, 1, 'dev', 2)")
+        conn.execute("INSERT INTO login_persistente_tokens (id, usuario_id, usuario, empresa_id) VALUES (2, 2, 'operador', 2)")
+        conn.execute("INSERT INTO mobile_tokens (id, usuario_id, usuario) VALUES (1, 1, 'dev')")
+        conn.execute("INSERT INTO mobile_tokens (id, usuario_id, usuario) VALUES (2, 2, 'operador')")
+        conn.execute("INSERT INTO clientes (id, empresa_id, nome) VALUES (50, 2, 'Cliente antigo')")
+        conn.execute("INSERT INTO veiculos (id, empresa_id, cliente_id) VALUES (60, 2, 50)")
+        conn.execute("INSERT INTO servicos (id, empresa_id, veiculo_id) VALUES (20, 2, 60)")
+        conn.execute("INSERT INTO servico_adicionais (id, servico_id) VALUES (21, 20)")
+        conn.execute("INSERT INTO orcamentos (id, empresa_id, numero) VALUES (30, 2, 'ORC-1')")
+        conn.execute("INSERT INTO orcamento_itens (id, orcamento_id) VALUES (31, 30)")
+        conn.execute("INSERT INTO notas_fiscais (id, empresa_id, rps_numero) VALUES (40, 2, '1')")
+        conn.execute("INSERT INTO nota_fiscal_itens (id, nota_fiscal_id) VALUES (41, 40)")
+        conn.commit()
+        return conn, PersistentCompatConnection(conn)
+
     def autenticar_cliente_para_senha(self, usuario_id=1, usuario="admin", senha_pendente=True):
         with self.client.session_transaction() as sess:
             sess["usuario"] = usuario
@@ -1723,6 +1834,53 @@ class AppRegressionTests(unittest.TestCase):
 
         self.assertEqual(response, "ok")
         render_mock.assert_called_once()
+
+    def test_excluir_empresa_limpa_dados_e_move_desenvolvedor_logado(self):
+        conn, compat = self.criar_banco_empresas_exclusao()
+
+        with app_module.app.test_request_context("/empresas/2/excluir", method="POST"):
+            session["usuario"] = "dev"
+            session["usuario_id"] = 1
+            session["usuario_perfil"] = "desenvolvedor"
+            session["empresa_id"] = 2
+            session["senha_alteracao_obrigatoria"] = False
+            with patch.object(app_module, "conectar", return_value=compat), \
+                 patch.object(app_module, "registrar_auditoria"), \
+                 patch.object(app_module, "limpar_cache_auto_suporte"), \
+                 patch.object(app_module, "limpar_caches_interface"):
+                response = app_module.excluir_empresa_admin(2)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.location, "/empresas")
+        self.assertIsNone(conn.execute("SELECT id FROM empresas WHERE id=2").fetchone())
+        self.assertIsNone(conn.execute("SELECT id FROM configuracao_empresa WHERE empresa_id=2").fetchone())
+        self.assertIsNone(conn.execute("SELECT id FROM licencas WHERE empresa_id=2").fetchone())
+        self.assertIsNone(conn.execute("SELECT id FROM clientes WHERE empresa_id=2").fetchone())
+        self.assertIsNone(conn.execute("SELECT id FROM servicos WHERE empresa_id=2").fetchone())
+        self.assertIsNone(conn.execute("SELECT id FROM servico_adicionais WHERE servico_id=20").fetchone())
+        self.assertIsNone(conn.execute("SELECT id FROM orcamento_itens WHERE orcamento_id=30").fetchone())
+        self.assertIsNone(conn.execute("SELECT id FROM nota_fiscal_itens WHERE nota_fiscal_id=40").fetchone())
+        usuario_dev = conn.execute("SELECT empresa_id FROM usuarios WHERE id=1").fetchone()
+        self.assertEqual(usuario_dev["empresa_id"], 1)
+        self.assertIsNone(conn.execute("SELECT id FROM usuarios WHERE id=2").fetchone())
+        self.assertEqual(conn.execute("SELECT empresa_id FROM login_persistente_tokens WHERE usuario_id=1").fetchone()["empresa_id"], 1)
+        self.assertIsNone(conn.execute("SELECT id FROM login_persistente_tokens WHERE usuario_id=2").fetchone())
+        self.assertIsNotNone(conn.execute("SELECT id FROM mobile_tokens WHERE usuario_id=1").fetchone())
+        self.assertIsNone(conn.execute("SELECT id FROM mobile_tokens WHERE usuario_id=2").fetchone())
+        conn.close()
+
+    def test_excluir_empresa_exige_desenvolvedor(self):
+        with app_module.app.test_request_context("/empresas/2/excluir", method="POST"):
+            session["usuario"] = "admin"
+            session["usuario_id"] = 1
+            session["usuario_perfil"] = "admin"
+            session["empresa_id"] = 1
+            with patch.object(app_module, "conectar") as conectar_mock:
+                response = app_module.excluir_empresa_admin(2)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.location, "/configuracoes")
+        conectar_mock.assert_not_called()
 
     def test_status_sistema_renderiza_para_admin_sem_consultas_pesadas(self):
         status = {
