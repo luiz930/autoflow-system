@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -20,6 +21,8 @@ import {
 import { DEFAULT_SERVER_URL } from "../config";
 import { runSync } from "../sync/syncService";
 import { colors, spacing } from "../theme";
+
+const wagenLogo = require("../assets/logo.png");
 
 type Props = {
   onLoggedIn: (session: UserSession) => void;
@@ -78,9 +81,7 @@ export function LoginScreen({ onLoggedIn }: Props) {
       style={styles.screen}
     >
       <View style={styles.header}>
-        <View style={styles.logo}>
-          <Text style={styles.logoText}>W</Text>
-        </View>
+        <Image accessibilityLabel="Wagen" resizeMode="contain" source={wagenLogo} style={styles.logo} />
         <View>
           <Text style={styles.kicker}>WAGEN ESTETICA</Text>
           <Text style={styles.title}>Login</Text>
@@ -154,19 +155,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg
   },
   logo: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 3,
-    borderColor: "rgba(250, 204, 21, 0.45)",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.panel
-  },
-  logoText: {
-    color: colors.primary,
-    fontSize: 34,
-    fontWeight: "900"
+    width: 92,
+    height: 92,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "#000"
   },
   kicker: {
     color: colors.primary,

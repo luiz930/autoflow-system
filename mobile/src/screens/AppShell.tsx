@@ -1,8 +1,10 @@
 import { ReactNode, useState } from "react";
-import { Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Image, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { colors, spacing } from "../theme";
+
+const wagenLogo = require("../assets/logo.png");
 
 export type AppScreenKey =
   | "inicio"
@@ -108,6 +110,7 @@ export function AppShell({ active, title, subtitle, onSelect, onLogout, children
                 <Ionicons color={colors.primaryText} name="menu" size={22} />
               </Pressable>
             )}
+            <Image accessibilityLabel="Wagen" resizeMode="contain" source={wagenLogo} style={styles.topbarLogo} />
             <View style={styles.headerText}>
               <Text style={styles.kicker}>WAGEN ESTETICA</Text>
               <Text style={styles.title}>{title}</Text>
@@ -140,9 +143,7 @@ function Sidebar({ active, height, onSelect, overlay = false }: { active: AppScr
         overScrollMode="always"
       >
         <View style={styles.sidebarHeader}>
-          <View style={styles.sidebarLogo}>
-            <Text style={styles.sidebarLogoText}>W</Text>
-          </View>
+          <Image accessibilityLabel="Wagen" resizeMode="contain" source={wagenLogo} style={styles.sidebarLogo} />
           <Text style={styles.sidebarTitle}>Wagen</Text>
           <Text style={styles.sidebarSubtitle}>Estetica automotiva</Text>
         </View>
@@ -250,19 +251,13 @@ const styles = StyleSheet.create({
     padding: spacing.lg
   },
   sidebarLogo: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    borderWidth: 3,
-    borderColor: "rgba(250, 204, 21, 0.45)",
-    alignItems: "center",
-    justifyContent: "center",
+    width: 128,
+    height: 96,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "#000",
     marginBottom: spacing.md
-  },
-  sidebarLogoText: {
-    color: colors.primary,
-    fontSize: 46,
-    fontWeight: "900"
   },
   sidebarTitle: {
     color: colors.text,
@@ -342,6 +337,14 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     backgroundColor: colors.panel,
     padding: spacing.md
+  },
+  topbarLogo: {
+    width: 52,
+    height: 52,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "#000"
   },
   headerText: {
     flex: 1
