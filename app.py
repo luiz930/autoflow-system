@@ -24958,6 +24958,106 @@ def alternar_status_usuario(usuario_id):
     )
     return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
 
+
+@app.route("/configuracoes/usuarios/<int:usuario_id>/excluir", methods=["POST"])
+def excluir_usuario_sistema(usuario_id):
+    if not session.get("usuario"):
+        return redirect("/login")
+
+    sincronizar_sessao_usuario_seguro(contexto="EXCLUIR USUARIO")
+    if not usuario_gerencia_acessos():
+        definir_feedback_configuracoes("erro", "Somente administradores ou desenvolvedores podem excluir acessos.")
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
+
+    if int(session.get("usuario_id") or 0) == int(usuario_id):
+        definir_feedback_configuracoes("erro", "Voce nao pode excluir o proprio acesso enquanto esta logado.")
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
+
+    conn = conectar()
+    c = conn.cursor()
+    c.execute("SELECT * FROM usuarios WHERE empresa_id=? AND id=?", (empresa_atual_id(), usuario_id))
+    alvo = c.fetchone()
+
+    if not alvo:
+        conn.close()
+        definir_feedback_configuracoes("erro", "Usuario nao encontrado.")
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
+
+    perfil_alvo = normalizar_perfil_usuario(alvo["perfil"])
+    usuario_alvo = normalizar_texto_campo(alvo["usuario"]).lower()
+
+    if usuario_alvo == "admin":
+        conn.close()
+        definir_feedback_configuracoes("erro", "O administrador principal nao pode ser excluido.")
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
+
+    if perfil_alvo == "desenvolvedor" and not usuario_desenvolvedor():
+        conn.close()
+        definir_feedback_configuracoes(
+            "erro",
+            "Somente um desenvolvedor pode excluir outro desenvolvedor.",
+        )
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
+
+    foto_antiga = alvo["foto_perfil"] if "foto_perfil" in alvo.keys() else ""
+    try:
+        if tabela_existe_no_backend(conn, "login_persistente_tokens"):
+            c.execute("DELETE FROM login_persistente_tokens WHERE usuario_id=? OR usuario=?", (usuario_id, alvo["usuario"]))
+        if tabela_existe_no_backend(conn, "mobile_tokens"):
+            c.execute("DELETE FROM mobile_tokens WHERE usuario_id=? OR usuario=?", (usuario_id, alvo["usuario"]))
+        c.execute("DELETE FROM usuarios WHERE empresa_id=? AND id=?", (empresa_atual_id(), usuario_id))
+        conn.commit()
+    except Exception as erro:
+        conn.rollback()
+        conn.close()
+        log_info("ERRO EXCLUIR USUARIO:", erro)
+        definir_feedback_configuracoes("erro", "Nao foi possivel excluir esse usuario agora.")
+        return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
+
+    conn.close()
+
+    conn_local = None
+    try:
+        conn_local = conectar_banco_local_forcado()
+        c_local = conn_local.cursor()
+        if tabela_existe_no_backend(conn_local, "login_persistente_tokens"):
+            c_local.execute("DELETE FROM login_persistente_tokens WHERE usuario_id=? OR usuario=?", (usuario_id, alvo["usuario"]))
+        if tabela_existe_no_backend(conn_local, "mobile_tokens"):
+            c_local.execute("DELETE FROM mobile_tokens WHERE usuario_id=? OR usuario=?", (usuario_id, alvo["usuario"]))
+        conn_local.commit()
+    except Exception as erro:
+        log_info("AVISO LIMPAR TOKENS USUARIO EXCLUIDO:", erro)
+    finally:
+        try:
+            if conn_local:
+                conn_local.close()
+        except Exception:
+            pass
+
+    remover_foto_perfil_antiga(foto_antiga)
+    limpar_cache_auto_suporte()
+    limpar_caches_interface()
+
+    try:
+        registrar_auditoria_assincrona(
+            "excluiu_usuario",
+            "usuario",
+            entidade_id=usuario_id,
+            detalhes={
+                "usuario_alvo": alvo["usuario"],
+                "perfil": perfil_alvo,
+            },
+        )
+    except Exception as erro:
+        log_info("AVISO AUDITORIA EXCLUIR USUARIO:", erro)
+
+    definir_feedback_configuracoes(
+        "sucesso",
+        f"Usuario {alvo['usuario']} excluido com sucesso e tokens de acesso revogados.",
+    )
+    return redirect(destino_configuracoes("usuarios", "detalhar_usuarios=1"))
+
+
 @app.route("/retornos")
 def pagina_retornos():
     if not session.get("usuario"):

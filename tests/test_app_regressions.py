@@ -1470,6 +1470,84 @@ class AppRegressionTests(unittest.TestCase):
         self.assertIsNone(row["bloqueado_ate"])
         conn.close()
 
+    def test_excluir_usuario_remove_login_e_tokens_para_admin(self):
+        conn, compat = self.criar_banco_usuario_senha()
+        conn.execute(
+            """
+            INSERT INTO usuarios (
+                id, empresa_id, usuario, senha, nome, perfil, ativo, criado_em,
+                tentativas_login, bloqueado_ate, senha_alteracao_obrigatoria,
+                foto_perfil, hud_config_json
+            )
+            VALUES (2, 1, 'operador', ?, 'Operador', 'funcionario', 1, '2026-05-12T09:00:00', 0, NULL, 0, '', '')
+            """,
+            (app_module.senha_hash_bcrypt("SenhaAntiga1!"),),
+        )
+        conn.execute(
+            """
+            CREATE TABLE login_persistente_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                usuario_id INTEGER,
+                usuario TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE mobile_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                usuario_id INTEGER,
+                usuario TEXT
+            )
+            """
+        )
+        conn.execute("INSERT INTO login_persistente_tokens (usuario_id, usuario) VALUES (2, 'operador')")
+        conn.execute("INSERT INTO mobile_tokens (usuario_id, usuario) VALUES (2, 'operador')")
+        conn.commit()
+        token = self.autenticar_cliente_para_senha(senha_pendente=False)
+
+        with patch.object(app_module, "conectar", return_value=compat), \
+             patch.object(app_module, "conectar_banco_local_forcado", return_value=compat), \
+             patch.object(app_module, "sincronizar_sessao_usuario_seguro"), \
+             patch.object(app_module, "registrar_auditoria_assincrona"):
+            response = self.client.post(
+                "/configuracoes/usuarios/2/excluir",
+                data={"_csrf_token": token},
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers.get("Location"), "/configuracoes/usuarios?detalhar_usuarios=1")
+        self.assertIsNone(conn.execute("SELECT id FROM usuarios WHERE id=2").fetchone())
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM login_persistente_tokens WHERE usuario_id=2").fetchone()[0], 0)
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM mobile_tokens WHERE usuario_id=2").fetchone()[0], 0)
+        conn.close()
+
+    def test_excluir_usuario_bloqueia_proprio_acesso_e_admin_principal(self):
+        conn, compat = self.criar_banco_usuario_senha()
+        token = self.autenticar_cliente_para_senha(senha_pendente=False)
+
+        with patch.object(app_module, "conectar", return_value=compat), \
+             patch.object(app_module, "sincronizar_sessao_usuario_seguro"):
+            response = self.client.post(
+                "/configuracoes/usuarios/1/excluir",
+                data={"_csrf_token": token},
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNotNone(conn.execute("SELECT id FROM usuarios WHERE id=1").fetchone())
+
+        token = self.autenticar_cliente_para_senha(usuario_id=99, senha_pendente=False)
+        with patch.object(app_module, "conectar", return_value=compat), \
+             patch.object(app_module, "sincronizar_sessao_usuario_seguro"):
+            response = self.client.post(
+                "/configuracoes/usuarios/1/excluir",
+                data={"_csrf_token": token},
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNotNone(conn.execute("SELECT id FROM usuarios WHERE id=1").fetchone())
+        conn.close()
+
     def test_login_exibe_versao_configurada_sem_sessao(self):
         with patch.object(app_module, "INIT_DB_EXECUTADO", True), \
              patch.object(app_module, "obter_versao_sistema", return_value="Versao: 0.13.5 - Beta") as versao_mock:

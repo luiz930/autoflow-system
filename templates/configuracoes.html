@@ -1389,6 +1389,16 @@
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <button type="submit">{% if item.ativo %}Pausar acesso{% else %}Ativar acesso{% endif %}</button>
                 </form>
+                {% if item.id != usuario_logado.id %}
+                <form
+                    action="/configuracoes/usuarios/{{ item.id }}/excluir"
+                    method="POST"
+                    onsubmit="return confirm('Excluir definitivamente o usuario {{ item.usuario }}? Esta acao remove o login e revoga os tokens desse acesso.');"
+                >
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="button-danger">Excluir usuario</button>
+                </form>
+                {% endif %}
             </div>
 
             <details class="top-spacing">
