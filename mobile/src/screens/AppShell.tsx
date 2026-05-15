@@ -67,13 +67,14 @@ const menuGroups: { label: string; items: MenuItem[] }[] = [
 type Props = {
   active: AppScreenKey;
   title: string;
-  subtitle: string;
+  usuarioNome: string;
+  tipoConta: string;
   onSelect: (screen: AppScreenKey) => void;
   onLogout: () => void;
   children: ReactNode;
 };
 
-export function AppShell({ active, title, subtitle, onSelect, onLogout, children }: Props) {
+export function AppShell({ active, title, usuarioNome, tipoConta, onSelect, onLogout, children }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { width, height } = useWindowDimensions();
   const desktopSidebar = width >= 780;
@@ -120,7 +121,12 @@ export function AppShell({ active, title, subtitle, onSelect, onLogout, children
             <View style={styles.headerText}>
               <Text style={styles.kicker}>WAGEN ESTETICA</Text>
               <Text style={styles.title}>{title}</Text>
-              <Text style={styles.subtitle}>{subtitle}</Text>
+              <View style={styles.accountRow}>
+                <Text numberOfLines={1} style={styles.accountName}>{usuarioNome}</Text>
+                <View style={styles.accountBadge}>
+                  <Text numberOfLines={1} style={styles.accountBadgeText}>{tipoConta}</Text>
+                </View>
+              </View>
             </View>
             <Pressable onPress={onLogout} style={styles.iconButton}>
               <Ionicons color={colors.text} name="log-out-outline" size={22} />
@@ -386,8 +392,33 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: "900"
   },
-  subtitle: {
-    color: colors.muted
+  accountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: 3
+  },
+  accountName: {
+    color: colors.muted,
+    fontWeight: "700",
+    flexShrink: 1
+  },
+  accountBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.headerSoft,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3
+  },
+  accountBadgeText: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.1,
+    textTransform: "uppercase"
   },
   iconButton: {
     width: 42,

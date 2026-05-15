@@ -14,6 +14,29 @@ type Props = {
   onLogout: () => void;
 };
 
+function formatarTipoConta(perfil: string) {
+  const normalizado = String(perfil || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  const tipos: Record<string, string> = {
+    admin: "Administrador",
+    administrador: "Administrador",
+    funcionario: "Funcionario",
+    gerente: "Gerente",
+    desenvolvedor: "Desenvolvedor",
+    tecnico: "Tecnico",
+    suporte: "Suporte"
+  };
+
+  if (tipos[normalizado]) {
+    return tipos[normalizado];
+  }
+
+  return normalizado ? normalizado.charAt(0).toUpperCase() + normalizado.slice(1) : "Conta";
+}
+
 export function HomeScreen({ session, onLogout }: Props) {
   const syncInFlight = useRef(false);
   const hudInFlight = useRef(false);
@@ -240,7 +263,8 @@ export function HomeScreen({ session, onLogout }: Props) {
     <AppShell
       active={activeScreen}
       title={screenTitle(activeScreen)}
-      subtitle={`${session.nome} | ${session.perfil}`}
+      usuarioNome={session.nome}
+      tipoConta={formatarTipoConta(session.perfil)}
       onSelect={setActiveScreen}
       onLogout={onLogout}
     >
