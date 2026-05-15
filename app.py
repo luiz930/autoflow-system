@@ -6061,6 +6061,32 @@ CHAVES_UNICAS_SYNC = {
     "notas_fiscais": ("rps_numero",),
 }
 
+TABELAS_SYNC_IA_AUTOMATICA = {
+    "notificacoes",
+    "sincronizacoes_clientes",
+    "clientes",
+    "veiculos",
+    "tipos_servico",
+    "adicionais",
+    "servico_adicionais",
+    "produtos_pneu",
+    "checklist_itens",
+    "servico_checklist",
+    "historico_lavagens_sync",
+    "retornos_clientes",
+    "manutencao_arquivos",
+}
+
+COLUNAS_SYNC_IA_IGNORADAS = {
+    "id",
+    "empresa_id",
+    "criado_em",
+    "created_at",
+    "atualizado_em",
+    "updated_at",
+    "updated_em",
+}
+
 
 def garantir_tabelas_sync_bancos_local(conn=None):
     fechar = False
@@ -6127,6 +6153,14 @@ def garantir_tabelas_sync_bancos_local(conn=None):
             detalhes_json TEXT
         )
     """)
+    for definicao in (
+        "ia_resolucao_automatica INTEGER DEFAULT 0",
+        "ia_resolvidos_ultima_execucao INTEGER DEFAULT 0",
+        "ia_analisados_ultima_execucao INTEGER DEFAULT 0",
+        "ia_ultima_execucao_em TEXT",
+        "ia_ultima_mensagem TEXT",
+    ):
+        adicionar_coluna_se_preciso(c, "sync_bancos_status", definicao)
     conn.commit()
     if fechar:
         conn.close()
@@ -6147,14 +6181,22 @@ def status_sync_bancos_padrao():
         "ignorados": 0,
         "conflitos": 0,
         "pendentes_local": 0,
+        "ia_resolucao_automatica": 0,
+        "ia_resolvidos_ultima_execucao": 0,
+        "ia_analisados_ultima_execucao": 0,
+        "ia_ultima_execucao_em": "",
+        "ia_ultima_mensagem": "",
         "intervalo_segundos": WORKER_SYNC_BANCOS_INTERVALO,
         "ativo": False,
         "ok": False,
     }
 
 
-def salvar_status_sync_bancos(status, mensagem="", resumo=None):
-    conn = conectar_banco_local_forcado()
+def salvar_status_sync_bancos(status, mensagem="", resumo=None, conn=None):
+    fechar = False
+    if conn is None:
+        conn = conectar_banco_local_forcado()
+        fechar = True
     try:
         garantir_tabelas_sync_bancos_local(conn)
         atual = obter_status_sync_bancos(conn=conn)
@@ -6172,9 +6214,11 @@ def salvar_status_sync_bancos(status, mensagem="", resumo=None):
             INSERT INTO sync_bancos_status (
                 id, status, mensagem, ultimo_inicio_em, ultimo_sucesso_em, ultima_falha_em,
                 ultimo_erro, duracao_ms, tabelas_total, inseridos, atualizados, ignorados,
-                conflitos, pendentes_local, atualizado_em
+                conflitos, pendentes_local, ia_resolucao_automatica,
+                ia_resolvidos_ultima_execucao, ia_analisados_ultima_execucao,
+                ia_ultima_execucao_em, ia_ultima_mensagem, atualizado_em
             )
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 status=excluded.status,
                 mensagem=excluded.mensagem,
@@ -6189,6 +6233,11 @@ def salvar_status_sync_bancos(status, mensagem="", resumo=None):
                 ignorados=excluded.ignorados,
                 conflitos=excluded.conflitos,
                 pendentes_local=excluded.pendentes_local,
+                ia_resolucao_automatica=excluded.ia_resolucao_automatica,
+                ia_resolvidos_ultima_execucao=excluded.ia_resolvidos_ultima_execucao,
+                ia_analisados_ultima_execucao=excluded.ia_analisados_ultima_execucao,
+                ia_ultima_execucao_em=excluded.ia_ultima_execucao_em,
+                ia_ultima_mensagem=excluded.ia_ultima_mensagem,
                 atualizado_em=excluded.atualizado_em
             """,
             (
@@ -6205,13 +6254,19 @@ def salvar_status_sync_bancos(status, mensagem="", resumo=None):
                 int(payload.get("ignorados") or 0),
                 int(payload.get("conflitos") or 0),
                 int(payload.get("pendentes_local") or 0),
+                int(payload.get("ia_resolucao_automatica") or 0),
+                int(payload.get("ia_resolvidos_ultima_execucao") or 0),
+                int(payload.get("ia_analisados_ultima_execucao") or 0),
+                payload.get("ia_ultima_execucao_em"),
+                payload.get("ia_ultima_mensagem"),
                 payload.get("atualizado_em"),
             ),
         )
         conn.commit()
         return payload
     finally:
-        conn.close()
+        if fechar:
+            conn.close()
 
 
 def obter_status_sync_bancos(conn=None):
@@ -6384,9 +6439,21 @@ def registrar_conflitos_sync_bancos(conflitos):
         conn.close()
 
 
-def registrar_resolucao_sync_bancos(tabela, registro_origem, registro_destino=None, acao="atualizacao_automatica", direcao="", status="registrado"):
+def registrar_resolucao_sync_bancos(
+    tabela,
+    registro_origem,
+    registro_destino=None,
+    acao="atualizacao_automatica",
+    direcao="",
+    status="registrado",
+    detalhe_extra=None,
+    conn=None,
+):
+    fechar = False
     try:
-        conn = conectar_banco_local_forcado()
+        if conn is None:
+            conn = conectar_banco_local_forcado()
+            fechar = True
         garantir_tabelas_sync_bancos_local(conn)
         c = conn.cursor()
         origem_dict = dict(registro_origem) if not isinstance(registro_origem, dict) else dict(registro_origem or {})
@@ -6401,6 +6468,8 @@ def registrar_resolucao_sync_bancos(tabela, registro_origem, registro_destino=No
             "origem": origem_dict,
             "backup_destino_antes": destino_dict,
         }
+        if detalhe_extra:
+            detalhe.update(detalhe_extra)
         c.execute(
             """
             INSERT INTO sync_bancos_resolucoes (
@@ -6427,9 +6496,11 @@ def registrar_resolucao_sync_bancos(tabela, registro_origem, registro_destino=No
             (tabela, chave),
         )
         conn.commit()
-        conn.close()
     except Exception as erro:
         log_info("ERRO REGISTRAR RESOLUCAO SYNC BANCOS:", erro)
+    finally:
+        if fechar and conn is not None:
+            conn.close()
 
 
 def listar_resolucoes_sync_bancos(limite=8):
@@ -6546,6 +6617,419 @@ def contar_conflitos_sync_bancos_abertos(conn=None):
     finally:
         if fechar:
             conn.close()
+
+
+def resolucao_ia_sync_bancos_ativa(status=None):
+    status = status or obter_status_sync_bancos()
+    try:
+        return bool(int(status.get("ia_resolucao_automatica") or 0))
+    except Exception:
+        return False
+
+
+def decodificar_chave_registro_sync(chave):
+    campos = {}
+    for parte in str(chave or "").split("|"):
+        if "=" not in parte:
+            continue
+        campo, valor = parte.split("=", 1)
+        campo = normalizar_texto_campo(campo)
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", campo):
+            continue
+        campos[campo] = valor
+    return campos
+
+
+def buscar_registro_sync_por_chave(conn, tabela, chave):
+    if tabela not in TABELAS_SISTEMA_ORDENADAS or not tabela_existe_no_backend(conn, tabela):
+        return {}
+
+    filtros = decodificar_chave_registro_sync(chave)
+    if not filtros:
+        return {}
+
+    colunas = set(obter_colunas_tabela(conn, tabela))
+    condicoes = []
+    parametros = []
+    for campo, valor in filtros.items():
+        if campo not in colunas:
+            continue
+        if campo == "placa":
+            condicoes.append("TRIM(UPPER(placa))=TRIM(UPPER(?))")
+            parametros.append(normalizar_texto_campo(valor).upper())
+        elif campo == "usuario":
+            condicoes.append("TRIM(LOWER(usuario))=TRIM(LOWER(?))")
+            parametros.append(normalizar_texto_campo(valor).lower())
+        else:
+            condicoes.append(f"{campo}=?")
+            parametros.append(valor)
+
+    if not condicoes:
+        return {}
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT * FROM {tabela} WHERE {' AND '.join(condicoes)} LIMIT 1",
+            tuple(parametros),
+        )
+        return row_para_dict(cursor.fetchone())
+    except Exception:
+        return {}
+
+
+def valor_sync_preenchido_ia(valor):
+    if valor is None:
+        return False
+    if isinstance(valor, bytes):
+        return bool(valor)
+    texto = str(valor).strip()
+    return texto not in {"", "None", "NULL", "null"}
+
+
+def campos_sync_ia_comparaveis(registro_local, registro_online):
+    campos = set(dict(registro_local or {}).keys()) | set(dict(registro_online or {}).keys())
+    return sorted(
+        campo
+        for campo in campos
+        if campo not in COLUNAS_SYNC_IA_IGNORADAS
+        and campo not in COLUNAS_SYNC_FINANCEIRAS_PROTEGIDAS
+    )
+
+
+def pontuar_completude_registro_sync_ia(registro, campos):
+    registro_dict = dict(registro or {})
+    return sum(1 for campo in campos if valor_sync_preenchido_ia(registro_dict.get(campo)))
+
+
+def campos_preenchidos_divergentes_sync_ia(registro_local, registro_online, campos):
+    local = dict(registro_local or {})
+    online = dict(registro_online or {})
+    divergentes = []
+    for campo in campos:
+        local_preenchido = valor_sync_preenchido_ia(local.get(campo))
+        online_preenchido = valor_sync_preenchido_ia(online.get(campo))
+        if not local_preenchido or not online_preenchido:
+            continue
+        if sanitizar_para_json(local.get(campo)) != sanitizar_para_json(online.get(campo)):
+            divergentes.append(campo)
+    return divergentes
+
+
+def decidir_resolucao_ia_conflito_sync(tabela, registro_local, registro_online, conflito=None):
+    local = dict(registro_local or {})
+    online = dict(registro_online or {})
+    if not local or not online:
+        return {"aplicar": False, "motivo": "registro_ausente"}
+
+    if hash_registro_sync(local) == hash_registro_sync(online):
+        return {
+            "aplicar": True,
+            "vencedor": "sem_alteracao",
+            "direcao": "sem_alteracao",
+            "criterio": "hash_igual",
+            "confianca": 1.0,
+        }
+
+    if tabela not in TABELAS_SYNC_IA_AUTOMATICA:
+        return {"aplicar": False, "motivo": "tabela_exige_revisao_manual"}
+
+    if conflito_bloqueado_por_regra_sync(tabela, local, online):
+        return {"aplicar": False, "motivo": "regra_protecao_negocio"}
+
+    momento_local = obter_momento_registro_sync(local)
+    momento_online = obter_momento_registro_sync(online)
+    if momento_local and momento_online and momento_local != momento_online:
+        if momento_local > momento_online:
+            return {
+                "aplicar": True,
+                "vencedor": "local",
+                "direcao": "local_para_online_ia",
+                "criterio": "versao_local_mais_recente",
+                "confianca": 0.98,
+            }
+        return {
+            "aplicar": True,
+            "vencedor": "online",
+            "direcao": "online_para_local_ia",
+            "criterio": "versao_online_mais_recente",
+            "confianca": 0.98,
+        }
+
+    if momento_local and not momento_online:
+        return {
+            "aplicar": True,
+            "vencedor": "local",
+            "direcao": "local_para_online_ia",
+            "criterio": "local_tem_data_confiavel",
+            "confianca": 0.90,
+        }
+    if momento_online and not momento_local:
+        return {
+            "aplicar": True,
+            "vencedor": "online",
+            "direcao": "online_para_local_ia",
+            "criterio": "online_tem_data_confiavel",
+            "confianca": 0.90,
+        }
+
+    campos = campos_sync_ia_comparaveis(local, online)
+    divergentes = campos_preenchidos_divergentes_sync_ia(local, online, campos)
+    if divergentes:
+        return {
+            "aplicar": False,
+            "motivo": "campos_preenchidos_divergentes",
+            "campos": divergentes[:8],
+        }
+
+    pontos_local = pontuar_completude_registro_sync_ia(local, campos)
+    pontos_online = pontuar_completude_registro_sync_ia(online, campos)
+    if pontos_local > pontos_online:
+        return {
+            "aplicar": True,
+            "vencedor": "local",
+            "direcao": "local_para_online_ia",
+            "criterio": "registro_local_mais_completo",
+            "confianca": 0.88,
+            "pontuacao": {"local": pontos_local, "online": pontos_online},
+        }
+    if pontos_online > pontos_local:
+        return {
+            "aplicar": True,
+            "vencedor": "online",
+            "direcao": "online_para_local_ia",
+            "criterio": "registro_online_mais_completo",
+            "confianca": 0.88,
+            "pontuacao": {"local": pontos_local, "online": pontos_online},
+        }
+
+    return {"aplicar": False, "motivo": "baixa_confianca"}
+
+
+def aplicar_update_registro_sync_ia(origem_conn, destino_conn, tabela, registro_origem, registro_destino):
+    origem = dict(registro_origem or {})
+    destino = dict(registro_destino or {})
+    id_destino = destino.get("id")
+    if id_destino is None:
+        return False
+
+    colunas_destino = set(obter_colunas_tabela(destino_conn, tabela))
+    colunas_update = [
+        coluna
+        for coluna in origem.keys()
+        if coluna in colunas_destino and coluna != "id"
+    ]
+    if not colunas_update:
+        return False
+
+    valores_update = [origem.get(coluna) for coluna in colunas_update]
+    if getattr(destino_conn, "backend", "") == "postgres":
+        valores_update = [
+            normalizar_valor_importacao_pg(tabela, coluna, valor)
+            for coluna, valor in zip(colunas_update, valores_update)
+        ]
+
+    cursor_destino = destino_conn.cursor()
+    aplicado = executar_update_sync_seguro(
+        cursor_destino,
+        tabela,
+        colunas_update,
+        valores_update,
+        id_destino,
+    )
+    if aplicado:
+        destino_conn.commit()
+        ajustar_sequence_tabela_postgres(destino_conn, tabela)
+    return aplicado
+
+
+def salvar_resultado_ia_sync_bancos(resultado, ativo=None, conn=None):
+    status_atual = obter_status_sync_bancos(conn=conn) if conn is not None else obter_status_sync_bancos()
+    status = {
+        "ia_resolvidos_ultima_execucao": int(resultado.get("resolvidos") or 0),
+        "ia_analisados_ultima_execucao": int(resultado.get("analisados") or 0),
+        "ia_ultima_execucao_em": agora_iso(),
+        "ia_ultima_mensagem": resultado.get("mensagem") or "",
+    }
+    if ativo is not None:
+        status["ia_resolucao_automatica"] = 1 if ativo else 0
+    salvar_status_sync_bancos(
+        status,
+        status_atual.get("mensagem") or status_sync_bancos_padrao()["mensagem"],
+        conn=conn,
+    )
+
+
+def resolver_conflitos_sync_bancos_por_ia(limite=100, local_conn=None, online_conn=None):
+    resultado = {
+        "ok": True,
+        "analisados": 0,
+        "resolvidos": 0,
+        "mantidos": 0,
+        "falhas": 0,
+        "mensagem": "IA de conflitos nao encontrou pendencias para resolver.",
+    }
+    fechar_local = False
+    fechar_online = False
+    try:
+        if local_conn is None:
+            local_conn = conectar_banco_local_forcado()
+            fechar_local = True
+        if online_conn is None:
+            online_conn = conectar_banco_online_forcado()
+            fechar_online = True
+
+        garantir_tabelas_sync_bancos_local(local_conn)
+        cursor = local_conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, tabela, chave, detalhe_json
+            FROM sync_bancos_conflitos
+            WHERE resolvido=0
+            ORDER BY id
+            LIMIT ?
+            """,
+            (int(limite or 100),),
+        )
+        conflitos = [row_para_dict(row) for row in cursor.fetchall()]
+
+        for conflito in conflitos:
+            resultado["analisados"] += 1
+            tabela = normalizar_texto_campo(conflito.get("tabela"))
+            chave = normalizar_texto_campo(conflito.get("chave"))
+            registro_local = buscar_registro_sync_por_chave(local_conn, tabela, chave)
+            registro_online = buscar_registro_sync_por_chave(online_conn, tabela, chave)
+            decisao = decidir_resolucao_ia_conflito_sync(tabela, registro_local, registro_online, conflito)
+            if not decisao.get("aplicar"):
+                resultado["mantidos"] += 1
+                continue
+
+            detalhe_ia = {
+                "ia": {
+                    "conflito_id": conflito.get("id"),
+                    "criterio": decisao.get("criterio") or decisao.get("motivo") or "",
+                    "confianca": decisao.get("confianca"),
+                    "pontuacao": decisao.get("pontuacao") or {},
+                    "campos": decisao.get("campos") or [],
+                }
+            }
+            vencedor = decisao.get("vencedor")
+            if vencedor == "sem_alteracao":
+                registrar_resolucao_sync_bancos(
+                    tabela,
+                    registro_local,
+                    registro_online,
+                    acao="resolucao_ia_automatica",
+                    direcao="sem_alteracao",
+                    status="resolvido",
+                    detalhe_extra=detalhe_ia,
+                    conn=local_conn,
+                )
+                resultado["resolvidos"] += 1
+                continue
+
+            if vencedor == "online":
+                aplicado = aplicar_update_registro_sync_ia(
+                    online_conn,
+                    local_conn,
+                    tabela,
+                    registro_online,
+                    registro_local,
+                )
+                origem = registro_online
+                destino = registro_local
+            elif vencedor == "local":
+                aplicado = aplicar_update_registro_sync_ia(
+                    local_conn,
+                    online_conn,
+                    tabela,
+                    registro_local,
+                    registro_online,
+                )
+                origem = registro_local
+                destino = registro_online
+            else:
+                aplicado = False
+                origem = registro_local
+                destino = registro_online
+
+            if aplicado:
+                registrar_resolucao_sync_bancos(
+                    tabela,
+                    origem,
+                    destino,
+                    acao="resolucao_ia_automatica",
+                    direcao=decisao.get("direcao") or "",
+                    status="aplicado",
+                    detalhe_extra=detalhe_ia,
+                    conn=local_conn,
+                )
+                resultado["resolvidos"] += 1
+            else:
+                resultado["falhas"] += 1
+                resultado["mantidos"] += 1
+
+        if resultado["resolvidos"]:
+            resultado["mensagem"] = (
+                f"IA resolveu {resultado['resolvidos']} de "
+                f"{resultado['analisados']} conflito(s) analisado(s)."
+            )
+        elif resultado["analisados"]:
+            resultado["mensagem"] = (
+                "IA analisou os conflitos, mas manteve os casos que exigem revisao manual."
+            )
+
+        salvar_resultado_ia_sync_bancos(resultado, conn=local_conn)
+        return resultado
+    except Exception as erro:
+        resultado["ok"] = False
+        resultado["erro"] = str(erro)
+        resultado["mensagem"] = f"IA de conflitos nao conseguiu executar: {erro}"
+        try:
+            if local_conn is not None:
+                salvar_resultado_ia_sync_bancos(resultado, conn=local_conn)
+        except Exception:
+            pass
+        return resultado
+    finally:
+        if fechar_online and online_conn is not None:
+            try:
+                online_conn.close()
+            except Exception:
+                pass
+        if fechar_local and local_conn is not None:
+            try:
+                local_conn.close()
+            except Exception:
+                pass
+
+
+def alternar_resolucao_ia_sync_bancos(executar_agora=True):
+    status_atual = obter_status_sync_bancos()
+    ativar = not resolucao_ia_sync_bancos_ativa(status_atual)
+    salvar_status_sync_bancos(
+        {"ia_resolucao_automatica": 1 if ativar else 0},
+        status_atual.get("mensagem") or status_sync_bancos_padrao()["mensagem"],
+    )
+
+    resultado_ia = None
+    if ativar and executar_agora:
+        resultado_ia = resolver_conflitos_sync_bancos_por_ia()
+    elif not ativar:
+        salvar_status_sync_bancos(
+            {
+                "ia_resolucao_automatica": 0,
+                "ia_ultima_execucao_em": agora_iso(),
+                "ia_ultima_mensagem": "IA de conflitos desativada pelo administrador.",
+            },
+            status_atual.get("mensagem") or status_sync_bancos_padrao()["mensagem"],
+        )
+
+    return {
+        "ativa": ativar,
+        "resultado_ia": resultado_ia,
+        "conflitos": contar_conflitos_sync_bancos_abertos(),
+    }
 
 
 def atualizar_fila_sync_bancos_local_pendente(ultimo_sucesso_em=""):
@@ -7012,6 +7496,11 @@ def sincronizar_bancos_incremental(force=False):
                 "local_para_online": resultado_local_online,
             }
         registrar_conflitos_sync_bancos(resumo["conflitos_lista"])
+        if resolucao_ia_sync_bancos_ativa():
+            resumo["ia_conflitos"] = resolver_conflitos_sync_bancos_por_ia(
+                local_conn=destino_local,
+                online_conn=origem_online,
+            )
         pendentes = atualizar_fila_sync_bancos_local_pendente(agora_iso())
         totais = {"tabelas_total": len(resumo["tabelas"]), "inseridos": 0, "atualizados": 0, "ignorados": 0}
         for item in resumo["tabelas"].values():
@@ -17092,6 +17581,16 @@ def api_sync_bancos_resumo():
                 "perigosa": False,
             },
             {
+                "id": "alternar_ia_conflitos",
+                "titulo": (
+                    "Desativar IA de conflitos"
+                    if resolucao_ia_sync_bancos_ativa(status)
+                    else "Ativar IA de conflitos"
+                ),
+                "descricao": "Liga ou desliga a resolucao automatica por IA segura.",
+                "perigosa": False,
+            },
+            {
                 "id": "marcar_revisado",
                 "titulo": "Marcar como revisado",
                 "descricao": "Arquiva os conflitos restantes sem sobrescrever dados.",
@@ -17129,6 +17628,26 @@ def api_sync_bancos_acao():
             ),
             "resultado": resultado,
             "conflitos": conflitos,
+        })
+
+    if acao == "alternar_ia_conflitos":
+        resultado = alternar_resolucao_ia_sync_bancos(executar_agora=True)
+        ativa = bool(resultado.get("ativa"))
+        registrar_auditoria(
+            "sync_bancos_ia_conflitos_alternou",
+            "sync_bancos",
+            detalhes=resultado,
+        )
+        return jsonify({
+            "ok": True,
+            "mensagem": (
+                "IA de conflitos ativada."
+                if ativa
+                else "IA de conflitos desativada."
+            ),
+            "ativa": ativa,
+            "resultado": resultado,
+            "conflitos": resultado.get("conflitos"),
         })
 
     if acao == "marcar_revisado":
@@ -22699,6 +23218,28 @@ def executar_acao_sync_bancos_configuracoes():
                 "sucesso" if conflitos == 0 else "aviso",
                 f"Reprocessamento seguro concluido. Conflitos restantes: {conflitos}.",
             )
+        elif acao == "alternar_ia_conflitos":
+            resultado = alternar_resolucao_ia_sync_bancos(executar_agora=True)
+            ativa = bool(resultado.get("ativa"))
+            resultado_ia = resultado.get("resultado_ia") or {}
+            registrar_auditoria(
+                "sync_bancos_ia_conflitos_alternou",
+                "sync_bancos",
+                detalhes=resultado,
+            )
+            if ativa:
+                definir_feedback_configuracoes(
+                    "sucesso" if int(resultado.get("conflitos") or 0) == 0 else "aviso",
+                    (
+                        "IA de conflitos ativada. "
+                        f"{resultado_ia.get('mensagem') or 'Ela vai tentar resolver automaticamente os casos seguros.'}"
+                    ),
+                )
+            else:
+                definir_feedback_configuracoes(
+                    "sucesso",
+                    "IA de conflitos desativada. Os conflitos voltam a exigir revisao manual.",
+                )
         elif acao == "marcar_revisado":
             total = arquivar_conflitos_sync_bancos_abertos()
             pendentes = atualizar_fila_sync_bancos_local_pendente(

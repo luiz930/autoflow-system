@@ -866,6 +866,10 @@
             <p><b>Ultimo sucesso:</b> {{ banco_sync_status.ultimo_sucesso_em or "Ainda nao sincronizou" }}</p>
             <p><b>Fila local pendente:</b> {{ banco_sync_status.pendentes_local or 0 }} alteracao(oes)</p>
             <p><b>Conflitos abertos:</b> {{ banco_sync_status.conflitos or 0 }}</p>
+            <p><b>IA de conflitos:</b> {% if banco_sync_status.ia_resolucao_automatica|int %}Ativa{% else %}Desativada{% endif %}</p>
+            {% if banco_sync_status.ia_ultima_mensagem %}
+            <p class="muted-text">Ultima IA: {{ banco_sync_status.ia_ultima_mensagem }} Analisados: {{ banco_sync_status.ia_analisados_ultima_execucao or 0 }}. Resolvidos: {{ banco_sync_status.ia_resolvidos_ultima_execucao or 0 }}.</p>
+            {% endif %}
             <p><b>Ultima rodada:</b> {{ banco_sync_status.inseridos or 0 }} inserido(s), {{ banco_sync_status.atualizados or 0 }} atualizado(s), {{ banco_sync_status.ignorados or 0 }} ignorado(s)</p>
             <p class="muted-text">A rotina nao apaga dados. Ela insere o que falta, atualiza quando existe uma versao mais nova e registra conflito quando os dois lados mudaram o mesmo registro sem uma versao claramente mais recente.</p>
             <div class="actions-row actions-row--left top-spacing">
@@ -873,6 +877,17 @@
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="acao" value="reprocessar_seguro">
                     <button type="submit">Reprocessar seguro</button>
+                </form>
+                <form action="/configuracoes/banco/sync-acao" method="POST">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="acao" value="alternar_ia_conflitos">
+                    <button type="submit">
+                        {% if banco_sync_status.ia_resolucao_automatica|int %}
+                        Desativar IA de conflitos
+                        {% else %}
+                        Ativar IA de conflitos
+                        {% endif %}
+                    </button>
                 </form>
                 <form action="/configuracoes/banco/sync-acao" method="POST" onsubmit="return confirm('Marcar os conflitos restantes como revisados sem sobrescrever dados?');">
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">

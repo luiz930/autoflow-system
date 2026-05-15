@@ -1445,6 +1445,10 @@ class AppRegressionTests(unittest.TestCase):
         self.assertIn("Banco offline + online", conteudo)
         self.assertIn("Fila local pendente", conteudo)
         self.assertIn("Conflitos abertos", conteudo)
+        self.assertIn("IA de conflitos", conteudo)
+        self.assertIn("alternar_ia_conflitos", conteudo)
+        self.assertIn("Ativar IA de conflitos", conteudo)
+        self.assertIn("Desativar IA de conflitos", conteudo)
 
     def test_changelog_monta_links_github_automaticos(self):
         commit_hash = "1234567890abcdef1234567890abcdef12345678"
@@ -1976,6 +1980,35 @@ class AppRegressionTests(unittest.TestCase):
         self.assertIn("/configuracoes/banco", response.location)
         self.assertEqual(feedback.get("tipo"), "erro")
         self.assertIn("Nao foi possivel executar a acao", feedback.get("mensagem", ""))
+
+    def test_sync_acao_banco_alterna_ia_conflitos_com_feedback(self):
+        with app_module.app.test_request_context(
+            "/configuracoes/banco/sync-acao",
+            method="POST",
+            data={"acao": "alternar_ia_conflitos"},
+        ):
+            session["usuario"] = "admin"
+            session["usuario_perfil"] = "admin"
+            with patch.object(app_module, "sincronizar_sessao_usuario_seguro"), \
+                 patch.object(app_module, "usuario_gerencia_banco_online", return_value=True), \
+                 patch.object(
+                     app_module,
+                     "alternar_resolucao_ia_sync_bancos",
+                     return_value={
+                         "ativa": True,
+                         "resultado_ia": {"mensagem": "IA resolveu 1 de 1 conflito(s) analisado(s)."},
+                         "conflitos": 0,
+                     },
+                 ), \
+                 patch.object(app_module, "registrar_auditoria"):
+                response = app_module.executar_acao_sync_bancos_configuracoes()
+
+            feedback = session.get("configuracoes_feedback") or {}
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/configuracoes/banco", response.location)
+        self.assertEqual(feedback.get("tipo"), "sucesso")
+        self.assertIn("IA de conflitos ativada", feedback.get("mensagem", ""))
 
     def test_salvar_configuracao_backup_form_isola_por_empresa(self):
         conn = self._criar_banco_admin_memoria()
@@ -2510,6 +2543,87 @@ class AppRegressionTests(unittest.TestCase):
         origem_conn.close()
         destino_conn.close()
 
+    def test_resolucao_ia_sync_bancos_completa_registro_sem_sobrescrever_preenchido(self):
+        local_conn, local = self._criar_banco_sync_veiculos_memoria([
+            {"id": 1, "placa": "ABC1234", "modelo": "", "cor": "", "atualizado_em": "2026-05-13T10:00:00-03:00"},
+        ])
+        online_conn, online = self._criar_banco_sync_veiculos_memoria([
+            {"id": 1, "placa": "ABC1234", "modelo": "Onix", "cor": "Preto", "atualizado_em": "2026-05-13T10:00:00-03:00"},
+        ])
+        registro_local = dict(local_conn.execute("SELECT * FROM veiculos WHERE id=1").fetchone())
+        registro_online = dict(online_conn.execute("SELECT * FROM veiculos WHERE id=1").fetchone())
+        conflito = app_module.montar_conflito_registro_sync("veiculos", registro_online, registro_local)
+
+        with patch.object(app_module, "conectar_banco_local_forcado", return_value=local):
+            app_module.registrar_conflitos_sync_bancos([conflito])
+
+        resultado = app_module.resolver_conflitos_sync_bancos_por_ia(
+            local_conn=local,
+            online_conn=online,
+        )
+
+        row = local_conn.execute("SELECT modelo, cor FROM veiculos WHERE id=1").fetchone()
+        conflito_aberto = local_conn.execute(
+            "SELECT COUNT(*) FROM sync_bancos_conflitos WHERE resolvido=0"
+        ).fetchone()[0]
+        resolucao = local_conn.execute(
+            "SELECT acao, direcao, status FROM sync_bancos_resolucoes ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+        self.assertEqual(resultado["resolvidos"], 1)
+        self.assertEqual(row["modelo"], "Onix")
+        self.assertEqual(row["cor"], "Preto")
+        self.assertEqual(conflito_aberto, 0)
+        self.assertEqual(resolucao["acao"], "resolucao_ia_automatica")
+        self.assertEqual(resolucao["direcao"], "online_para_local_ia")
+        self.assertEqual(resolucao["status"], "aplicado")
+        local_conn.close()
+        online_conn.close()
+
+    def test_resolucao_ia_sync_bancos_mantem_conflito_protegido(self):
+        decisao = app_module.decidir_resolucao_ia_conflito_sync(
+            "veiculos",
+            {
+                "id": 1,
+                "placa": "ABC1234",
+                "modelo": "Onix",
+                "status": "FINALIZADO",
+                "atualizado_em": "2026-05-13T10:00:00-03:00",
+            },
+            {
+                "id": 1,
+                "placa": "ABC1234",
+                "modelo": "Gol",
+                "status": "EM ANDAMENTO",
+                "atualizado_em": "2026-05-13T10:00:00-03:00",
+            },
+        )
+
+        self.assertFalse(decisao["aplicar"])
+        self.assertEqual(decisao["motivo"], "regra_protecao_negocio")
+
+    def test_alternar_resolucao_ia_sync_bancos_persiste_estado(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        wrapper = PersistentCompatConnection(conn)
+
+        with patch.object(app_module, "conectar_banco_local_forcado", return_value=wrapper), \
+             patch.object(
+                 app_module,
+                 "resolver_conflitos_sync_bancos_por_ia",
+                 return_value={"mensagem": "IA sem conflitos.", "resolvidos": 0, "analisados": 0},
+             ):
+            resultado_ativar = app_module.alternar_resolucao_ia_sync_bancos()
+            status_ativo = app_module.obter_status_sync_bancos(conn=wrapper)
+            resultado_desativar = app_module.alternar_resolucao_ia_sync_bancos(executar_agora=False)
+            status_inativo = app_module.obter_status_sync_bancos(conn=wrapper)
+
+        self.assertTrue(resultado_ativar["ativa"])
+        self.assertEqual(status_ativo["ia_resolucao_automatica"], 1)
+        self.assertFalse(resultado_desativar["ativa"])
+        self.assertEqual(status_inativo["ia_resolucao_automatica"], 0)
+        conn.close()
+
     def test_status_sync_bancos_local_cria_tabelas_tecnicas(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
@@ -2526,6 +2640,7 @@ class AppRegressionTests(unittest.TestCase):
         self.assertIn("sync_bancos_conflitos", tabelas)
         self.assertIn("sync_bancos_fila", tabelas)
         self.assertEqual(status["status"], "aguardando")
+        self.assertEqual(status["ia_resolucao_automatica"], 0)
         conn.close()
 
     def test_mensagem_publica_cadastro_veiculo_nao_exibe_erro_planilha(self):
