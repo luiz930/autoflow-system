@@ -1,4 +1,4 @@
-# Wagen Mobile
+# App mobile
 
 App mobile offline-first para uso operacional com SQLite local. O banco local e a fila de sincronizacao sao a fonte imediata; o servidor online entra somente quando houver conexao e configuracao.
 

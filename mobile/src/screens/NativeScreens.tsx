@@ -771,7 +771,7 @@ function AtualizacaoScreen({ sync }: { sync: Props["sync"] }) {
       <View style={styles.pageHeaderCard}>
         <View>
           <Text style={styles.pill}>Atualizacao</Text>
-          <Text style={styles.cardTitle}>Wagen App</Text>
+          <Text style={styles.cardTitle}>App mobile</Text>
           <Text style={styles.muted}>Baixe o APK oficial sem perder login, banco local, fila ou fotos pendentes.</Text>
         </View>
         <Ionicons color={updateAvailable ? colors.primary : colors.success} name={updateAvailable ? "download" : "checkmark-circle"} size={30} />

@@ -11,8 +11,10 @@
 <link rel="manifest" href="/site.webmanifest">
 <meta name="theme-color" content="{{ brand_primary_color }}">
 
-<link rel="icon" href="{{ brand_favicon_url or '/static/favicon.jpg' }}">
-<link rel="apple-touch-icon" href="{{ brand_favicon_url or '/static/icon-192.jpg' }}">
+{% if brand_favicon_url %}
+<link rel="icon" href="{{ brand_favicon_url }}">
+<link rel="apple-touch-icon" href="{{ brand_favicon_url }}">
+{% endif %}
 
 <link rel="stylesheet" href="/static/responsive.css">
 
@@ -368,7 +370,9 @@ body.responsive-page.sidebar-open {
 
 <div id="sidebar" class="sidebar">
     <div class="sidebar-header">
-        <img src="{{ brand_logo_url or '/static/logo.jpg' }}" class="sidebar-logo" alt="{{ brand_name }}">
+        {% if brand_logo_url %}
+        <img src="{{ brand_logo_url }}" class="sidebar-logo" alt="{{ brand_name }}">
+        {% endif %}
         <h2 class="sidebar-title">{{ brand_name }}</h2>
         <p class="sidebar-subtitle">{{ brand_subtitle }}</p>
     </div>
@@ -465,7 +469,9 @@ body.responsive-page.sidebar-open {
 
     <div class="page-header">
         <div class="brand-block">
-            <img src="{{ brand_logo_url or '/static/logo.jpg' }}" class="brand-avatar" alt="{{ brand_name }}">
+            {% if brand_logo_url %}
+            <img src="{{ brand_logo_url }}" class="brand-avatar" alt="{{ brand_name }}">
+            {% endif %}
             <div>
                 <p class="brand-kicker">{{ brand_subtitle }}</p>
                 <h1 class="page-title">{% block titulo %}{% endblock %}</h1>
@@ -658,7 +664,7 @@ let baseSyncToken = "";
 let baseSyncExecutando = false;
 let baseSyncIntervalHandle = null;
 const baseSyncIntervalPadrao = 600;
-const baseSyncIntervalChave = "wagen_sync_interval_seconds";
+const baseSyncIntervalChave = "sistema_sync_interval_seconds";
 const baseUsaSnapshotHome = window.location.pathname === "/";
 
 function baseObterIntervaloSincronia() {

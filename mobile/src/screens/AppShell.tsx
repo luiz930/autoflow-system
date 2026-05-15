@@ -1,10 +1,8 @@
 import { ReactNode, useState } from "react";
-import { Image, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { colors, spacing } from "../theme";
-
-const wagenLogo = require("../assets/logo.png");
 
 export type AppScreenKey =
   | "inicio"
@@ -97,9 +95,11 @@ export function AppShell({ active, title, usuarioNome, tipoConta, onSelect, onLo
             <SafeAreaView style={styles.mobileMenuScreen}>
               <View style={styles.mobileMenuTopbar}>
                 <View style={styles.mobileMenuBrand}>
-                  <Image accessibilityLabel="Wagen" resizeMode="contain" source={wagenLogo} style={styles.mobileMenuLogo} />
+                  <View style={styles.mobileMenuLogo}>
+                    <Ionicons color={colors.primary} name="apps" size={24} />
+                  </View>
                   <View>
-                    <Text style={styles.mobileMenuTitle}>Wagen</Text>
+                    <Text style={styles.mobileMenuTitle}>Sistema</Text>
                     <Text style={styles.mobileMenuSubtitle}>Menu do app</Text>
                   </View>
                 </View>
@@ -119,9 +119,11 @@ export function AppShell({ active, title, usuarioNome, tipoConta, onSelect, onLo
                 <Ionicons color={colors.primaryText} name="menu" size={22} />
               </Pressable>
             )}
-            <Image accessibilityLabel="Wagen" resizeMode="contain" source={wagenLogo} style={styles.topbarLogo} />
+            <View style={styles.topbarLogo}>
+              <Ionicons color={colors.primary} name="apps" size={26} />
+            </View>
             <View style={styles.headerText}>
-              <Text style={styles.kicker}>WAGEN ESTETICA</Text>
+              <Text style={styles.kicker}>SISTEMA</Text>
               <Text style={styles.title}>{title}</Text>
               <View style={styles.accountRow}>
                 <Text numberOfLines={1} style={styles.accountName}>{usuarioNome}</Text>
@@ -157,9 +159,11 @@ function Sidebar({ active, height, onSelect, overlay = false }: { active: AppScr
         overScrollMode="always"
       >
         <View style={styles.sidebarHeader}>
-          <Image accessibilityLabel="Wagen" resizeMode="contain" source={wagenLogo} style={styles.sidebarLogo} />
-          <Text style={styles.sidebarTitle}>Wagen</Text>
-          <Text style={styles.sidebarSubtitle}>Estetica automotiva</Text>
+          <View style={styles.sidebarLogo}>
+            <Ionicons color={colors.primary} name="apps" size={48} />
+          </View>
+          <Text style={styles.sidebarTitle}>Sistema</Text>
+          <Text style={styles.sidebarSubtitle}>Operacional</Text>
         </View>
         {menuGroups.map((group) => (
           <View key={group.label} style={styles.sidebarGroup}>
@@ -233,7 +237,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: "#000"
+    backgroundColor: colors.panel,
+    alignItems: "center",
+    justifyContent: "center"
   },
   mobileMenuSubtitle: {
     color: colors.primary,
@@ -290,8 +296,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: "#000",
-    marginBottom: spacing.md
+    backgroundColor: colors.panel,
+    marginBottom: spacing.md,
+    alignItems: "center",
+    justifyContent: "center"
   },
   sidebarTitle: {
     color: colors.text,
@@ -378,7 +386,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: "#000"
+    backgroundColor: colors.panel,
+    alignItems: "center",
+    justifyContent: "center"
   },
   headerText: {
     flex: 1

@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 
-DEFAULT_SITE_URL = "https://wagenestetica.duckdns.org"
+DEFAULT_SITE_URL = "https://seu-dominio.com.br"
 DEFAULT_TIMEOUT_SECONDS = 15
 
 
@@ -40,7 +40,7 @@ def request_url(url: str, timeout: int) -> tuple[int | None, bytes, str]:
     request = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "WagenEstetica-Monitor/1.0",
+            "User-Agent": "Sistema-Monitor/1.0",
             "Accept": "text/html,application/json,*/*",
         },
         method="GET",
@@ -88,7 +88,7 @@ def build_report(base_url: str, results: list[CheckResult]) -> str:
     all_ok = all(result.ok for result in results)
     status_label = "OK" if all_ok else "FALHA"
     lines = [
-        f"Monitor Wagen Estetica: {status_label}",
+        f"Monitor do sistema: {status_label}",
         f"Data: {now}",
         f"Site: {normalize_base_url(base_url)}",
         "",

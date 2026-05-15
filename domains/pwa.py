@@ -4,8 +4,12 @@ def montar_manifesto_pwa(produto):
     nome_curto = (produto.get("brand_name") or "Gestao")[:24]
     cor_fundo = produto.get("brand_background_color") or "#0b0b0b"
     cor_tema = produto.get("brand_primary_color") or "#facc15"
-    icone_192 = "/static/icon-192.jpg"
-    icone_512 = "/static/icon-512.jpg"
+    icone = produto.get("brand_favicon_url") or produto.get("brand_logo_url") or ""
+    shortcut_icons = [{"src": icone, "sizes": "192x192", "purpose": "any maskable"}] if icone else []
+    manifest_icons = [
+        {"src": icone, "sizes": "192x192", "purpose": "any maskable"},
+        {"src": icone, "sizes": "512x512", "purpose": "any maskable"},
+    ] if icone else []
 
     return {
         "id": "/?source=pwa",
@@ -32,30 +36,17 @@ def montar_manifesto_pwa(produto):
                 "short_name": "Painel",
                 "description": "Abrir atendimentos em andamento.",
                 "url": "/painel?source=pwa_shortcut",
-                "icons": [{"src": icone_192, "sizes": "192x192", "type": "image/jpeg", "purpose": "any maskable"}],
+                "icons": shortcut_icons,
             },
             {
                 "name": "Novo atendimento",
                 "short_name": "Atender",
                 "description": "Abrir a tela inicial para iniciar atendimento.",
                 "url": "/?source=pwa_shortcut",
-                "icons": [{"src": icone_192, "sizes": "192x192", "type": "image/jpeg", "purpose": "any maskable"}],
+                "icons": shortcut_icons,
             },
         ],
-        "icons": [
-            {
-                "src": icone_192,
-                "sizes": "192x192",
-                "type": "image/jpeg",
-                "purpose": "any maskable",
-            },
-            {
-                "src": icone_512,
-                "sizes": "512x512",
-                "type": "image/jpeg",
-                "purpose": "any maskable",
-            },
-        ],
+        "icons": manifest_icons,
     }
 
 

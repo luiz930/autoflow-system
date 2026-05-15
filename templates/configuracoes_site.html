@@ -22,7 +22,9 @@
     <div class="page-card">
         <p class="pill-label">Preview atual</p>
         <div class="brand-block top-spacing">
-            <img src="{{ brand_logo_url or '/static/logo.jpg' }}" alt="{{ brand_name }}" class="brand-avatar">
+            {% if brand_logo_url %}
+            <img src="{{ brand_logo_url }}" alt="{{ brand_name }}" class="brand-avatar">
+            {% endif %}
             <div>
                 <p class="brand-kicker">{{ brand_subtitle }}</p>
                 <h2 class="section-title">{{ brand_name }}</h2>
@@ -49,7 +51,6 @@
                     value="{{ configuracao_empresa.marca_nome }}"
                     placeholder="Nome principal da marca"
                     autocomplete="off"
-                    required
                 >
                 <input
                     name="marca_subtitulo"
@@ -57,7 +58,6 @@
                     value="{{ configuracao_empresa.marca_subtitulo }}"
                     placeholder="Subtitulo curto / slogan"
                     autocomplete="off"
-                    required
                 >
             </div>
 
@@ -68,7 +68,6 @@
                     value="{{ configuracao_empresa.site_titulo }}"
                     placeholder="Titulo das abas e PWA"
                     autocomplete="off"
-                    required
                 >
                 <input
                     name="marca_logo_url"
@@ -91,7 +90,6 @@
                 name="site_rodape_texto"
                 rows="3"
                 placeholder="Texto do rodape do site"
-                required
             >{{ configuracao_empresa.site_rodape_texto }}</textarea>
 
             <div class="page-card page-card--soft top-spacing">
@@ -99,7 +97,7 @@
                 <input type="file" name="marca_logo" accept="image/*">
                 <label class="inline-toggle top-spacing">
                     <input type="checkbox" name="remover_logo" value="1">
-                    Remover logo personalizada e voltar para a padrao
+                    Remover logo personalizada
                 </label>
                 <p class="muted-text">Se enviar um arquivo, ele passa a ter prioridade sobre a URL externa.</p>
             </div>
@@ -109,7 +107,7 @@
                 <input type="file" name="marca_favicon" accept="image/*">
                 <label class="inline-toggle top-spacing">
                     <input type="checkbox" name="remover_favicon" value="1">
-                    Remover favicon personalizado e voltar para o padrao
+                    Remover favicon personalizado
                 </label>
                 <p class="muted-text">Use um arquivo quadrado. PNG com transparência tende a ficar melhor nas abas e no atalho do celular.</p>
             </div>

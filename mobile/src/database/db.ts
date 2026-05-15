@@ -5,7 +5,7 @@ let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 export function getDatabase() {
   if (!databasePromise) {
-    databasePromise = SQLite.openDatabaseAsync("wagen_offline.db");
+    databasePromise = SQLite.openDatabaseAsync("sistema_offline.db");
   }
   return databasePromise;
 }

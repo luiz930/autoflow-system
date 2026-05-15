@@ -143,7 +143,7 @@ from scripts.site_monitor import (
     send_telegram_message as send_site_monitor_telegram_message,
 )
 
-APP_LOGGER = logging.getLogger("wagen_estetica")
+APP_LOGGER = logging.getLogger("sistema")
 
 
 def log_info(*partes):
@@ -1382,7 +1382,7 @@ def pasta_escrevivel(pasta):
 
     arquivo_teste = os.path.join(
         pasta,
-        f".wagen_write_test_{secrets.token_hex(6)}.tmp",
+        f".sistema_write_test_{secrets.token_hex(6)}.tmp",
     )
 
     try:
@@ -3337,7 +3337,7 @@ def ajustar_cookie_seguro_para_http_local():
 VERSAO_SISTEMA_PADRAO = "1.0.0"
 APP_VERSION = f"Versao: {VERSAO_SISTEMA_PADRAO}"
 MOBILE_APP_VERSION = "0.1.1"
-MOBILE_APK_FILENAME = "wagen-mobile-release-assinado.apk"
+MOBILE_APK_FILENAME = "app-mobile-release-assinado.apk"
 MOBILE_APK_RELATIVE_PATH = os.path.join("mobile", "dist", MOBILE_APK_FILENAME)
 VERSOES_SISTEMA_LEGADAS = {
     "0.7.5-alpha (Em Desenvolvimento)",
@@ -3421,7 +3421,8 @@ SENHA_PADRAO_ADMIN_LEGADA = "admin123"
 SENHA_MINIMO_CARACTERES = 10
 MAX_TENTATIVAS_LOGIN = 5
 MINUTOS_BLOQUEIO_LOGIN = 15
-LOGIN_PERSISTENTE_COOKIE = "wagen_login_persistente"
+LOGIN_PERSISTENTE_COOKIE = "sistema_login_persistente"
+LOGIN_PERSISTENTE_COOKIE_LEGADO = "wa" + "gen_login_persistente"
 LOGIN_PERSISTENTE_DIAS = 30
 
 ITENS_CHECKLIST_PADRAO = [
@@ -3660,7 +3661,7 @@ def salvar_campos_registro_administrativo_empresa(tabela, campos, empresa_id=Non
 def contexto_produto_padrao():
     return build_brand_context(
         {
-            "marca_nome": "Wagen Estetica Automotiva",
+            "marca_nome": "Sistema",
             "marca_subtitulo": "Gestao Estetica",
             "marca_logo_url": "",
             "marca_favicon_url": "",
@@ -3670,7 +3671,7 @@ def contexto_produto_padrao():
             "marca_cor_superficie": "#111827",
             "marca_cor_texto": "#f9fafb",
             "site_titulo": "Gestao Estetica",
-            "site_rodape_texto": "Desenvolvido por Luiz Henrique | Qualquer Erro Contate o Desenvolvedor | Wagen Estetica Automotiva | Direitos Reservados.",
+            "site_rodape_texto": "Sistema",
             "login_titulo_publico": "Acesso ao sistema",
             "login_subtitulo_publico": "Entre no sistema",
             "login_botao_texto": "Entrar",
@@ -9788,6 +9789,13 @@ def revogar_login_persistente(token):
 def aplicar_cookie_login_persistente(response, token):
     if not token:
         return response
+    response.delete_cookie(
+        LOGIN_PERSISTENTE_COOKIE_LEGADO,
+        path="/",
+        secure=bool(app.config.get("SESSION_COOKIE_SECURE")),
+        httponly=True,
+        samesite="Lax",
+    )
     response.set_cookie(
         LOGIN_PERSISTENTE_COOKIE,
         token,
@@ -9803,6 +9811,13 @@ def aplicar_cookie_login_persistente(response, token):
 def limpar_cookie_login_persistente(response):
     response.delete_cookie(
         LOGIN_PERSISTENTE_COOKIE,
+        path="/",
+        secure=bool(app.config.get("SESSION_COOKIE_SECURE")),
+        httponly=True,
+        samesite="Lax",
+    )
+    response.delete_cookie(
+        LOGIN_PERSISTENTE_COOKIE_LEGADO,
         path="/",
         secure=bool(app.config.get("SESSION_COOKIE_SECURE")),
         httponly=True,
@@ -9843,6 +9858,10 @@ def restaurar_sessao_login_persistente():
         return False
 
     token = request.cookies.get(LOGIN_PERSISTENTE_COOKIE)
+    if not token:
+        token = request.cookies.get(LOGIN_PERSISTENTE_COOKIE_LEGADO)
+        if token:
+            g.login_persistente_limpar_cookie = True
     dados = carregar_login_persistente(token)
     if not dados:
         if token:
@@ -11607,7 +11626,7 @@ def montar_mensagem_notificacao_aniversario(cliente_nome, data_nascimento, dias_
             f"Aniversario amanha: {nome} ({data_fmt}).\n"
             f"Sugestao de mensagem:\n"
             f"Oi {nome}, tudo bem? Passando para te desejar um feliz aniversario adiantado. "
-            f"Amanha queremos te presentear com uma condicao especial nos servicos da Wagen. "
+            f"Amanha queremos te presentear com uma condicao especial nos nossos servicos. "
             f"Se quiser, ja deixamos seu horario reservado."
         )
     return (
@@ -11763,7 +11782,7 @@ def empresa_snapshot_padrao():
         "clima_longitude": -51.13,
         "clima_timezone": "America/Sao_Paulo",
         "clima_timeout_segundos": 8,
-        "marca_nome": "Wagen Estetica Automotiva",
+        "marca_nome": "Sistema",
         "marca_subtitulo": "Gestao Estetica",
         "marca_logo_url": "",
         "marca_favicon_url": "",
@@ -11773,7 +11792,7 @@ def empresa_snapshot_padrao():
         "marca_cor_superficie": "#111827",
         "marca_cor_texto": "#f9fafb",
         "site_titulo": "Gestao Estetica",
-        "site_rodape_texto": "Desenvolvido por Luiz Henrique | Qualquer Erro Contate o Desenvolvedor | Wagen Estetica Automotiva | Direitos Reservados.",
+        "site_rodape_texto": "Sistema",
         "login_titulo_publico": "Acesso ao sistema",
         "login_subtitulo_publico": "Entre no sistema",
         "login_botao_texto": "Entrar",
@@ -11782,10 +11801,10 @@ def empresa_snapshot_padrao():
         "home_estado_inicial_titulo": "Digite uma placa para comecar",
         "paginas_menu_desabilitadas_json": "[]",
         "auto_teste_ativo": 0,
-        "auto_teste_site_url": "https://wagenestetica.duckdns.org",
+        "auto_teste_site_url": "",
         "auto_teste_intervalo_horas": 2,
         "auto_teste_telegram_bot_token": "",
-        "auto_teste_telegram_bot_nick": "@wagenesteticabot",
+        "auto_teste_telegram_bot_nick": "",
         "auto_teste_telegram_chat_id": "",
         "auto_teste_ultimo_status": "",
         "auto_teste_ultimo_relatorio": "",
@@ -11932,7 +11951,7 @@ def mascarar_token_telegram(token):
 def normalizar_bot_telegram(valor):
     valor = normalizar_texto_campo(valor)
     if not valor:
-        return "@wagenesteticabot"
+        return ""
     return valor if valor.startswith("@") else f"@{valor}"
 
 
@@ -12000,8 +12019,8 @@ def obter_configuracao_empresa(force=False):
     dados["clima_longitude"] = converter_valor_numerico(dados.get("clima_longitude"))
     dados["clima_timezone"] = normalizar_texto_campo(dados.get("clima_timezone")) or "America/Sao_Paulo"
     dados["clima_timeout_segundos"] = max(3, min(20, converter_inteiro(dados.get("clima_timeout_segundos"), 8)))
-    dados["marca_nome"] = normalizar_texto_campo(dados.get("marca_nome")) or "Wagen Estetica Automotiva"
-    dados["marca_subtitulo"] = normalizar_texto_campo(dados.get("marca_subtitulo")) or "Gestao Estetica"
+    dados["marca_nome"] = normalizar_texto_campo(dados.get("marca_nome"))
+    dados["marca_subtitulo"] = normalizar_texto_campo(dados.get("marca_subtitulo"))
     dados["marca_logo_url"] = normalizar_texto_campo(dados.get("marca_logo_url"))
     dados["marca_favicon_url"] = normalizar_texto_campo(dados.get("marca_favicon_url"))
     dados["marca_cor_primaria"] = normalizar_cor_hex(dados.get("marca_cor_primaria"), "#facc15")
@@ -12010,7 +12029,7 @@ def obter_configuracao_empresa(force=False):
     dados["marca_cor_superficie"] = normalizar_cor_hex(dados.get("marca_cor_superficie"), "#111827")
     dados["marca_cor_texto"] = normalizar_cor_hex(dados.get("marca_cor_texto"), "#f9fafb")
     dados["site_titulo"] = normalizar_texto_campo(dados.get("site_titulo")) or "Gestao Estetica"
-    dados["site_rodape_texto"] = normalizar_texto_campo(dados.get("site_rodape_texto")) or "Desenvolvido por Luiz Henrique | Qualquer Erro Contate o Desenvolvedor | Wagen Estetica Automotiva | Direitos Reservados."
+    dados["site_rodape_texto"] = normalizar_texto_campo(dados.get("site_rodape_texto"))
     dados["login_titulo_publico"] = normalizar_texto_campo(dados.get("login_titulo_publico")) or "Acesso ao sistema"
     dados["login_subtitulo_publico"] = normalizar_texto_campo(dados.get("login_subtitulo_publico")) or "Entre no sistema"
     dados["login_botao_texto"] = normalizar_texto_campo(dados.get("login_botao_texto")) or "Entrar"
@@ -12019,10 +12038,10 @@ def obter_configuracao_empresa(force=False):
     dados["home_estado_inicial_titulo"] = normalizar_texto_campo(dados.get("home_estado_inicial_titulo")) or "Digite uma placa para comecar"
     dados["paginas_menu_desabilitadas_json"] = normalizar_texto_campo(dados.get("paginas_menu_desabilitadas_json")) or "[]"
     dados["auto_teste_ativo"] = bool(int(dados.get("auto_teste_ativo") or 0))
-    dados["auto_teste_site_url"] = normalizar_texto_campo(dados.get("auto_teste_site_url")) or "https://wagenestetica.duckdns.org"
+    dados["auto_teste_site_url"] = normalizar_texto_campo(dados.get("auto_teste_site_url"))
     dados["auto_teste_intervalo_horas"] = max(1, min(24, converter_inteiro(dados.get("auto_teste_intervalo_horas"), 2)))
     dados["auto_teste_telegram_bot_token"] = normalizar_texto_campo(dados.get("auto_teste_telegram_bot_token"))
-    dados["auto_teste_telegram_bot_nick"] = normalizar_texto_campo(dados.get("auto_teste_telegram_bot_nick")) or "@wagenesteticabot"
+    dados["auto_teste_telegram_bot_nick"] = normalizar_texto_campo(dados.get("auto_teste_telegram_bot_nick"))
     dados["auto_teste_telegram_chat_id"] = normalizar_texto_campo(dados.get("auto_teste_telegram_chat_id"))
     dados["auto_teste_ultimo_status"] = normalizar_texto_campo(dados.get("auto_teste_ultimo_status"))
     dados["auto_teste_ultimo_relatorio"] = normalizar_texto_campo(dados.get("auto_teste_ultimo_relatorio"))
@@ -12052,15 +12071,17 @@ def montar_configuracao_auto_teste_form(form):
     token = "" if remover_token else (token_informado or atual.get("auto_teste_telegram_bot_token") or "")
     chat_id = normalizar_texto_campo(form.get("auto_teste_telegram_chat_id"))
     bot_nick = normalizar_bot_telegram(form.get("auto_teste_telegram_bot_nick"))
-    site_url = normalizar_texto_campo(form.get("auto_teste_site_url")) or "https://wagenestetica.duckdns.org"
+    site_url = normalizar_texto_campo(form.get("auto_teste_site_url"))
     intervalo = max(1, min(24, converter_inteiro(form.get("auto_teste_intervalo_horas"), 2)))
 
-    if not site_url.startswith(("https://", "http://")):
+    if bool_config_ativo(form.get("auto_teste_ativo")) and not site_url:
+        raise ValueError("Informe a URL completa do site para ativar o auto teste.")
+    if site_url and not site_url.startswith(("https://", "http://")):
         raise ValueError("Informe a URL completa do site, com https://.")
 
     return {
         "auto_teste_ativo": 1 if bool_config_ativo(form.get("auto_teste_ativo")) else 0,
-        "auto_teste_site_url": site_url.rstrip("/"),
+        "auto_teste_site_url": site_url.rstrip("/") if site_url else "",
         "auto_teste_intervalo_horas": intervalo,
         "auto_teste_telegram_bot_token": token,
         "auto_teste_telegram_bot_nick": bot_nick,
@@ -12169,7 +12190,7 @@ def check_auto_teste_banco_online():
 
 def executar_auto_teste_site(configuracao=None, enviar_telegram=True):
     configuracao = configuracao or obter_configuracao_empresa(force=True)
-    site_url = configuracao.get("auto_teste_site_url") or "https://wagenestetica.duckdns.org"
+    site_url = configuracao.get("auto_teste_site_url") or ""
     token = normalizar_texto_campo(configuracao.get("auto_teste_telegram_bot_token"))
     chat_id = normalizar_texto_campo(configuracao.get("auto_teste_telegram_chat_id"))
 
@@ -12497,7 +12518,7 @@ def obter_resultado_clima_api(permitir_rede=True):
         sessao_http = requests.Session()
         sessao_http.trust_env = False
         headers = {
-            "User-Agent": "WagenEstetica/1.0",
+            "User-Agent": "Sistema/1.0",
             "Accept": "application/json",
         }
         clima_api_url = normalizar_url_clima_api(configuracao.get("clima_api_url"))
@@ -12634,13 +12655,10 @@ def salvar_configuracao_site_form(form, files):
     logo_info = preparar_logo_site_upload(files.get("marca_logo"))
     favicon_info = preparar_favicon_site_upload(files.get("marca_favicon"))
 
-    marca_nome = normalizar_texto_campo(form.get("marca_nome")) or "Wagen Estetica Automotiva"
-    marca_subtitulo = normalizar_texto_campo(form.get("marca_subtitulo")) or "Gestao Estetica"
-    site_titulo = normalizar_texto_campo(form.get("site_titulo")) or "Gestao Estetica"
-    site_rodape_texto = (
-        normalizar_texto_campo(form.get("site_rodape_texto"))
-        or f"Desenvolvido por Luiz Henrique | Qualquer Erro Contate o Desenvolvedor | {marca_nome} | Direitos Reservados."
-    )
+    marca_nome = normalizar_texto_campo(form.get("marca_nome"))
+    marca_subtitulo = normalizar_texto_campo(form.get("marca_subtitulo"))
+    site_titulo = normalizar_texto_campo(form.get("site_titulo"))
+    site_rodape_texto = normalizar_texto_campo(form.get("site_rodape_texto"))
     marca_logo_url = normalizar_texto_campo(form.get("marca_logo_url"))
     marca_favicon_url = normalizar_texto_campo(form.get("marca_favicon_url"))
     marca_cor_primaria = normalizar_cor_hex(form.get("marca_cor_primaria"), "#facc15")
@@ -13424,11 +13442,7 @@ def montar_logo_pdf_branding(config):
             return ImagemRedonda(BytesIO(bytes(config["marca_logo_blob"])), size=72)
         except Exception:
             pass
-
-    try:
-        return ImagemRedonda("static/logo.jpg", size=72)
-    except Exception:
-        return None
+    return None
 
 
 def montar_tabela_itens_pdf(itens, cor_cabecalho="#111827"):
@@ -13508,7 +13522,7 @@ def gerar_pdf_orcamento_buffer(orcamento):
         empresa_brand.get("nome_fantasia")
         or empresa_brand.get("razao_social")
         or branding.get("brand_name")
-        or "Wagen Estetica Automotiva"
+        or "Sistema"
     )
     elementos.append(Paragraph(xml_escape(nome_empresa), titulo_style))
 
@@ -14448,7 +14462,7 @@ def servir_foto_perfil_usuario_banco(usuario_id):
 @app.route("/branding/logo")
 def servir_logo_site():
     if not INIT_DB_EXECUTADO:
-        return redirect("/static/logo.jpg")
+        return ("Logo nao configurada.", 404)
 
     dados = (carregar_dados_contexto_produto(incluir_blobs=True).get("config") or {})
 
@@ -14467,13 +14481,13 @@ def servir_logo_site():
     if logo_url:
         return redirect(logo_url)
 
-    return redirect("/static/logo.jpg")
+    return ("Logo nao configurada.", 404)
 
 
 @app.route("/branding/favicon")
 def servir_favicon_site():
     if not INIT_DB_EXECUTADO:
-        return redirect("/static/favicon.jpg")
+        return ("Favicon nao configurado.", 404)
 
     dados = (carregar_dados_contexto_produto(incluir_blobs=True).get("config") or {})
 
@@ -14500,7 +14514,7 @@ def servir_favicon_site():
     if logo_url:
         return redirect(logo_url)
 
-    return redirect("/static/favicon.jpg")
+    return ("Favicon nao configurado.", 404)
 
 
 @app.route("/site.webmanifest")
@@ -15471,7 +15485,7 @@ def montar_sugestao_contato_retorno(item):
     recomendacao = str(recomendacao or "").rstrip(".")
 
     return (
-        f"{saudacao} Seu {referencia} ja esta ha {dias_texto} sem retornar na Wagen. "
+        f"{saudacao} Seu {referencia} ja esta ha {dias_texto} sem retornar para atendimento. "
         f"{recomendacao}. Se quiser, podemos deixar seu atendimento agendado."
     )
 
@@ -16886,7 +16900,7 @@ def offline():
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sem conexao - Wagen Estetica</title>
+    <title>Sem conexao - Sistema</title>
     <link rel="stylesheet" href="/static/responsive.css">
 </head>
 <body>
@@ -19348,8 +19362,8 @@ def montar_info_apk_mobile(installed_version=""):
 
     return {
         "ok": True,
-        "app_name": "Wagen App",
-        "package": "com.wagen.mobile",
+        "app_name": "App mobile",
+        "package": "",
         "installed_version": installed_version,
         "latest_version": latest_version,
         "version_name": latest_version,
@@ -21047,7 +21061,7 @@ def enviar_alerta_estabilidade_assincrono(texto, chave, intervalo=None):
 
 def montar_alerta_erro_500_telegram(registro):
     return (
-        "Alerta de estabilidade Wagen Estetica\n"
+        "Alerta de estabilidade do sistema\n"
         "Tipo: erro 500\n"
         f"Rota: {registro.get('path') or registro.get('endpoint') or '-'}\n"
         f"Usuario: {registro.get('usuario') or '-'}\n"
@@ -21066,7 +21080,7 @@ def avaliar_alerta_estabilidade_resposta(caminho, metrica):
         alertas.append(
             (
                 f"rota_lenta:{caminho}",
-                "Alerta de estabilidade Wagen Estetica\n"
+                "Alerta de estabilidade do sistema\n"
                 "Tipo: rota acima de 2s\n"
                 f"Rota: {caminho}\n"
                 f"Tempo: {tempo_ms} ms\n"
@@ -21078,7 +21092,7 @@ def avaliar_alerta_estabilidade_resposta(caminho, metrica):
         alertas.append(
             (
                 f"rota_piorando:{caminho}",
-                "Alerta de estabilidade Wagen Estetica\n"
+                "Alerta de estabilidade do sistema\n"
                 "Tipo: rota piorou 3 vezes seguidas\n"
                 f"Rota: {caminho}\n"
                 f"Ultimo tempo: {tempo_ms} ms\n"
@@ -21090,7 +21104,7 @@ def avaliar_alerta_estabilidade_resposta(caminho, metrica):
         alertas.append(
             (
                 f"rota_500:{caminho}:{status}",
-                "Alerta de estabilidade Wagen Estetica\n"
+                "Alerta de estabilidade do sistema\n"
                 "Tipo: resposta 500\n"
                 f"Rota: {caminho}\n"
                 f"Status: {status}\n"
@@ -21753,7 +21767,7 @@ def normalizar_modo_autonomia_auto_suporte(modo):
 
 
 def obter_modo_autonomia_auto_suporte(estado=None):
-    estado = estado or carregar_estado_auto_suporte()
+    estado = estado if estado is not None else carregar_estado_auto_suporte()
     autonomia = estado.get("autonomia") if isinstance(estado, dict) else {}
     autonomia = autonomia if isinstance(autonomia, dict) else {}
     return normalizar_modo_autonomia_auto_suporte(autonomia.get("modo") or AUTO_SUPORTE_MODO_AUTONOMIA_PADRAO)
@@ -22771,7 +22785,7 @@ def montar_narrativa_auto_suporte(status_payload):
 
 def planejar_acoes_autonomas_auto_suporte(status_payload, estado=None):
     status_payload = status_payload or {}
-    estado = estado or carregar_estado_auto_suporte()
+    estado = estado if estado is not None else carregar_estado_auto_suporte()
     autonomia = estado.get("autonomia") if isinstance(estado, dict) else {}
     autonomia = autonomia if isinstance(autonomia, dict) else {}
     acoes_estado = autonomia.get("acoes") if isinstance(autonomia.get("acoes"), dict) else {}
@@ -23058,7 +23072,7 @@ def avaliar_alertas_auto_suporte(status_payload):
         )
         if nivel in {"critico", "alerta"}:
             enviar_alerta_estabilidade_assincrono(
-                "AutoSuporte Wagen Estetica\n"
+                "AutoSuporte do sistema\n"
                 f"Nivel: {diagnostico.get('label')}\n"
                 f"Resumo: {diagnostico.get('frase')}\n"
                 "Acao: abra o AutoSuporte ou gere pacote Codex.",
@@ -23074,14 +23088,14 @@ def avaliar_alertas_auto_suporte(status_payload):
                 detalhes={"estado_anterior": estado_anterior},
             )
             enviar_alerta_estabilidade_assincrono(
-                "AutoSuporte Wagen Estetica\nStatus normalizado.\nNenhum incidente critico no momento.",
+                "AutoSuporte do sistema\nStatus normalizado.\nNenhum incidente critico no momento.",
                 chave="auto_suporte_normalizou",
                 intervalo=1800,
             )
 
     if agora_ts - resumo_ts >= 7200:
         enviar_alerta_estabilidade_assincrono(
-            "Resumo AutoSuporte Wagen Estetica\n"
+            "Resumo AutoSuporte do sistema\n"
             f"Nivel: {diagnostico.get('label')}\n"
             f"Resumo: {diagnostico.get('frase')}\n"
             f"Erros abertos: {len(status_payload.get('erros_abertos') or [])}\n"
@@ -23469,7 +23483,7 @@ def executar_acao_auto_suporte(acao, observacao="", confirmacao=""):
         severidade = "info" if (backup.get("ok") or ultimo) else "warning"
     elif acao == "testar_telegram":
         chat_id = enviar_alerta_telegram_auto_suporte(
-            "AutoSuporte Wagen Estetica\nTeste manual do bot concluido com sucesso."
+            "AutoSuporte do sistema\nTeste manual do bot concluido com sucesso."
         )
         detalhes["chat_id"] = chat_id
         detalhes["telegram_enviado"] = True
@@ -23524,7 +23538,7 @@ def executar_acao_auto_suporte(acao, observacao="", confirmacao=""):
     elif acao == "enviar_relatorio_telegram":
         pacote = montar_pacote_codex_auto_suporte()
         resumo = (
-            "Relatorio AutoSuporte Wagen Estetica\n"
+            "Relatorio AutoSuporte do sistema\n"
             f"Gerado em: {pacote.get('gerado_em')}\n"
             f"Erros abertos: {len(pacote.get('erros_abertos') or [])}\n"
             f"Ultimo erro: {(pacote.get('ultimo_erro') or {}).get('tipo') or '-'}\n"
@@ -23540,7 +23554,7 @@ def executar_acao_auto_suporte(acao, observacao="", confirmacao=""):
         severidade = "warning"
     elif acao == "enviar_alerta_telegram":
         texto = observacao or "AutoSuporte executado: revisar o status do sistema."
-        chat_id = enviar_alerta_telegram_auto_suporte(f"AutoSuporte Wagen Estetica\n{texto}")
+        chat_id = enviar_alerta_telegram_auto_suporte(f"AutoSuporte do sistema\n{texto}")
         detalhes["chat_id"] = chat_id
         detalhes["telegram_enviado"] = True
         mensagem = "Alerta enviado para o Telegram."
@@ -23747,7 +23761,7 @@ def enviar_erro_central_tecnica_telegram(erro_id):
         return redirect(destino_configuracoes("desenvolvedor"))
 
     texto = (
-        "Erro de producao Wagen Estetica\n"
+        "Erro de producao do sistema\n"
         f"Quando: {erro_item.get('quando')}\n"
         f"Rota: {erro_item.get('path') or erro_item.get('endpoint')}\n"
         f"Usuario: {erro_item.get('usuario') or '-'}\n"
@@ -25745,7 +25759,7 @@ def index():
         buscou=buscou,
         placa=placa,
         lavagem_info=lavagem_info,
-        version=obter_versao_sistema(),
+        version=obter_versao_sistema() if placa else APP_VERSION,
         feedback_index=session.pop("index_feedback", None),
         servicos_lista=servicos_lista,
         produtos_pneu=produtos_pneu

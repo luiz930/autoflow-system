@@ -18,21 +18,21 @@ class SiteMonitorTests(TestCase):
         monitor = carregar_monitor()
 
         self.assertEqual(
-            monitor.normalize_base_url("https://wagenestetica.duckdns.org/"),
-            "https://wagenestetica.duckdns.org",
+            monitor.normalize_base_url("https://sistema.exemplo.com/"),
+            "https://sistema.exemplo.com",
         )
 
     def test_build_report_marca_falha_quando_algum_check_falha(self):
         monitor = carregar_monitor()
 
         report = monitor.build_report(
-            "https://wagenestetica.duckdns.org/",
+            "https://sistema.exemplo.com/",
             [
                 monitor.CheckResult("Login", True, 200, 120, "HTTP 200"),
                 monitor.CheckResult("Status PWA", False, 500, 300, "HTTP 500"),
             ],
         )
 
-        self.assertIn("Monitor Wagen Estetica: FALHA", report)
+        self.assertIn("Monitor do sistema: FALHA", report)
         self.assertIn("OK - Login", report)
         self.assertIn("FALHOU - Status PWA", report)

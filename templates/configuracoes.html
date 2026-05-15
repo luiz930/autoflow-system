@@ -217,9 +217,8 @@
                         name="auto_teste_site_url"
                         type="url"
                         value="{{ configuracao_empresa.auto_teste_site_url }}"
-                        placeholder="https://wagenestetica.duckdns.org"
+                        placeholder="https://seu-dominio.com.br"
                         autocomplete="off"
-                        required
                     >
                     <span class="field-help">Endereco publico que sera testado. Use HTTPS para validar o app instalado.</span>
                 </label>
@@ -245,7 +244,7 @@
                         name="auto_teste_telegram_bot_nick"
                         type="text"
                         value="{{ configuracao_empresa.auto_teste_telegram_bot_nick }}"
-                        placeholder="@wagenesteticabot"
+                        placeholder="@seubot"
                         autocomplete="off"
                     >
                     <span class="field-help">Nome publico do bot. Serve para documentar qual bot esta configurado.</span>
@@ -1155,7 +1154,7 @@
                     name="destino_externo_pasta"
                     value="{{ backup_config.destino_externo_pasta }}"
                     list="pastas-sync-sugeridas"
-                    placeholder="Ex.: C:\\Users\\seu-usuario\\Google Drive\\Wagen Backups"
+                    placeholder="Ex.: C:\\Users\\seu-usuario\\Google Drive\\Backups"
                 >
                 <datalist id="pastas-sync-sugeridas">
                     {% for caminho in pastas_sync_sugeridas %}
@@ -1512,7 +1511,7 @@ const syncIntervalInput = document.querySelector("[data-sync-interval-input]");
 const syncIntervalApply = document.querySelector("[data-sync-interval-apply]");
 const syncIntervalNow = document.querySelector("[data-sync-interval-now]");
 const syncIntervalFeedback = document.querySelector("[data-sync-interval-feedback]");
-const SYNC_INTERVAL_KEY = "wagen_sync_interval_seconds";
+const SYNC_INTERVAL_KEY = "sistema_sync_interval_seconds";
 const SYNC_INTERVAL_PADRAO = 600;
 
 function lerIntervaloSincroniaSalvo() {

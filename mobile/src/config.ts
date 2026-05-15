@@ -1,4 +1,4 @@
-export const DEFAULT_SERVER_URL = "https://wagenestetica.duckdns.org";
+export const DEFAULT_SERVER_URL = "https://seu-dominio.com.br";
 export const APP_MOBILE_VERSION = "0.1.1";
 
 export function normalizeServerUrl(value?: string) {

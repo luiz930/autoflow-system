@@ -1,2 +1,1 @@
-"""Fundacao de produto para o sistema Wagen."""
-
+"""Fundacao de produto para o sistema."""

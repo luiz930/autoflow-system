@@ -1,4 +1,4 @@
-# Wagen Estetica Automotiva
+# Sistema operacional
 
 Sistema Flask para operacao de estetica automotiva com:
 

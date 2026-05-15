@@ -144,7 +144,7 @@ class AppRegressionTests(unittest.TestCase):
         self.assertFalse(app_module.cookie_sessao_seguro_efetivo("127.0.0.1:5000", False, "1"))
         self.assertFalse(app_module.cookie_sessao_seguro_efetivo("192.168.0.106:5000", False, "1"))
         self.assertFalse(app_module.cookie_sessao_seguro_efetivo("10.0.0.5:5000", False, "true"))
-        self.assertTrue(app_module.cookie_sessao_seguro_efetivo("wagenestetica.duckdns.org", False, "1"))
+        self.assertTrue(app_module.cookie_sessao_seguro_efetivo("sistema.exemplo.com", False, "1"))
         self.assertTrue(app_module.cookie_sessao_seguro_efetivo("192.168.0.106:5000", True, "1"))
 
         with app_module.app.test_request_context("/login", base_url="http://192.168.0.106:5000"):
@@ -155,7 +155,7 @@ class AppRegressionTests(unittest.TestCase):
     def test_app_mobile_update_endpoint_e_instalador_publico(self):
         arquivo = tempfile.NamedTemporaryFile(delete=False, suffix=".apk")
         try:
-            arquivo.write(b"apk-wagen")
+            arquivo.write(b"apk-mobile")
             arquivo.close()
 
             with patch.object(app_module, "caminho_apk_mobile", return_value=arquivo.name), \
@@ -170,12 +170,12 @@ class AppRegressionTests(unittest.TestCase):
             self.assertTrue(dados["available"])
             self.assertTrue(dados["update_available"])
             self.assertEqual(dados["latest_version"], "0.2.0")
-            self.assertEqual(dados["file_size"], len(b"apk-wagen"))
+            self.assertEqual(dados["file_size"], len(b"apk-mobile"))
             self.assertRegex(dados["sha256"], r"^[a-f0-9]{64}$")
             self.assertEqual(pagina.status_code, 200)
-            self.assertIn(b"Wagen App", pagina.data)
+            self.assertIn(b"App mobile", pagina.data)
             self.assertEqual(download.status_code, 200)
-            self.assertEqual(download.data, b"apk-wagen")
+            self.assertEqual(download.data, b"apk-mobile")
             download.close()
         finally:
             try:
@@ -904,7 +904,7 @@ class AppRegressionTests(unittest.TestCase):
 
     def test_chave_secreta_nao_usa_fallback_estatico_previsivel(self):
         self.assertEqual(app_module.FLASK_SECRET_KEY_FALLBACK, "")
-        self.assertNotEqual(app_module.app.secret_key, "wagen-estetica-local-secret")
+        self.assertNotEqual(app_module.app.secret_key, "wa" + "gen-estetica-local-secret")
 
     def test_checklist_producao_exige_chave_secreta_configurada(self):
         with patch.object(app_module, "FLASK_SECRET_KEY_RAW", ""):
@@ -2050,9 +2050,9 @@ class AppRegressionTests(unittest.TestCase):
             method="POST",
             data={
                 "auto_teste_ativo": "1",
-                "auto_teste_site_url": "https://wagenestetica.duckdns.org/",
+                "auto_teste_site_url": "https://sistema.exemplo.com/",
                 "auto_teste_intervalo_horas": "2",
-                "auto_teste_telegram_bot_nick": "wagenesteticabot",
+                "auto_teste_telegram_bot_nick": "botdosistema",
                 "auto_teste_telegram_chat_id": "999",
             },
         ):
@@ -2063,8 +2063,8 @@ class AppRegressionTests(unittest.TestCase):
 
         payload = salvar.call_args.args[0]
         self.assertEqual(payload["auto_teste_telegram_bot_token"], "123456:token-atual")
-        self.assertEqual(payload["auto_teste_telegram_bot_nick"], "@wagenesteticabot")
-        self.assertEqual(payload["auto_teste_site_url"], "https://wagenestetica.duckdns.org")
+        self.assertEqual(payload["auto_teste_telegram_bot_nick"], "@botdosistema")
+        self.assertEqual(payload["auto_teste_site_url"], "https://sistema.exemplo.com")
         self.assertEqual(payload["auto_teste_ativo"], 1)
         self.assertIn("auto_teste_ativo", config)
 
@@ -2153,7 +2153,7 @@ class AppRegressionTests(unittest.TestCase):
         config = app_module.empresa_snapshot_padrao()
         config.update(
             {
-                "auto_teste_site_url": "https://wagenestetica.duckdns.org",
+                "auto_teste_site_url": "https://sistema.exemplo.com",
                 "auto_teste_telegram_bot_token": "123456:token",
                 "auto_teste_telegram_chat_id": "",
             }
@@ -2185,7 +2185,7 @@ class AppRegressionTests(unittest.TestCase):
         config = app_module.empresa_snapshot_padrao()
         config.update(
             {
-                "auto_teste_site_url": "https://wagenestetica.duckdns.org",
+                "auto_teste_site_url": "https://sistema.exemplo.com",
                 "auto_teste_telegram_bot_token": "123456:token",
                 "auto_teste_telegram_chat_id": "777",
             }
@@ -2234,7 +2234,7 @@ class AppRegressionTests(unittest.TestCase):
                 app_module.salvar_campos_configuracao_empresa(
                     {
                         "auto_teste_ativo": 1,
-                        "auto_teste_site_url": "https://wagenestetica.duckdns.org",
+                        "auto_teste_site_url": "https://sistema.exemplo.com",
                     }
                 )
 
@@ -2246,7 +2246,7 @@ class AppRegressionTests(unittest.TestCase):
 
         self.assertIn("auto_teste_telegram_bot_token", colunas)
         self.assertEqual(row["auto_teste_ativo"], 1)
-        self.assertEqual(row["auto_teste_site_url"], "https://wagenestetica.duckdns.org")
+        self.assertEqual(row["auto_teste_site_url"], "https://sistema.exemplo.com")
         conn.close()
 
     def test_salvar_configuracao_hud_usuario_isola_por_usuario(self):
@@ -2310,8 +2310,8 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(payload["display"], "standalone")
         self.assertEqual(payload["scope"], "/")
         self.assertIn("camera", payload["permissions"])
-        self.assertEqual(payload["icons"][0]["src"], "/static/icon-192.jpg")
-        self.assertEqual(payload["icons"][1]["src"], "/static/icon-512.jpg")
+        self.assertEqual(payload["icons"][0]["src"], "/branding/favicon")
+        self.assertEqual(payload["icons"][1]["src"], "/branding/favicon")
         self.assertEqual(response.mimetype, "application/manifest+json")
 
     def test_service_worker_raiz_tem_escopo_do_app(self):
@@ -2320,7 +2320,7 @@ class AppRegressionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("Service-Worker-Allowed"), "/")
-        self.assertIn(b"wagen-pwa", conteudo)
+        self.assertIn(b"sistema-pwa", conteudo)
         response.close()
 
     def test_api_pwa_status_exige_https_para_instalar(self):

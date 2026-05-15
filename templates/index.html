@@ -6,8 +6,10 @@
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <title>{{ site_title }}</title>
 
-<link rel="icon" href="{{ brand_favicon_url or '/static/favicon.jpg' }}">
-<link rel="apple-touch-icon" href="{{ brand_favicon_url or '/static/icon-192.jpg' }}">
+{% if brand_favicon_url %}
+<link rel="icon" href="{{ brand_favicon_url }}">
+<link rel="apple-touch-icon" href="{{ brand_favicon_url }}">
+{% endif %}
 
 <link rel="manifest" href="/site.webmanifest">
 <meta name="theme-color" content="{{ brand_primary_color }}">
@@ -1455,7 +1457,9 @@ input[type="file"] {
 <div class="sidebar">
 
 <div class="sidebar-header">
-<img src="{{ brand_logo_url or '/static/logo.jpg' }}" class="sidebar-logo" alt="{{ brand_name }}">
+{% if brand_logo_url %}
+<img src="{{ brand_logo_url }}" class="sidebar-logo" alt="{{ brand_name }}">
+{% endif %}
 <h2 class="sidebar-title">{{ brand_name }}</h2>
 <p class="sidebar-subtitle">{{ brand_subtitle }}</p>
 </div>
@@ -2044,7 +2048,7 @@ let agendaRetornoData = {
     contadores: { "15": 0, "30": 0, "45": 0 },
     restantes: 0
 };
-const AGENDA_RETORNO_STORAGE_KEY = "wagen_agenda_retorno_dispensada_v2";
+const AGENDA_RETORNO_STORAGE_KEY = "sistema_agenda_retorno_dispensada_v2";
 const NOTIFICACOES_REFRESH_MS = 45000;
 const AGENDA_REFRESH_MS = 240000;
 let notificacoesCarregadasEm = 0;
@@ -2792,7 +2796,7 @@ let hudData = {
 
 let alertaAtivo = false;
 let audioAlerta = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
-const HUD_STORAGE_KEY = "wagen_hud_expandido_v1";
+const HUD_STORAGE_KEY = "sistema_hud_expandido_v1";
 const HUD_AUTO_COLLAPSE_MS = 30000;
 let hudExpandido = carregarEstadoHudExpandido();
 let hudAutoCollapseTimer = null;

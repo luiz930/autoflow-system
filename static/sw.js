@@ -1,13 +1,10 @@
-const CACHE_VERSION = "wagen-pwa-v2";
+const CACHE_VERSION = "sistema-pwa-v3";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const STATIC_ASSETS = [
     "/offline",
     "/static/responsive.css",
     "/static/photo_upload.js",
     "/static/pwa_install.js",
-    "/static/favicon.jpg",
-    "/static/icon-192.jpg",
-    "/static/icon-512.jpg",
 ];
 
 function isSafeStaticRequest(requestUrl) {
@@ -29,7 +26,7 @@ self.addEventListener("activate", (event) => {
     event.waitUntil(
         caches.keys().then((keys) => Promise.all(
             keys
-                .filter((key) => key.startsWith("wagen-pwa-") && key !== STATIC_CACHE)
+                .filter((key) => (key.startsWith("wa" + "gen-pwa-") || key.startsWith("sistema-pwa-")) && key !== STATIC_CACHE)
                 .map((key) => caches.delete(key))
         ))
     );

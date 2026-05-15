@@ -1,16 +1,10 @@
 {
   "expo": {
-    "name": "Wagen App",
-    "slug": "wagen-mobile",
+    "name": "App mobile",
+    "slug": "app-mobile",
     "version": "0.1.1",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "icon": "./src/assets/icon-round.png",
-    "splash": {
-      "image": "./src/assets/logo.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#000000"
-    },
     "androidStatusBar": {
       "backgroundColor": "#000000",
       "barStyle": "light-content"
@@ -23,11 +17,7 @@
       "**/*"
     ],
     "android": {
-      "package": "com.wagen.mobile",
-      "adaptiveIcon": {
-        "foregroundImage": "./src/assets/icon-round.png",
-        "backgroundColor": "#000000"
-      },
+      "package": "com.sistema.mobile",
       "permissions": [
         "CAMERA"
       ],
@@ -40,7 +30,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.wagen.mobile",
+      "bundleIdentifier": "com.sistema.mobile",
       "infoPlist": {
         "NSCameraUsageDescription": "O app usa a camera para registrar fotos dos atendimentos."
       }
@@ -50,7 +40,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Permitir que o Wagen registre fotos dos atendimentos."
+          "cameraPermission": "Permitir que o app registre fotos dos atendimentos."
         }
       ],
       "expo-font",

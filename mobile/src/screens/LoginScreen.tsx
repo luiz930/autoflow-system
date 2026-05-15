@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -21,8 +20,6 @@ import {
 import { APP_MOBILE_VERSION, DEFAULT_SERVER_URL } from "../config";
 import { runSync } from "../sync/syncService";
 import { colors, spacing } from "../theme";
-
-const wagenLogo = require("../assets/logo.png");
 
 type Props = {
   onLoggedIn: (session: UserSession) => void;
@@ -84,9 +81,11 @@ export function LoginScreen({ onLoggedIn }: Props) {
       style={styles.screen}
     >
       <View style={styles.header}>
-        <Image accessibilityLabel="Wagen" resizeMode="contain" source={wagenLogo} style={styles.logo} />
+        <View style={styles.logo}>
+          <Text style={styles.logoText}>S</Text>
+        </View>
         <View>
-          <Text style={styles.kicker}>WAGEN ESTETICA</Text>
+          <Text style={styles.kicker}>SISTEMA</Text>
           <Text style={styles.title}>Login</Text>
           <Text style={styles.subtitle}>Acesso offline com sincronizacao posterior</Text>
         </View>
@@ -160,7 +159,7 @@ export function LoginScreen({ onLoggedIn }: Props) {
         </Pressable>
 
         {erro ? <Text style={styles.error}>{erro}</Text> : null}
-        <Text style={styles.version}>Conectado ao site Wagen</Text>
+        <Text style={styles.version}>Conectado ao site</Text>
         <Text style={styles.version}>App {APP_MOBILE_VERSION} offline-first</Text>
       </View>
     </KeyboardAvoidingView>
@@ -186,7 +185,14 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: "#000"
+    backgroundColor: colors.panel,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  logoText: {
+    color: colors.primary,
+    fontSize: 38,
+    fontWeight: "900"
   },
   kicker: {
     color: colors.primary,

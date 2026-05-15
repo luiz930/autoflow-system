@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Wagen App</title>
+  <title>App mobile</title>
   <style>
     :root {
       color-scheme: dark;
@@ -33,21 +33,13 @@
     }
     .hero {
       display: grid;
-      grid-template-columns: 150px 1fr;
+      grid-template-columns: 1fr;
       gap: 24px;
       align-items: center;
       border: 1px solid var(--border);
       border-radius: 24px;
       background: rgba(16, 24, 39, 0.94);
       padding: 24px;
-    }
-    .logo {
-      width: 150px;
-      height: 150px;
-      object-fit: contain;
-      border-radius: 28px;
-      border: 1px solid var(--border);
-      background: #000;
     }
     .kicker {
       display: inline-flex;
@@ -138,7 +130,6 @@
     @media (max-width: 720px) {
       main { width: min(100% - 20px, 980px); padding: 18px 0; }
       .hero { grid-template-columns: 1fr; }
-      .logo { width: 120px; height: 120px; }
       .grid { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 460px) {
@@ -150,11 +141,10 @@
 <body>
   <main>
     <section class="hero">
-      <img class="logo" src="/static/logo.jpg" alt="Wagen">
       <div>
         <span class="kicker">Instalador oficial</span>
-        <h1>Wagen App</h1>
-        <p>Baixe o APK oficial do app mobile Wagen. O pacote e assinado e preserva login, banco local, fila de sincronizacao e fotos pendentes ao atualizar por cima.</p>
+        <h1>App mobile</h1>
+        <p>Baixe o APK oficial do app mobile. O pacote e assinado e preserva login, banco local, fila de sincronizacao e fotos pendentes ao atualizar por cima.</p>
         <div class="status"><span class="dot"></span>{{ app_info.message }}</div>
         <div class="actions">
           {% if app_info.available %}
@@ -175,10 +165,6 @@
       <div class="card">
         <div class="label">Tamanho</div>
         <div class="value">{{ app_info.file_size_mb }} MB</div>
-      </div>
-      <div class="card">
-        <div class="label">Pacote Android</div>
-        <div class="value">{{ app_info.package }}</div>
       </div>
       <div class="card">
         <div class="label">Publicado em</div>

@@ -109,9 +109,9 @@ def seed_default_enterprise(cursor, now_iso):
         """,
         (
             1,
-            "wagen-estetica",
-            "Wagen Estetica Automotiva",
-            "Wagen Estetica",
+            "sistema",
+            "",
+            "Sistema",
             1,
             0,
             "database",
@@ -287,7 +287,7 @@ def apply_branding_and_storage(cursor, add_column):
             (
                 1,
                 1,
-                "Wagen Estetica Automotiva",
+                "Sistema",
                 "Gestao Estetica",
                 "#facc15",
                 "#111827",
@@ -303,7 +303,7 @@ def apply_branding_and_storage(cursor, add_column):
             """
             UPDATE configuracao_empresa
             SET empresa_id=COALESCE(empresa_id, 1),
-                marca_nome=COALESCE(NULLIF(marca_nome, ''), COALESCE(nome_fantasia, 'Wagen Estetica Automotiva')),
+                marca_nome=COALESCE(NULLIF(marca_nome, ''), COALESCE(nome_fantasia, 'Sistema')),
                 marca_subtitulo=COALESCE(NULLIF(marca_subtitulo, ''), 'Gestao Estetica'),
                 marca_cor_primaria=COALESCE(NULLIF(marca_cor_primaria, ''), '#facc15'),
                 marca_cor_secundaria=COALESCE(NULLIF(marca_cor_secundaria, ''), '#111827'),
@@ -334,7 +334,7 @@ def apply_site_customization(cursor, add_column):
             site_titulo = COALESCE(NULLIF(site_titulo, ''), 'Gestao Estetica'),
             site_rodape_texto = COALESCE(
                 NULLIF(site_rodape_texto, ''),
-                'Desenvolvido por Luiz Henrique | Qualquer Erro Contate o Desenvolvedor | Wagen Estetica Automotiva | Direitos Reservados.'
+                'Sistema'
             ),
             marca_cor_fundo = COALESCE(NULLIF(marca_cor_fundo, ''), '#0b0b0b'),
             marca_cor_superficie = COALESCE(NULLIF(marca_cor_superficie, ''), '#111827'),
@@ -931,7 +931,7 @@ def build_brand_context(config_row=None, empresa_row=None):
         config.get("marca_nome")
         or empresa.get("nome_fantasia")
         or config.get("nome_fantasia")
-        or "Wagen Estetica Automotiva"
+        or "Sistema"
     )
     brand_subtitle = corrigir_mojibake_texto(
         config.get("marca_subtitulo")
@@ -946,7 +946,7 @@ def build_brand_context(config_row=None, empresa_row=None):
     )
     site_footer_text = corrigir_mojibake_texto(
         config.get("site_rodape_texto")
-        or f"Desenvolvido por Luiz Henrique | Qualquer Erro Contate o Desenvolvedor | {brand_name} | Direitos Reservados."
+        or "Sistema"
     )
     brand_primary_color = config.get("marca_cor_primaria") or empresa.get("cor_primaria") or "#facc15"
     brand_secondary_color = config.get("marca_cor_secundaria") or empresa.get("cor_secundaria") or "#111827"
@@ -963,13 +963,13 @@ def build_brand_context(config_row=None, empresa_row=None):
     return {
         "brand_name": brand_name,
         "brand_subtitle": brand_subtitle,
-        "brand_logo_url": "/branding/logo" if logo_blob else (config.get("marca_logo_url") or empresa.get("logo_url") or "/static/logo.jpg"),
+        "brand_logo_url": "/branding/logo" if logo_blob else (config.get("marca_logo_url") or empresa.get("logo_url") or ""),
         "brand_favicon_url": (
             "/branding/favicon"
             if favicon_blob else
             (
                 config.get("marca_favicon_url")
-                or ("/branding/logo" if logo_blob else (config.get("marca_logo_url") or empresa.get("logo_url") or "/static/favicon.jpg"))
+                or ("/branding/logo" if logo_blob else (config.get("marca_logo_url") or empresa.get("logo_url") or ""))
             )
         ),
         "brand_primary_color": brand_primary_color,

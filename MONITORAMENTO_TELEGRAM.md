@@ -16,7 +16,7 @@ Se o token foi colado em conversa, print ou local publico, gere outro no BotFath
 
 ## Descobrir o chat_id
 
-1. Abra o Telegram e envie `/start` para `@wagenesteticabot`.
+1. Abra o Telegram e envie `/start` para o bot configurado no BotFather.
 2. No servidor ou no computador local, rode:
 
 ```bash
@@ -29,7 +29,7 @@ curl "https://api.telegram.org/botSEU_TOKEN/getUpdates"
 ## Rodar manualmente
 
 ```bash
-export SITE_MONITOR_URL="https://wagenestetica.duckdns.org"
+export SITE_MONITOR_URL="https://seu-dominio.com.br"
 export TELEGRAM_BOT_TOKEN="SEU_TOKEN"
 export TELEGRAM_CHAT_ID="SEU_CHAT_ID"
 python scripts/site_monitor.py
@@ -46,7 +46,7 @@ Configure estes secrets no GitHub:
 
 Opcionalmente configure a variable:
 
-- `SITE_MONITOR_URL=https://wagenestetica.duckdns.org`
+- `SITE_MONITOR_URL=https://seu-dominio.com.br`
 
 ## VPS com systemd timer
 
@@ -54,7 +54,7 @@ Crie o arquivo de ambiente fora do repositorio:
 
 ```bash
 tee /etc/lavagem-monitor.env >/dev/null <<'EOF'
-SITE_MONITOR_URL=https://wagenestetica.duckdns.org
+SITE_MONITOR_URL=https://seu-dominio.com.br
 SITE_MONITOR_TIMEOUT=15
 TELEGRAM_BOT_TOKEN=SEU_TOKEN
 TELEGRAM_CHAT_ID=SEU_CHAT_ID
@@ -68,7 +68,7 @@ Crie o servico:
 ```bash
 tee /etc/systemd/system/lavagem-monitor.service >/dev/null <<'EOF'
 [Unit]
-Description=Monitoramento Wagen Estetica
+Description=Monitoramento do sistema
 
 [Service]
 Type=oneshot
@@ -83,7 +83,7 @@ Crie o timer de 2 em 2 horas:
 ```bash
 tee /etc/systemd/system/lavagem-monitor.timer >/dev/null <<'EOF'
 [Unit]
-Description=Executa monitoramento Wagen Estetica a cada 2 horas
+Description=Executa monitoramento do sistema a cada 2 horas
 
 [Timer]
 OnBootSec=5min

@@ -59,7 +59,7 @@ class ProductFoundationMigrationsTests(unittest.TestCase):
         c.execute("SELECT id, slug FROM empresas WHERE id=1")
         empresa = c.fetchone()
         self.assertEqual(empresa["id"], 1)
-        self.assertEqual(empresa["slug"], "wagen-estetica")
+        self.assertEqual(empresa["slug"], "sistema")
 
         c.execute("PRAGMA table_info(configuracao_empresa)")
         colunas = {row[1] for row in c.fetchall()}
@@ -117,7 +117,7 @@ class ProductFoundationMigrationsTests(unittest.TestCase):
     def test_build_brand_context_corrige_textos_mojibake(self):
         contexto = build_brand_context(
             {
-                "marca_nome": "Wagen EstÃ©tica Automotiva",
+                "marca_nome": "Marca EstÃ©tica",
                 "site_titulo": "GestÃ£o EstÃ©tica",
                 "site_rodape_texto": "VersÃ£o atualizada",
                 "home_estado_inicial_titulo": "Digite uma placa para comeÃ§ar",
@@ -125,7 +125,7 @@ class ProductFoundationMigrationsTests(unittest.TestCase):
             {},
         )
 
-        self.assertEqual(contexto["brand_name"], "Wagen Estética Automotiva")
+        self.assertEqual(contexto["brand_name"], "Marca Estética")
         self.assertEqual(contexto["site_title"], "Gestão Estética")
         self.assertEqual(contexto["site_footer_text"], "Versão atualizada")
         self.assertEqual(contexto["home_empty_state_title"], "Digite uma placa para começar")

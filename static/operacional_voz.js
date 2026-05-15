@@ -1,8 +1,8 @@
 (function () {
-    const VOZ_ATIVA_KEY = "wagenPainelVozAtiva";
-    const VOZ_ALERTAS_KEY = "wagenPainelVozAlertas";
-    const VOZ_LIDER_KEY = "wagenPainelVozLider";
-    const VOZ_TAB_ID_KEY = "wagenPainelVozTabId";
+    const VOZ_ATIVA_KEY = "sistemaPainelVozAtiva";
+    const VOZ_ALERTAS_KEY = "sistemaPainelVozAlertas";
+    const VOZ_LIDER_KEY = "sistemaPainelVozLider";
+    const VOZ_TAB_ID_KEY = "sistemaPainelVozTabId";
     const VOZ_ENDPOINT = "/api/operacional/voz";
     const UI_REFRESH_MS = 45000;
     const SNAPSHOT_POLLING_MS = 300000;

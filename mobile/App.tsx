@@ -2,15 +2,13 @@ import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
 import { initDatabase } from "./src/database/db";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { clearPersistedSession, getBiometricLockEnabled, getPersistedSession, UserSession } from "./src/auth/authRepository";
 import { colors } from "./src/theme";
-
-const wagenLogo = require("./src/assets/logo.png");
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -40,7 +38,7 @@ export default function App() {
     setUnlockMessage("");
     try {
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: "Desbloquear Wagen",
+        promptMessage: "Desbloquear app",
         cancelLabel: "Sair",
         fallbackLabel: "Usar PIN"
       });
@@ -58,8 +56,10 @@ export default function App() {
     if (!ready) {
       return (
         <View style={styles.loading}>
-          <Image accessibilityLabel="Wagen" resizeMode="contain" source={wagenLogo} style={styles.loadingLogo} />
-          <Text style={styles.loadingTitle}>Wagen</Text>
+          <View style={styles.loadingLogo}>
+            <Text style={styles.loadingLogoText}>S</Text>
+          </View>
+          <Text style={styles.loadingTitle}>Sistema</Text>
           <Text style={styles.loadingSubtitle}>Preparando app</Text>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
@@ -73,8 +73,10 @@ export default function App() {
     if (locked) {
       return (
         <View style={styles.loading}>
-          <Image accessibilityLabel="Wagen" resizeMode="contain" source={wagenLogo} style={styles.loadingLogo} />
-          <Text style={styles.loadingTitle}>Wagen</Text>
+          <View style={styles.loadingLogo}>
+            <Text style={styles.loadingLogoText}>S</Text>
+          </View>
+          <Text style={styles.loadingTitle}>Sistema</Text>
           <Text style={styles.loadingSubtitle}>Acesso protegido</Text>
           <Pressable onPress={unlock} style={styles.unlockButton}>
             <Text style={styles.unlockButtonText}>Desbloquear com biometria/PIN</Text>
@@ -116,7 +118,14 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: "#000"
+    backgroundColor: colors.panel,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  loadingLogoText: {
+    color: colors.primary,
+    fontSize: 58,
+    fontWeight: "900"
   },
   loadingTitle: {
     color: colors.text,

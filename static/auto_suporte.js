@@ -9,7 +9,7 @@
 
     const estado = {
         status: null,
-        aberto: localStorage.getItem("wagen_auto_suporte_aberto") === "1",
+        aberto: localStorage.getItem("sistema_auto_suporte_aberto") === "1",
         logs: [],
         pacoteCodex: null,
         autonomiaRodando: false,
@@ -43,11 +43,11 @@
 
     function hojeOcultado() {
         const hoje = new Date().toISOString().slice(0, 10);
-        return localStorage.getItem("wagen_auto_suporte_oculto_hoje") === hoje;
+        return localStorage.getItem("sistema_auto_suporte_oculto_hoje") === hoje;
     }
 
     function ocultarPorHoje() {
-        localStorage.setItem("wagen_auto_suporte_oculto_hoje", new Date().toISOString().slice(0, 10));
+        localStorage.setItem("sistema_auto_suporte_oculto_hoje", new Date().toISOString().slice(0, 10));
         adicionarLog("Ocultado por hoje", "O painel nao vai abrir sozinho ate amanha.", true);
         fecharPainel();
     }
@@ -179,13 +179,13 @@
 
     function abrirPainel() {
         estado.aberto = true;
-        localStorage.setItem("wagen_auto_suporte_aberto", "1");
+        localStorage.setItem("sistema_auto_suporte_aberto", "1");
         renderizar();
     }
 
     function fecharPainel() {
         estado.aberto = false;
-        localStorage.setItem("wagen_auto_suporte_aberto", "0");
+        localStorage.setItem("sistema_auto_suporte_aberto", "0");
         renderizar();
     }
 

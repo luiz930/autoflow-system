@@ -40,7 +40,7 @@ jobs:
       - name: Monitor production site
         if: always()
         env:
-          SITE_MONITOR_URL: ${{ vars.SITE_MONITOR_URL || 'https://wagenestetica.duckdns.org' }}
+          SITE_MONITOR_URL: ${{ vars.SITE_MONITOR_URL || 'https://seu-dominio.com.br' }}
           SITE_MONITOR_TIMEOUT: "15"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
