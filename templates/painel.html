@@ -24,7 +24,7 @@
         <button type="button" id="vozToggleButton">Avisos por voz: ativados</button>
         <button type="button" id="vozTesteButton">Testar voz</button>
     </div>
-    <p class="muted-text top-spacing" id="vozStatusTexto">A cada 10 minutos, o sistema avisa em portugues do Brasil quais veiculos continuam em atendimento. Veiculos com entrega agendada avisam somente quando faltarem 30 minutos.</p>
+    <p class="muted-text top-spacing" id="vozStatusTexto">A cada 10 minutos, o sistema avisa quais {{ subject_plural_label|lower }} continuam em atendimento. Atendimentos com entrega agendada avisam somente quando faltarem 30 minutos.</p>
 </div>
 
 {% if servicos %}
@@ -35,7 +35,7 @@
         <p><b>Na lavagem:</b> {{ resumo_fluxo.lavagem }}</p>
         <p><b>Na finalizacao:</b> {{ resumo_fluxo.finalizacao }}</p>
         <p><b>Novos cadastros:</b> {{ resumo_fluxo.novos }}</p>
-        <p><b>Clientes retornando:</b> {{ resumo_fluxo.retornos }}</p>
+        <p><b>{{ customer_plural_label }} retornando:</b> {{ resumo_fluxo.retornos }}</p>
         <p><b>Com horario combinado:</b> {{ resumo_fluxo.com_horario }}</p>
         <p><b>Sem horario combinado:</b> {{ resumo_fluxo.sem_horario }}</p>
         <p><b>Atrasados:</b> {{ resumo_fluxo.atrasados }}</p>
@@ -69,9 +69,9 @@
 
     <h2 class="section-title">{{ s.tipo_nome }}</h2>
 
-    <p><b>Cliente:</b> {{ s.cliente_nome }}</p>
+    <p><b>{{ customer_label }}:</b> {{ s.cliente_nome }}</p>
     <p><b>Perfil:</b> <span class="pill-label">{{ s.perfil_cliente_atendimento_exibicao }}</span></p>
-    <p><b>Veiculo:</b> {{ s.placa }}{% if s.modelo %} - {{ s.modelo }}{% endif %}{% if s.cor %} / {{ s.cor }}{% endif %}</p>
+    <p><b>{{ subject_label }}:</b> {{ s.placa }}{% if s.modelo %} - {{ s.modelo }}{% endif %}{% if s.cor %} / {{ s.cor }}{% endif %}</p>
     <p><b>Valor:</b> R$ {{ s.valor_exibicao }}{% if s.tem_valor_adicional %} <span class="muted-text">(+ extra manual R$ {{ s.valor_adicional_exibicao }})</span>{% endif %}</p>
     <p><b>Entrada:</b> {{ s.entrada_exibicao }}</p>
     {% if s.entrega_prevista_exibicao %}
@@ -194,7 +194,7 @@
 
     <div class="page-card page-card--soft top-spacing">
         <h3 class="section-title">Cobrancas extras</h3>
-        <p class="muted-text">Use este campo quando o cliente pedir um servico adicional durante o atendimento. O valor entra no total do carro e fica no historico.</p>
+        <p class="muted-text">Use este campo quando o {{ customer_label|lower }} pedir um servico adicional durante o atendimento. O valor entra no total do atendimento e fica no historico.</p>
 
         <form action="/painel/servico/{{ s.id }}/cobranca-extra" method="POST" class="stack-form stack-form--wide">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">

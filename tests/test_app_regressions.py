@@ -2068,6 +2068,36 @@ class AppRegressionTests(unittest.TestCase):
         self.assertEqual(payload["auto_teste_ativo"], 1)
         self.assertIn("auto_teste_ativo", config)
 
+    def test_salvar_configuracao_site_aplica_nicho_e_textos_padrao(self):
+        atual = app_module.empresa_snapshot_padrao()
+
+        with app_module.app.test_request_context(
+            "/configuracoes/site",
+            method="POST",
+            data={
+                "marca_nome": "Sistema Multiuso",
+                "marca_subtitulo": "Operacao",
+                "nicho_empresa": "pet_shop",
+                "site_titulo": "Sistema Multiuso",
+                "login_titulo_publico": "Acesso",
+                "login_subtitulo_publico": "Entre",
+                "login_botao_texto": "Entrar",
+                "home_busca_placeholder": atual["home_busca_placeholder"],
+                "home_busca_botao_texto": "Buscar",
+                "home_estado_inicial_titulo": atual["home_estado_inicial_titulo"],
+            },
+        ):
+            with patch.object(app_module, "obter_configuracao_empresa", return_value=atual), \
+                 patch.object(app_module, "salvar_campos_configuracao_empresa") as salvar, \
+                 patch.object(app_module, "limpar_caches_interface"):
+                site = app_module.salvar_configuracao_site_form(request.form, request.files)
+
+        payload = salvar.call_args.args[0]
+        self.assertEqual(payload["nicho_empresa"], "pet_shop")
+        self.assertEqual(payload["home_busca_placeholder"], "Digite o nome do pet ou ID")
+        self.assertEqual(payload["home_estado_inicial_titulo"], "Digite o pet ou ID para comecar")
+        self.assertEqual(site["nicho_empresa_label"], "Pet shop e banho/tosa")
+
     def test_montar_payload_limpeza_configuracao_empresa_zera_campos_editaveis(self):
         payload = app_module.montar_payload_limpeza_configuracao_empresa()
 

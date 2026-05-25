@@ -1475,7 +1475,7 @@ input[type="file"] {
 <a href="/painel"><button><span>&#128202;</span> Painel</button></a>
 {% endif %}
 {% if pagina_menu_habilitada('clientes') %}
-<a href="/clientes"><button><span>&#128100;</span> Clientes</button></a>
+<a href="/clientes"><button><span>&#128100;</span> {{ customer_plural_label }}</button></a>
 {% endif %}
 {% if pagina_menu_habilitada('historico') %}
 <a href="/historico"><button><span>&#128340;</span> Historico</button></a>
@@ -1596,7 +1596,7 @@ input[type="file"] {
     <p><strong>Servico anterior:</strong> {{ lavagem_info.servico_anterior }}</p>
     <p><strong>Fonte:</strong> {{ lavagem_info.origem }}</p>
     {% if lavagem_info.carro or lavagem_info.cor %}
-    <p><strong>Referencia:</strong> {{ lavagem_info.carro or "Carro nao informado" }}{% if lavagem_info.cor %} / {{ lavagem_info.cor }}{% endif %}</p>
+    <p><strong>{{ reference_label }}:</strong> {{ lavagem_info.carro or (reference_label ~ " nao informado") }}{% if lavagem_info.cor %} / {{ lavagem_info.cor }}{% endif %}</p>
     {% endif %}
 
     <ul class="lavagem-recomendacoes">
@@ -1613,13 +1613,13 @@ input[type="file"] {
 
 <div class="card-cliente">
 
-<h2>Cliente</h2>
+<h2>{{ customer_label }}</h2>
 <p><strong>Nome:</strong> {{dados.nome}}</p>
 <p><strong>Telefone:</strong> {{dados.telefone}}</p>
 {% if dados.data_nascimento_exibicao %}
 <p><strong>Nascimento:</strong> {{dados.data_nascimento_exibicao}}</p>
 {% endif %}
-<p><strong>Carro:</strong> {{dados.modelo}} - {{dados.cor}}</p>
+<p><strong>{{ reference_label }}:</strong> {{dados.modelo}}{% if dados.cor %} - {{dados.cor}}{% endif %}</p>
 
 <button type="button" onclick="toggleEditar()">✏️ Editar</button>
 
@@ -1671,17 +1671,17 @@ input[type="file"] {
 <div class="novo-cliente-wrap">
     <div class="card destaque novo-cliente-card">
 
-        <h3>Novo Cliente</h3>
+        <h3>Novo {{ customer_label }}</h3>
 
         <form action="/cadastrar" method="POST" class="novo-cliente-form">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 
-            <input name="placa" placeholder="Placa" value="{{placa}}" required>
+            <input name="placa" placeholder="{{ identifier_label }}" value="{{placa}}" required>
             <input name="nome" placeholder="Nome">
             <input name="telefone" placeholder="Telefone">
             <input type="date" name="data_nascimento" placeholder="Nascimento">
-            <input name="modelo" placeholder="Modelo">
-            <input name="cor" placeholder="Cor">
+            <input name="modelo" placeholder="{{ reference_label }}">
+            <input name="cor" placeholder="{{ attribute_label }}">
 
             <button>Cadastrar</button>
 
@@ -2240,9 +2240,9 @@ function montarCardAgendaRetorno(item) {
     card.className = "agenda-card";
 
     const recomendacao = (item.recomendacoes || [])[0] || "Contato recomendado.";
-    const carroRef = item.carro || "Carro nao informado";
+    const carroRef = item.carro || "{{ reference_label }} nao informado";
     const corRef = item.cor ? ` / ${item.cor}` : "";
-    const clienteRef = item.cliente || "Cliente nao identificado";
+    const clienteRef = item.cliente || "{{ customer_label }} nao identificado";
 
     card.innerHTML = `
         <div class="agenda-card-top">
@@ -2255,7 +2255,7 @@ function montarCardAgendaRetorno(item) {
             </span>
         </div>
         <div class="agenda-card-meta">
-            <div><strong>Carro:</strong> ${carroRef}${corRef}</div>
+            <div><strong>{{ reference_label }}:</strong> ${carroRef}${corRef}</div>
             <div><strong>Ultima lavagem:</strong> ${item.ultima_lavagem} (${item.dias_desde} dias)</div>
             <div><strong>Servico anterior:</strong> ${item.servico || "Nao informado"}</div>
             <div><strong>Prioridade:</strong> ${item.prioridade_label}</div>
@@ -2292,7 +2292,7 @@ function renderizarAgendaRetorno() {
 
     const contador = document.createElement("span");
     contador.className = "agenda-chip";
-    contador.textContent = `${totalAgenda} carro(s)`;
+    contador.textContent = `${totalAgenda} {{ subject_label|lower }}(s)`;
     headerActions.appendChild(contador);
 
     const abrirCentral = document.createElement("button");
@@ -2348,7 +2348,7 @@ function renderizarAgendaRetorno() {
             const restante = document.createElement("div");
             restante.className = "agenda-empty";
             restante.textContent = (
-                `Ha mais ${itensRestantes} carro(s) pendente(s). Abra a central para ver tudo.`
+                `Ha mais ${itensRestantes} {{ subject_label|lower }}(s) pendente(s). Abra a central para ver tudo.`
             );
             dropdown.appendChild(restante);
         }

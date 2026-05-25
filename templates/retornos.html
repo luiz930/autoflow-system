@@ -25,13 +25,13 @@
     <div class="page-card">
         <p class="pill-label">Acao agora</p>
         <h2 class="section-title top-spacing">{{ resumo_retornos.acao_agora }}</h2>
-        <p class="muted-text">Carros que pedem contato comercial neste momento.</p>
+        <p class="muted-text">{{ subject_plural_label }} que pedem contato comercial neste momento.</p>
     </div>
 
     <div class="page-card">
         <p class="pill-label">Reagendados</p>
         <h2 class="section-title top-spacing">{{ resumo_retornos.reagendados }}</h2>
-        <p class="muted-text">Clientes com proximo contato programado.</p>
+        <p class="muted-text">{{ customer_plural_label }} com proximo contato programado.</p>
     </div>
 
     <div class="page-card">
@@ -43,7 +43,7 @@
     <div class="page-card">
         <p class="pill-label">Sem interesse</p>
         <h2 class="section-title top-spacing">{{ resumo_retornos.sem_interesse }}</h2>
-        <p class="muted-text">Clientes pausados temporariamente na central.</p>
+        <p class="muted-text">{{ customer_plural_label }} pausados temporariamente na central.</p>
     </div>
 </div>
 
@@ -58,7 +58,7 @@
                 {% endfor %}
             </select>
 
-            <input name="busca" placeholder="Buscar por placa, cliente, carro ou observacao" value="{{ filtros.busca }}">
+            <input name="busca" placeholder="Buscar por {{ identifier_label|lower }}, {{ customer_label|lower }}, {{ reference_label|lower }} ou observacao" value="{{ filtros.busca }}">
         </div>
 
         <div class="actions-row actions-row--left">
@@ -91,8 +91,8 @@
                         <span class="status-badge status-badge--muted">{{ item.status_retorno_label }}</span>
                         {% endif %}
                     </div>
-                    <h3 class="section-title top-spacing">{{ item.cliente or "Cliente nao identificado" }}</h3>
-                    <p class="muted-text">{{ item.carro or "Carro nao informado" }}{% if item.cor %} / {{ item.cor }}{% endif %}</p>
+                    <h3 class="section-title top-spacing">{{ item.cliente or (customer_label ~ " nao identificado") }}</h3>
+                    <p class="muted-text">{{ item.carro or (reference_label ~ " nao informado") }}{% if item.cor %} / {{ item.cor }}{% endif %}</p>
                 </div>
 
                 <div class="return-status-panel">
@@ -143,7 +143,7 @@
                     id="observacao-{{ loop.index }}"
                     name="observacao"
                     class="top-spacing"
-                    placeholder="Ex.: cliente pediu retorno na semana que vem, prefere WhatsApp, sem interesse por agora..."
+                    placeholder="Ex.: {{ customer_label|lower }} pediu retorno na semana que vem, prefere WhatsApp, sem interesse por agora..."
                 >{{ item.observacao }}</textarea>
 
                 <div class="return-actions">

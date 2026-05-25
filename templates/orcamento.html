@@ -2,7 +2,7 @@
 
 {% block title %}Orcamento{% endblock %}
 {% block titulo %}Orcamentos{% endblock %}
-{% block subtitulo %}Monte, salve e gere PDFs mais completos para os clientes{% endblock %}
+{% block subtitulo %}Monte, salve e gere PDFs mais completos para seus atendimentos{% endblock %}
 
 {% block actions %}
 <a href="/" class="button-link">
@@ -21,44 +21,44 @@
 <div class="page-grid page-grid--budget">
     <div class="page-card">
         <p class="pill-label">Novo orcamento</p>
-        <h2 class="section-title top-spacing">Dados do cliente e itens</h2>
+        <h2 class="section-title top-spacing">Dados do {{ customer_label|lower }} e itens</h2>
 
         <form action="/gerar_orcamento" method="POST" class="stack-form stack-form--wide stack-form--spacious" id="orcamento-form">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <div class="field-grid field-grid--budget-search">
                 <div>
-                    <label for="placa">Placa</label>
-                    <input id="placa" name="placa" placeholder="ABC1D23">
+                    <label for="placa">{{ identifier_label }}</label>
+                    <input id="placa" name="placa" placeholder="{{ identifier_placeholder }}">
                 </div>
                 <div>
                     <label>&nbsp;</label>
-                    <button type="button" id="buscar-cliente-btn">Buscar cliente pela placa</button>
+                    <button type="button" id="buscar-cliente-btn">Buscar {{ customer_label|lower }} pela referencia</button>
                 </div>
             </div>
 
             <div class="field-grid field-grid--budget-main">
                 <div>
-                    <label for="nome">Nome do cliente</label>
-                    <input id="nome" name="nome" placeholder="Nome do cliente" required>
+                    <label for="nome">Nome do {{ customer_label|lower }}</label>
+                    <input id="nome" name="nome" placeholder="Nome do {{ customer_label|lower }}" required>
                 </div>
                 <div>
                     <label for="telefone">Telefone</label>
                     <input id="telefone" name="telefone" placeholder="(51) 99999-9999">
                 </div>
                 <div>
-                    <label for="modelo">Modelo</label>
-                    <input id="modelo" name="modelo" placeholder="Modelo do veiculo">
+                    <label for="modelo">{{ reference_label }}</label>
+                    <input id="modelo" name="modelo" placeholder="{{ reference_placeholder }}">
                 </div>
             </div>
 
             <div class="field-grid field-grid--budget-details">
                 <div>
                     <label for="documento">CPF ou CNPJ</label>
-                    <input id="documento" name="documento" placeholder="Documento do cliente">
+                    <input id="documento" name="documento" placeholder="Documento do {{ customer_label|lower }}">
                 </div>
                 <div>
                     <label for="email">E-mail</label>
-                    <input id="email" name="email" placeholder="cliente@email.com">
+                    <input id="email" name="email" placeholder="contato@email.com">
                 </div>
                 <div>
                     <label for="validade_dias">Validade (dias)</label>
@@ -104,7 +104,7 @@
 
             <div>
                 <label for="observacoes">Observacoes comerciais</label>
-                <textarea id="observacoes" name="observacoes" placeholder="Prazo, garantia, condicoes especiais, recados para o cliente..."></textarea>
+                <textarea id="observacoes" name="observacoes" placeholder="Prazo, garantia, condicoes especiais, recados para o {{ customer_label|lower }}..."></textarea>
             </div>
 
             <div class="actions-row actions-row--left">
@@ -125,12 +125,12 @@
         </p>
         {% else %}
         <div class="alert-inline">
-            Preencha os dados da empresa para deixar os PDFs do orcamento mais completos para o cliente.
+            Preencha os dados da empresa para deixar os PDFs do orcamento mais completos para o {{ customer_label|lower }}.
         </div>
         {% endif %}
 
         <ul>
-            <li>Busque a placa para preencher nome, telefone e modelo automaticamente.</li>
+            <li>Busque a referencia para preencher nome, telefone e dados principais automaticamente.</li>
             <li>Use servicos cadastrados para ganhar velocidade e mantenha itens manuais para excecoes.</li>
             <li>Os orcamentos gerados ficam salvos com historico proprio para consulta e reimpressao.</li>
         </ul>
@@ -154,7 +154,7 @@
                     {{ item.cliente_nome }}
                 </div>
                 <div>
-                    <strong>Veiculo</strong>
+                    <strong>{{ subject_label }}</strong>
                     {{ item.modelo or "Nao informado" }}{% if item.placa %} / {{ item.placa }}{% endif %}
                 </div>
                 <div>

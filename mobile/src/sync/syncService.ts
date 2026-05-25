@@ -358,6 +358,7 @@ export async function fetchMobileHud(config: SyncConfig): Promise<MobileHudResul
     }
     const hud: MobileHudPayload = data.hud || {};
     const site: MobileSiteState = {
+      contexto_negocio: data.contexto_negocio,
       clima: data.clima,
       hud,
       modulos: data.modulos,

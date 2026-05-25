@@ -7,8 +7,15 @@
     const UI_REFRESH_MS = 45000;
     const SNAPSHOT_POLLING_MS = 300000;
     const LIDER_TTL_MS = 90000;
+    const LABELS = {
+        subject: document.body?.dataset?.subjectLabel || "veiculo",
+        identifier: document.body?.dataset?.identifierLabel || "placa",
+        reference: document.body?.dataset?.referenceLabel || "modelo",
+    };
+    const subjectLower = String(LABELS.subject || "veiculo").toLowerCase();
+    const identifierLower = String(LABELS.identifier || "placa").toLowerCase();
     const STATUS_PADRAO =
-        "A cada 10 minutos, o sistema avisa em portugues do Brasil quais veiculos continuam em atendimento. Veiculos com entrega agendada avisam somente quando faltarem 30 minutos.";
+        `A cada 10 minutos, o sistema avisa em portugues do Brasil quais ${subjectLower}(s) continuam em atendimento. Atendimentos com entrega agendada avisam somente quando faltarem 30 minutos.`;
 
     let servicosCache = [];
     let snapshotEm = Date.now();
@@ -218,14 +225,14 @@
         const modelo = String(item.modelo || "").trim();
 
         if (modelo && placa) {
-            return `${modelo}, placa ${placa}`;
+            return `${modelo}, ${identifierLower} ${placa}`;
         }
 
         if (modelo) {
             return modelo;
         }
 
-        return `placa ${placa || "sem identificacao"}`;
+        return `${identifierLower} ${placa || "sem identificacao"}`;
     }
 
     function obterServicosAtuais() {
@@ -333,7 +340,7 @@
         if (!ativa) {
             texto = "Os avisos por voz estao pausados neste navegador.";
         } else if (totalAtivos === 0) {
-            texto = "Nenhum atendimento em andamento no momento. O aviso sera retomado automaticamente quando houver carros em operacao.";
+            texto = `Nenhum atendimento em andamento no momento. O aviso sera retomado automaticamente quando houver ${subjectLower}(s) em operacao.`;
         } else if (!lider) {
             texto = "Os avisos por voz estao ativos, mas outra aba deste sistema esta responsavel pelos avisos para evitar duplicidade.";
         }

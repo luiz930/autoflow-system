@@ -88,6 +88,21 @@ export function screenTitle(screen: AppScreenKey) {
   return titles[screen];
 }
 
+function businessLabels(sync: Props["sync"]) {
+  const contexto = sync.siteState?.contexto_negocio || {};
+  return {
+    customer: contexto.customer_label || "Cliente",
+    customers: contexto.customer_plural_label || "Clientes",
+    subject: contexto.subject_label || "Veiculo",
+    identifier: contexto.identifier_label || "Placa",
+    identifierPlaceholder: contexto.identifier_placeholder || "ABC1D23",
+    reference: contexto.reference_label || "Modelo",
+    attribute: contexto.attribute_label || "Cor",
+    searchPlaceholder: contexto.search_placeholder || "Digite a placa",
+    emptyTitle: contexto.empty_state_title || "Digite uma placa para comecar"
+  };
+}
+
 export function NativeScreenContent({ screen, onOpenCamera, onRefreshPending, sync }: Props) {
   let content: ReactNode;
   if (screen === "inicio") {
@@ -119,6 +134,7 @@ export function NativeScreenContent({ screen, onOpenCamera, onRefreshPending, sy
 }
 
 function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: (target: CameraTarget) => void; onSaved: () => void; sync: Props["sync"] }) {
+  const labels = businessLabels(sync);
   const [resumo, setResumo] = useState({ clientes: 0, servicos: 0, fotos: 0, pendencias: 0 });
   const [placa, setPlaca] = useState("");
   const [resultados, setResultados] = useState<BuscaPlacaResultado[]>([]);
@@ -242,15 +258,15 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: (target: 
 
       <View style={styles.searchHero}>
         <Text style={styles.pill}>Pagina principal</Text>
-        <Text style={styles.heroTitle}>Digite a placa para comecar</Text>
-        <Text style={styles.muted}>Mesmo fluxo da home do site: buscar placa, cadastrar cliente ou iniciar atendimento.</Text>
+        <Text style={styles.heroTitle}>{labels.emptyTitle}</Text>
+        <Text style={styles.muted}>Mesmo fluxo da home do site: buscar referencia, cadastrar {labels.customer.toLowerCase()} ou iniciar atendimento.</Text>
         <View style={styles.searchRow}>
           <TextInput
             autoCapitalize="characters"
             onChangeText={(value) => {
               setPlaca(value.toUpperCase());
             }}
-            placeholder="Digite a placa"
+            placeholder={labels.searchPlaceholder}
             placeholderTextColor={colors.muted}
             style={[styles.input, styles.searchInput]}
             value={placa}
@@ -269,7 +285,7 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: (target: 
 
       {!buscou && (
         <View style={styles.centerStateCard}>
-          <Text style={styles.cardTitle}>Digite uma placa para comecar</Text>
+          <Text style={styles.cardTitle}>{labels.emptyTitle}</Text>
           <Text style={styles.muted}>O app procura primeiro no banco local sincronizado com o site.</Text>
         </View>
       )}
@@ -279,23 +295,23 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: (target: 
           <View style={styles.card}>
             <View style={styles.sectionHeader}>
               <View>
-                <Text style={styles.cardTitle}>Cliente</Text>
+                <Text style={styles.cardTitle}>{labels.customer}</Text>
                 <Text style={styles.muted}>{selecionado.placa}</Text>
               </View>
               <Text style={styles.badge}>{selecionado.atendimento_ativo ? "Em andamento" : "Encontrado"}</Text>
             </View>
             <Text style={styles.infoLine}>Nome: {selecionado.cliente_nome || "Nao informado"}</Text>
             <Text style={styles.infoLine}>Telefone: {selecionado.cliente_telefone || "Nao informado"}</Text>
-            <Text style={styles.infoLine}>Carro: {selecionado.modelo || "Nao informado"} {selecionado.cor ? `- ${selecionado.cor}` : ""}</Text>
+            <Text style={styles.infoLine}>{labels.reference}: {selecionado.modelo || "Nao informado"} {selecionado.cor ? `- ${selecionado.cor}` : ""}</Text>
             <Pressable onPress={() => setEditandoCliente((value) => !value)} style={styles.secondaryButtonWide}>
-              <Text style={styles.secondaryButtonText}>{editandoCliente ? "Fechar edicao" : "Editar cliente"}</Text>
+              <Text style={styles.secondaryButtonText}>{editandoCliente ? "Fechar edicao" : `Editar ${labels.customer.toLowerCase()}`}</Text>
             </Pressable>
             {editandoCliente && (
               <View style={styles.stackForm}>
                 <TextInput value={formCliente.nome} onChangeText={(nome) => setFormCliente((old) => ({ ...old, nome }))} placeholder="Nome" placeholderTextColor={colors.muted} style={styles.input} />
                 <TextInput value={formCliente.telefone} onChangeText={(telefone) => setFormCliente((old) => ({ ...old, telefone }))} placeholder="Telefone" placeholderTextColor={colors.muted} style={styles.input} />
-                <TextInput value={formCliente.modelo} onChangeText={(modelo) => setFormCliente((old) => ({ ...old, modelo }))} placeholder="Modelo" placeholderTextColor={colors.muted} style={styles.input} />
-                <TextInput value={formCliente.cor} onChangeText={(cor) => setFormCliente((old) => ({ ...old, cor }))} placeholder="Cor" placeholderTextColor={colors.muted} style={styles.input} />
+                <TextInput value={formCliente.modelo} onChangeText={(modelo) => setFormCliente((old) => ({ ...old, modelo }))} placeholder={labels.reference} placeholderTextColor={colors.muted} style={styles.input} />
+                <TextInput value={formCliente.cor} onChangeText={(cor) => setFormCliente((old) => ({ ...old, cor }))} placeholder={labels.attribute} placeholderTextColor={colors.muted} style={styles.input} />
                 <Pressable onPress={salvarEdicaoCliente} style={styles.primaryButton}>
                   <Text style={styles.primaryButtonText}>Salvar alteracoes</Text>
                 </Pressable>
@@ -358,12 +374,12 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: (target: 
 
       {buscou && !selecionado && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Novo Cliente</Text>
-          <TextInput value={placa} onChangeText={setPlaca} placeholder="Placa" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="characters" />
+          <Text style={styles.cardTitle}>Novo {labels.customer}</Text>
+          <TextInput value={placa} onChangeText={setPlaca} placeholder={labels.identifier} placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="characters" />
           <TextInput value={formCliente.nome} onChangeText={(nome) => setFormCliente((old) => ({ ...old, nome }))} placeholder="Nome" placeholderTextColor={colors.muted} style={styles.input} />
           <TextInput value={formCliente.telefone} onChangeText={(telefone) => setFormCliente((old) => ({ ...old, telefone }))} placeholder="Telefone" placeholderTextColor={colors.muted} style={styles.input} />
-          <TextInput value={formCliente.modelo} onChangeText={(modelo) => setFormCliente((old) => ({ ...old, modelo }))} placeholder="Modelo" placeholderTextColor={colors.muted} style={styles.input} />
-          <TextInput value={formCliente.cor} onChangeText={(cor) => setFormCliente((old) => ({ ...old, cor }))} placeholder="Cor" placeholderTextColor={colors.muted} style={styles.input} />
+          <TextInput value={formCliente.modelo} onChangeText={(modelo) => setFormCliente((old) => ({ ...old, modelo }))} placeholder={labels.reference} placeholderTextColor={colors.muted} style={styles.input} />
+          <TextInput value={formCliente.cor} onChangeText={(cor) => setFormCliente((old) => ({ ...old, cor }))} placeholder={labels.attribute} placeholderTextColor={colors.muted} style={styles.input} />
           <Pressable onPress={cadastrarNovoCliente} style={styles.primaryButton}>
             <Text style={styles.primaryButtonText}>Cadastrar</Text>
           </Pressable>
@@ -376,16 +392,16 @@ function InicioPainel({ onOpenCamera, onSaved, sync }: { onOpenCamera: (target: 
             <Pressable key={`${item.veiculo_uuid}-${item.placa}`} onPress={() => setSelecionado(item)} style={styles.resultItem}>
               <View style={styles.itemRow}>
                 <Text style={styles.itemTitle}>{item.placa}</Text>
-                <Text style={styles.badge}>{item.atendimento_ativo ? "Em atendimento" : "Cliente"}</Text>
+                <Text style={styles.badge}>{item.atendimento_ativo ? "Em atendimento" : labels.customer}</Text>
               </View>
-              <Text style={styles.muted}>{item.cliente_nome || "Cliente sem nome"} | {item.modelo || "Modelo nao informado"}</Text>
+              <Text style={styles.muted}>{item.cliente_nome || `${labels.customer} sem nome`} | {item.modelo || `${labels.reference} nao informado`}</Text>
             </Pressable>
           ))}
         </View>
       )}
 
       <View style={styles.grid}>
-        <Metric label="Clientes" value={resumo.clientes} icon="person" />
+        <Metric label={labels.customers} value={resumo.clientes} icon="person" />
         <Metric label="Servicos" value={resumo.servicos} icon="water" />
         <Metric label="Fotos" value={resumo.fotos} icon="camera" />
         <Metric label="Pendencias" value={resumo.pendencias} icon="sync" />
@@ -533,6 +549,7 @@ function PainelScreen({ onOpenCamera, sync }: { onOpenCamera: (target: CameraTar
 }
 
 function ClientesScreen({ onSaved, sync }: { onSaved: () => void; sync: Props["sync"] }) {
+  const labels = businessLabels(sync);
   const [clientes, setClientes] = useState<ClienteLocal[]>([]);
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
@@ -574,19 +591,19 @@ function ClientesScreen({ onSaved, sync }: { onSaved: () => void; sync: Props["s
     <>
       <SiteModulePanel module={sync.siteState?.modulos?.clientes} screen="clientes" updatedAt={sync.updatedAt} />
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Cadastrar cliente</Text>
+        <Text style={styles.cardTitle}>Cadastrar {labels.customer.toLowerCase()}</Text>
         <TextInput value={nome} onChangeText={setNome} placeholder="Nome" placeholderTextColor={colors.muted} style={styles.input} />
         <TextInput value={telefone} onChangeText={setTelefone} placeholder="Telefone" placeholderTextColor={colors.muted} style={styles.input} keyboardType="phone-pad" />
-        <TextInput value={placa} onChangeText={setPlaca} placeholder="Placa principal" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="characters" />
+        <TextInput value={placa} onChangeText={setPlaca} placeholder={labels.identifier} placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="characters" />
         <Pressable onPress={submit} style={styles.primaryButton}>
-          <Text style={styles.primaryButtonText}>Salvar cliente</Text>
+          <Text style={styles.primaryButtonText}>Salvar {labels.customer.toLowerCase()}</Text>
         </Pressable>
       </View>
-      <ListCard title="Clientes cadastrados" empty="Nenhum cliente offline ainda.">
+      <ListCard title={`${labels.customers} cadastrados`} empty={`Nenhum ${labels.customer.toLowerCase()} offline ainda.`}>
         <TextInput
           value={buscaRapida}
           onChangeText={setBuscaRapida}
-          placeholder="Busca rapida por cliente, telefone ou placa"
+          placeholder={`Busca rapida por ${labels.customer.toLowerCase()}, telefone ou referencia`}
           placeholderTextColor={colors.muted}
           style={styles.input}
           autoCapitalize="characters"

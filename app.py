@@ -50,6 +50,9 @@ from core.security import (
 )
 from core.product_foundation import (
     build_brand_context,
+    listar_nichos_empresa,
+    normalizar_nicho_empresa,
+    obter_rotulos_nicho_empresa,
     run_product_foundation_migrations,
 )
 from core.telemetry import registrar_evento_telemetria as registrar_evento_telemetria_core
@@ -3469,6 +3472,24 @@ ALIASES_CAMPOS_SYNC = {
 }
 
 
+def campos_sincronizacao_clientes_rotulados(nicho=None):
+    rotulos = obter_rotulos_nicho_empresa(nicho or obter_configuracao_empresa().get("nicho_empresa"))
+    labels = {
+        "nome": rotulos.get("cliente_label") or "Cliente",
+        "modelo": rotulos.get("referencia_label") or "Referencia",
+        "cor": rotulos.get("atributo_label") or "Detalhe",
+        "placa": rotulos.get("identificador_label") or "Identificador",
+        "servico": "Servico",
+    }
+    return [
+        {
+            **campo,
+            "label": labels.get(campo["key"], campo["label"]),
+        }
+        for campo in CAMPOS_SINCRONIZACAO_CLIENTES
+    ]
+
+
 def normalizar_versao_sistema(valor):
     texto = normalizar_texto_campo(valor)
     if not texto:
@@ -3663,6 +3684,7 @@ def contexto_produto_padrao():
         {
             "marca_nome": "Sistema",
             "marca_subtitulo": "Gestao Estetica",
+            "nicho_empresa": "auto_estetica",
             "marca_logo_url": "",
             "marca_favicon_url": "",
             "marca_cor_primaria": "#facc15",
@@ -3694,6 +3716,7 @@ def campos_contexto_produto_sql(incluir_blobs=False):
         "empresa_id",
         "marca_nome",
         "marca_subtitulo",
+        "nicho_empresa",
         "marca_logo_url",
         "CASE WHEN marca_logo_blob IS NOT NULL THEN 1 ELSE 0 END AS marca_logo_tem_blob",
         "marca_favicon_url",
@@ -5613,6 +5636,7 @@ def garantir_schema_sqlite_local_minima(force=False):
                 clima_timeout_segundos INTEGER DEFAULT 8,
                 marca_nome TEXT,
                 marca_subtitulo TEXT,
+                nicho_empresa TEXT,
                 marca_logo_url TEXT,
                 marca_logo_blob BLOB,
                 marca_logo_mime_type TEXT,
@@ -5723,6 +5747,7 @@ def garantir_schema_sqlite_local_minima(force=False):
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_timeout_segundos INTEGER DEFAULT 8")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_nome TEXT")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_subtitulo TEXT")
+            adicionar_coluna_se_preciso(c, "configuracao_empresa", "nicho_empresa TEXT")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_url TEXT")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_blob BLOB")
             adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_mime_type TEXT")
@@ -8345,6 +8370,7 @@ def atualizar_banco():
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "clima_timeout_segundos INTEGER DEFAULT 8")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_nome TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_subtitulo TEXT")
+    adicionar_coluna_se_preciso(c, "configuracao_empresa", "nicho_empresa TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_url TEXT")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_blob BLOB")
     adicionar_coluna_se_preciso(c, "configuracao_empresa", "marca_logo_mime_type TEXT")
@@ -11784,6 +11810,7 @@ def empresa_snapshot_padrao():
         "clima_timeout_segundos": 8,
         "marca_nome": "Sistema",
         "marca_subtitulo": "Gestao Estetica",
+        "nicho_empresa": "auto_estetica",
         "marca_logo_url": "",
         "marca_favicon_url": "",
         "marca_cor_primaria": "#facc15",
@@ -12021,6 +12048,8 @@ def obter_configuracao_empresa(force=False):
     dados["clima_timeout_segundos"] = max(3, min(20, converter_inteiro(dados.get("clima_timeout_segundos"), 8)))
     dados["marca_nome"] = normalizar_texto_campo(dados.get("marca_nome"))
     dados["marca_subtitulo"] = normalizar_texto_campo(dados.get("marca_subtitulo"))
+    dados["nicho_empresa"] = normalizar_nicho_empresa(dados.get("nicho_empresa"))
+    dados["nicho_empresa_label"] = obter_rotulos_nicho_empresa(dados["nicho_empresa"]).get("label")
     dados["marca_logo_url"] = normalizar_texto_campo(dados.get("marca_logo_url"))
     dados["marca_favicon_url"] = normalizar_texto_campo(dados.get("marca_favicon_url"))
     dados["marca_cor_primaria"] = normalizar_cor_hex(dados.get("marca_cor_primaria"), "#facc15")
@@ -12657,6 +12686,9 @@ def salvar_configuracao_site_form(form, files):
 
     marca_nome = normalizar_texto_campo(form.get("marca_nome"))
     marca_subtitulo = normalizar_texto_campo(form.get("marca_subtitulo"))
+    nicho_empresa = normalizar_nicho_empresa(form.get("nicho_empresa") or atual.get("nicho_empresa"))
+    rotulos_nicho = obter_rotulos_nicho_empresa(nicho_empresa)
+    rotulos_anteriores = obter_rotulos_nicho_empresa(atual.get("nicho_empresa"))
     site_titulo = normalizar_texto_campo(form.get("site_titulo"))
     site_rodape_texto = normalizar_texto_campo(form.get("site_rodape_texto"))
     marca_logo_url = normalizar_texto_campo(form.get("marca_logo_url"))
@@ -12669,9 +12701,13 @@ def salvar_configuracao_site_form(form, files):
     login_titulo_publico = normalizar_texto_campo(form.get("login_titulo_publico")) or "Acesso ao sistema"
     login_subtitulo_publico = normalizar_texto_campo(form.get("login_subtitulo_publico")) or "Entre no sistema"
     login_botao_texto = normalizar_texto_campo(form.get("login_botao_texto")) or "Entrar"
-    home_busca_placeholder = normalizar_texto_campo(form.get("home_busca_placeholder")) or "Digite a placa"
+    home_busca_placeholder = normalizar_texto_campo(form.get("home_busca_placeholder"))
     home_busca_botao_texto = normalizar_texto_campo(form.get("home_busca_botao_texto")) or "Buscar"
-    home_estado_inicial_titulo = normalizar_texto_campo(form.get("home_estado_inicial_titulo")) or "Digite uma placa para comecar"
+    home_estado_inicial_titulo = normalizar_texto_campo(form.get("home_estado_inicial_titulo"))
+    if not home_busca_placeholder or home_busca_placeholder == rotulos_anteriores.get("busca_placeholder"):
+        home_busca_placeholder = rotulos_nicho.get("busca_placeholder") or "Digite a placa"
+    if not home_estado_inicial_titulo or home_estado_inicial_titulo == rotulos_anteriores.get("estado_inicial"):
+        home_estado_inicial_titulo = rotulos_nicho.get("estado_inicial") or "Digite uma placa para comecar"
     whitelabel_ativo = 1 if bool_config_ativo(form.get("whitelabel_ativo")) else 0
 
     logo_blob = atual.get("marca_logo_blob")
@@ -12706,6 +12742,7 @@ def salvar_configuracao_site_form(form, files):
     salvar_campos_configuracao_empresa({
         "marca_nome": marca_nome,
         "marca_subtitulo": marca_subtitulo,
+        "nicho_empresa": nicho_empresa,
         "marca_logo_url": marca_logo_url,
         "marca_logo_blob": logo_blob,
         "marca_logo_mime_type": logo_mime_type,
@@ -12734,6 +12771,8 @@ def salvar_configuracao_site_form(form, files):
     return {
         "marca_nome": marca_nome,
         "marca_subtitulo": marca_subtitulo,
+        "nicho_empresa": nicho_empresa,
+        "nicho_empresa_label": rotulos_nicho.get("label"),
         "site_titulo": site_titulo,
         "site_rodape_texto": site_rodape_texto,
         "marca_logo_url": marca_logo_url,
@@ -15940,7 +15979,7 @@ def obter_mapeamento_sync_por_form(form):
 def descrever_campos_sincronizados(sync):
     campos = []
 
-    for campo in CAMPOS_SINCRONIZACAO_CLIENTES:
+    for campo in campos_sincronizacao_clientes_rotulados():
         coluna = sync.get(f"campo_{campo['key']}")
 
         if coluna:
@@ -19292,6 +19331,7 @@ def montar_payload_mobile_site_state():
     hud = obter_payload_hud()
     clima = obter_resultado_clima_api(permitir_rede=True)
     modulos = montar_payload_mobile_modulos()
+    produto = carregar_contexto_produto()
     modulos["clima"] = {
         "counters": [{"label": "Temperatura", "value": clima.get("temp") or "--", "icon": "thermometer"}],
         "rows": [
@@ -19306,6 +19346,7 @@ def montar_payload_mobile_site_state():
         "hud": hud,
         "clima": clima,
         "modulos": modulos,
+        "contexto_negocio": produto.get("business_context") or {},
         "versao_sistema": obter_versao_sistema(permitir_sem_sessao=True),
         "server_time": agora_iso(),
         "refresh_interval_seconds": 10,
@@ -24407,6 +24448,7 @@ def configuracoes_site():
             detalhes={
                 "marca_nome": site.get("marca_nome"),
                 "marca_subtitulo": site.get("marca_subtitulo"),
+                "nicho_empresa": site.get("nicho_empresa"),
                 "site_titulo": site.get("site_titulo"),
                 "login_titulo_publico": site.get("login_titulo_publico"),
                 "home_estado_inicial_titulo": site.get("home_estado_inicial_titulo"),
@@ -24431,6 +24473,7 @@ def configuracoes_site():
         "configuracoes_site.html",
         feedback=session.pop("configuracoes_feedback", None),
         configuracao_empresa=configuracao_empresa,
+        nichos_empresa=listar_nichos_empresa(),
     )
 
 @app.route("/configuracoes/banco", methods=["POST"])
@@ -25781,7 +25824,7 @@ def renderizar_pagina_clientes(busca="", limpar=False):
         detalhar_sincronizacoes=detalhar_sincronizacoes,
         feedback=session.pop("clientes_feedback", None),
         preview_sync=session.get("clientes_sync_preview"),
-        campos_sync=CAMPOS_SINCRONIZACAO_CLIENTES,
+        campos_sync=campos_sincronizacao_clientes_rotulados(),
         intervalos_sync=INTERVALOS_SINCRONIZACAO,
         busca=busca,
         limite_inicial_clientes=CLIENTES_LISTA_INICIAL_LIMITE,

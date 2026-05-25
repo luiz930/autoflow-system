@@ -2,7 +2,7 @@
 
 {% block title %}Historico{% endblock %}
 {% block titulo %}Historico de Atendimentos{% endblock %}
-{% block subtitulo %}Edite, reabra, exclua e confira o que foi feito em cada veiculo{% endblock %}
+{% block subtitulo %}Edite, reabra, exclua e confira o que foi feito em cada atendimento{% endblock %}
 
 {% block actions %}
 <a href="/" class="button-link">
@@ -15,7 +15,7 @@
 <div class="page-card">
     <form method="POST" class="inline-form">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-        <input name="busca" placeholder="Buscar por placa, cliente, modelo ou servico" value="{{ busca }}">
+        <input name="busca" placeholder="Buscar por {{ identifier_label|lower }}, {{ customer_label|lower }}, {{ reference_label|lower }} ou servico" value="{{ busca }}">
         <button>Buscar historico</button>
     </form>
 </div>
@@ -39,8 +39,8 @@
         </div>
 
         <h2 class="section-title top-spacing">{{ s.tipo_nome or "Servico" }}</h2>
-        <p><b>Cliente:</b> {{ s.cliente_nome or "Nao informado" }}</p>
-        <p><b>Veiculo:</b> {{ s.placa or "-" }}{% if s.modelo %} - {{ s.modelo }}{% endif %}{% if s.cor %} / {{ s.cor }}{% endif %}</p>
+        <p><b>{{ customer_label }}:</b> {{ s.cliente_nome or "Nao informado" }}</p>
+        <p><b>{{ subject_label }}:</b> {{ s.placa or "-" }}{% if s.modelo %} - {{ s.modelo }}{% endif %}{% if s.cor %} / {{ s.cor }}{% endif %}</p>
         <p><b>Valor:</b> R$ {{ s.valor_exibicao }}{% if s.tem_valor_adicional %} <span class="muted-text">(+ extra manual R$ {{ s.valor_adicional_exibicao }})</span>{% endif %}</p>
         <p><b>Entrada:</b> {{ s.entrada_exibicao }}</p>
         {% if s.entrega_exibicao %}

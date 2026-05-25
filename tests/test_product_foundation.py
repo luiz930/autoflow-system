@@ -6,6 +6,7 @@ from core.product_foundation import (
     apply_empresa_indexes,
     apply_extended_empresa_scope,
     build_brand_context,
+    listar_nichos_empresa,
     run_product_foundation_migrations,
 )
 
@@ -111,8 +112,20 @@ class ProductFoundationMigrationsTests(unittest.TestCase):
         self.assertEqual(contexto["home_search_placeholder"], "Placa do cliente")
         self.assertEqual(contexto["home_search_button_text"], "Consultar")
         self.assertEqual(contexto["home_empty_state_title"], "Comece pela placa")
+        self.assertEqual(contexto["identifier_label"], "Placa")
+        self.assertEqual(contexto["customer_label"], "Cliente")
         self.assertEqual(contexto["licenca_plano"], "pro")
         self.assertEqual(contexto["licenca_status"], "ativa")
+
+    def test_build_brand_context_adapta_rotulos_por_nicho(self):
+        contexto = build_brand_context({"nicho_empresa": "pet_shop"}, {})
+
+        self.assertEqual(contexto["business_niche"], "pet_shop")
+        self.assertEqual(contexto["customer_label"], "Tutor")
+        self.assertEqual(contexto["subject_label"], "Pet")
+        self.assertEqual(contexto["identifier_label"], "Nome do pet ou ID")
+        self.assertEqual(contexto["home_search_placeholder"], "Digite o nome do pet ou ID")
+        self.assertIn("pet_shop", {item["codigo"] for item in listar_nichos_empresa()})
 
     def test_build_brand_context_corrige_textos_mojibake(self):
         contexto = build_brand_context(

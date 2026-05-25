@@ -74,6 +74,7 @@ export type MobileModulePayload = {
 };
 
 export type MobileSiteState = {
+  contexto_negocio?: Record<string, string>;
   clima?: MobileWeatherPayload;
   hud?: MobileHudPayload;
   modulos?: Record<string, MobileModulePayload>;

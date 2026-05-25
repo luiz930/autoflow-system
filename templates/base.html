@@ -362,7 +362,11 @@ body.responsive-page.sidebar-open {
 
 </head>
 
-<body class="responsive-page">
+<body class="responsive-page"
+      data-customer-label="{{ customer_label }}"
+      data-subject-label="{{ subject_label }}"
+      data-reference-label="{{ reference_label }}"
+      data-identifier-label="{{ identifier_label }}">
 
 {% if session.get("usuario") %}
 
@@ -388,7 +392,7 @@ body.responsive-page.sidebar-open {
             <a href="{{ url_for('painel') }}"><button><span>&#128202;</span> Painel</button></a>
             {% endif %}
             {% if pagina_menu_habilitada('clientes') %}
-            <a href="{{ url_for('clientes') }}"><button><span>&#128100;</span> Clientes</button></a>
+            <a href="{{ url_for('clientes') }}"><button><span>&#128100;</span> {{ customer_plural_label }}</button></a>
             {% endif %}
             {% if pagina_menu_habilitada('historico') %}
             <a href="{{ url_for('pagina_historico') }}"><button><span>&#128340;</span> Historico</button></a>
@@ -606,7 +610,7 @@ function toggleSidebar() {
 
         results.innerHTML = itens.map((item, index) => `
             <button type="button" class="global-search-result" data-index="${index}">
-                <span>${escapar(item.titulo || "Cliente")}</span>
+                <span>${escapar(item.titulo || "{{ customer_label }}")}</span>
                 <small>${escapar(item.subtitulo || item.placa || "")}</small>
             </button>
         `).join("");

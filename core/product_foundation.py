@@ -40,6 +40,177 @@ FOUNDATION_MIGRATIONS = (
 )
 
 
+NICHOS_EMPRESA = {
+    "auto_estetica": {
+        "codigo": "auto_estetica",
+        "label": "Estetica automotiva",
+        "descricao": "Lavagem, detailing, lava-jato, oficina rapida e servicos automotivos.",
+        "cliente_label": "Cliente",
+        "cliente_plural": "Clientes",
+        "item_label": "Veiculo",
+        "item_plural": "Veiculos",
+        "identificador_label": "Placa",
+        "identificador_placeholder": "ABC1D23",
+        "referencia_label": "Carro",
+        "referencia_placeholder": "Modelo do veiculo",
+        "atributo_label": "Cor",
+        "atributo_placeholder": "Cor",
+        "busca_placeholder": "Digite a placa",
+        "estado_inicial": "Digite uma placa para comecar",
+    },
+    "pet_shop": {
+        "codigo": "pet_shop",
+        "label": "Pet shop e banho/tosa",
+        "descricao": "Banho, tosa, hotel, creche, clinica veterinaria e servicos pet.",
+        "cliente_label": "Tutor",
+        "cliente_plural": "Tutores",
+        "item_label": "Pet",
+        "item_plural": "Pets",
+        "identificador_label": "Nome do pet ou ID",
+        "identificador_placeholder": "Rex ou PET-1024",
+        "referencia_label": "Raca / especie",
+        "referencia_placeholder": "Ex.: Shih-tzu, SRD, gato",
+        "atributo_label": "Porte / cor",
+        "atributo_placeholder": "Ex.: pequeno, caramelo",
+        "busca_placeholder": "Digite o nome do pet ou ID",
+        "estado_inicial": "Digite o pet ou ID para comecar",
+    },
+    "varejo_mercado": {
+        "codigo": "varejo_mercado",
+        "label": "Mercado, loja e varejo",
+        "descricao": "Mercados, mercearias, lojas, conveniencias e comercio local.",
+        "cliente_label": "Cliente",
+        "cliente_plural": "Clientes",
+        "item_label": "Cadastro",
+        "item_plural": "Cadastros",
+        "identificador_label": "Nome, CPF ou codigo",
+        "identificador_placeholder": "Cliente, CPF ou COD-001",
+        "referencia_label": "Categoria",
+        "referencia_placeholder": "Ex.: atacado, varejo, fidelidade",
+        "atributo_label": "Observacao",
+        "atributo_placeholder": "Preferencia, grupo ou tag",
+        "busca_placeholder": "Digite nome, CPF ou codigo",
+        "estado_inicial": "Digite o cliente ou codigo para comecar",
+    },
+    "saude_clinica": {
+        "codigo": "saude_clinica",
+        "label": "Clinica e saude",
+        "descricao": "Clinicas, odontologia, fisioterapia, psicologia e terapias.",
+        "cliente_label": "Paciente",
+        "cliente_plural": "Pacientes",
+        "item_label": "Prontuario",
+        "item_plural": "Prontuarios",
+        "identificador_label": "Paciente, CPF ou prontuario",
+        "identificador_placeholder": "Nome, CPF ou PR-1024",
+        "referencia_label": "Procedimento",
+        "referencia_placeholder": "Consulta, retorno ou especialidade",
+        "atributo_label": "Observacao clinica",
+        "atributo_placeholder": "Convenio, prioridade ou alerta",
+        "busca_placeholder": "Digite paciente, CPF ou prontuario",
+        "estado_inicial": "Digite o paciente ou prontuario para comecar",
+    },
+    "beleza_bem_estar": {
+        "codigo": "beleza_bem_estar",
+        "label": "Beleza e bem-estar",
+        "descricao": "Salao, barbearia, esmalteria, estetica facial/corporal e spa.",
+        "cliente_label": "Cliente",
+        "cliente_plural": "Clientes",
+        "item_label": "Ficha",
+        "item_plural": "Fichas",
+        "identificador_label": "Nome ou codigo da ficha",
+        "identificador_placeholder": "Cliente ou FIC-1024",
+        "referencia_label": "Preferencia / procedimento",
+        "referencia_placeholder": "Corte, cor, pele ou profissional",
+        "atributo_label": "Observacao",
+        "atributo_placeholder": "Alergia, preferencia ou recorrencia",
+        "busca_placeholder": "Digite nome ou codigo da ficha",
+        "estado_inicial": "Digite o cliente ou ficha para comecar",
+    },
+    "educacao_cursos": {
+        "codigo": "educacao_cursos",
+        "label": "Educacao e cursos",
+        "descricao": "Escolas, cursos livres, reforco, treinamentos e aulas particulares.",
+        "cliente_label": "Aluno",
+        "cliente_plural": "Alunos",
+        "item_label": "Matricula",
+        "item_plural": "Matriculas",
+        "identificador_label": "Aluno ou matricula",
+        "identificador_placeholder": "Nome ou MAT-1024",
+        "referencia_label": "Curso / turma",
+        "referencia_placeholder": "Curso, turma ou modulo",
+        "atributo_label": "Turno / nivel",
+        "atributo_placeholder": "Manha, noite, iniciante",
+        "busca_placeholder": "Digite aluno ou matricula",
+        "estado_inicial": "Digite o aluno ou matricula para comecar",
+    },
+    "alimentacao": {
+        "codigo": "alimentacao",
+        "label": "Restaurante e alimentacao",
+        "descricao": "Restaurantes, lancherias, delivery, cafeterias e buffets.",
+        "cliente_label": "Cliente",
+        "cliente_plural": "Clientes",
+        "item_label": "Pedido / mesa",
+        "item_plural": "Pedidos / mesas",
+        "identificador_label": "Mesa, pedido ou cliente",
+        "identificador_placeholder": "Mesa 4, PED-1024 ou cliente",
+        "referencia_label": "Canal / tipo",
+        "referencia_placeholder": "Mesa, delivery, retirada",
+        "atributo_label": "Observacao do pedido",
+        "atributo_placeholder": "Restricao, ponto ou preferencia",
+        "busca_placeholder": "Digite mesa, pedido ou cliente",
+        "estado_inicial": "Digite mesa, pedido ou cliente para comecar",
+    },
+    "assistencia_tecnica": {
+        "codigo": "assistencia_tecnica",
+        "label": "Assistencia tecnica",
+        "descricao": "Eletronicos, celulares, computadores, consertos e manutencao.",
+        "cliente_label": "Cliente",
+        "cliente_plural": "Clientes",
+        "item_label": "Equipamento",
+        "item_plural": "Equipamentos",
+        "identificador_label": "OS, serial ou cliente",
+        "identificador_placeholder": "OS-1024, serial ou cliente",
+        "referencia_label": "Equipamento / modelo",
+        "referencia_placeholder": "Marca, modelo ou aparelho",
+        "atributo_label": "Defeito informado",
+        "atributo_placeholder": "Tela, bateria, placa, lentidao",
+        "busca_placeholder": "Digite OS, serial ou cliente",
+        "estado_inicial": "Digite OS, serial ou cliente para comecar",
+    },
+    "servicos_gerais": {
+        "codigo": "servicos_gerais",
+        "label": "Servicos gerais",
+        "descricao": "Servicos profissionais, manutencao, consultoria e operacoes sob demanda.",
+        "cliente_label": "Cliente",
+        "cliente_plural": "Clientes",
+        "item_label": "Referencia",
+        "item_plural": "Referencias",
+        "identificador_label": "Cliente, codigo ou referencia",
+        "identificador_placeholder": "Cliente, COD-1024 ou referencia",
+        "referencia_label": "Tipo de demanda",
+        "referencia_placeholder": "Servico, local, contrato ou projeto",
+        "atributo_label": "Detalhe",
+        "atributo_placeholder": "Prioridade, local ou observacao",
+        "busca_placeholder": "Digite cliente, codigo ou referencia",
+        "estado_inicial": "Digite cliente, codigo ou referencia para comecar",
+    },
+}
+
+
+def listar_nichos_empresa():
+    return [dict(item) for item in NICHOS_EMPRESA.values()]
+
+
+def normalizar_nicho_empresa(valor):
+    codigo = str(valor or "").strip().lower()
+    return codigo if codigo in NICHOS_EMPRESA else "auto_estetica"
+
+
+def obter_rotulos_nicho_empresa(valor=None):
+    codigo = normalizar_nicho_empresa(valor)
+    return dict(NICHOS_EMPRESA[codigo])
+
+
 def ensure_schema_migrations(cursor):
     cursor.execute(
         """
@@ -258,6 +429,7 @@ def apply_branding_and_storage(cursor, add_column):
     add_column(cursor, "configuracao_empresa", "atualizado_em TEXT")
     add_column(cursor, "configuracao_empresa", "marca_nome TEXT")
     add_column(cursor, "configuracao_empresa", "marca_subtitulo TEXT")
+    add_column(cursor, "configuracao_empresa", "nicho_empresa TEXT")
     add_column(cursor, "configuracao_empresa", "marca_logo_url TEXT")
     add_column(cursor, "configuracao_empresa", "marca_cor_primaria TEXT")
     add_column(cursor, "configuracao_empresa", "marca_cor_secundaria TEXT")
@@ -278,17 +450,18 @@ def apply_branding_and_storage(cursor, add_column):
         cursor.execute(
             """
             INSERT INTO configuracao_empresa (
-                id, empresa_id, marca_nome, marca_subtitulo, marca_cor_primaria,
+                id, empresa_id, marca_nome, marca_subtitulo, nicho_empresa, marca_cor_primaria,
                 marca_cor_secundaria, storage_provider, telemetria_ativo,
                 licenca_plano, licenca_status, onboarding_concluido, atualizado_em
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
                 1,
                 1,
                 "Sistema",
                 "Gestao Estetica",
+                "auto_estetica",
                 "#facc15",
                 "#111827",
                 "database",
@@ -305,6 +478,7 @@ def apply_branding_and_storage(cursor, add_column):
             SET empresa_id=COALESCE(empresa_id, 1),
                 marca_nome=COALESCE(NULLIF(marca_nome, ''), COALESCE(nome_fantasia, 'Sistema')),
                 marca_subtitulo=COALESCE(NULLIF(marca_subtitulo, ''), 'Gestao Estetica'),
+                nicho_empresa=COALESCE(NULLIF(nicho_empresa, ''), 'auto_estetica'),
                 marca_cor_primaria=COALESCE(NULLIF(marca_cor_primaria, ''), '#facc15'),
                 marca_cor_secundaria=COALESCE(NULLIF(marca_cor_secundaria, ''), '#111827'),
                 storage_provider=COALESCE(NULLIF(storage_provider, ''), 'database'),
@@ -926,6 +1100,7 @@ def run_product_foundation_migrations(conn, add_column, now_iso, print_func=prin
 def build_brand_context(config_row=None, empresa_row=None):
     config = dict(config_row or {})
     empresa = dict(empresa_row or {})
+    nicho = obter_rotulos_nicho_empresa(config.get("nicho_empresa") or empresa.get("nicho_empresa"))
 
     brand_name = corrigir_mojibake_texto(
         config.get("marca_nome")
@@ -956,9 +1131,26 @@ def build_brand_context(config_row=None, empresa_row=None):
     login_title = corrigir_mojibake_texto(config.get("login_titulo_publico") or "Acesso ao sistema")
     login_subtitle = corrigir_mojibake_texto(config.get("login_subtitulo_publico") or "Entre no sistema")
     login_button_text = corrigir_mojibake_texto(config.get("login_botao_texto") or "Entrar")
-    home_search_placeholder = corrigir_mojibake_texto(config.get("home_busca_placeholder") or "Digite a placa")
+    home_search_placeholder = corrigir_mojibake_texto(config.get("home_busca_placeholder") or nicho["busca_placeholder"])
     home_search_button_text = corrigir_mojibake_texto(config.get("home_busca_botao_texto") or "Buscar")
-    home_empty_state_title = corrigir_mojibake_texto(config.get("home_estado_inicial_titulo") or "Digite uma placa para comecar")
+    home_empty_state_title = corrigir_mojibake_texto(config.get("home_estado_inicial_titulo") or nicho["estado_inicial"])
+    business_context = {
+        "business_niche": nicho["codigo"],
+        "business_niche_label": corrigir_mojibake_texto(nicho["label"]),
+        "business_niche_description": corrigir_mojibake_texto(nicho["descricao"]),
+        "customer_label": corrigir_mojibake_texto(nicho["cliente_label"]),
+        "customer_plural_label": corrigir_mojibake_texto(nicho["cliente_plural"]),
+        "subject_label": corrigir_mojibake_texto(nicho["item_label"]),
+        "subject_plural_label": corrigir_mojibake_texto(nicho["item_plural"]),
+        "identifier_label": corrigir_mojibake_texto(nicho["identificador_label"]),
+        "identifier_placeholder": corrigir_mojibake_texto(nicho["identificador_placeholder"]),
+        "reference_label": corrigir_mojibake_texto(nicho["referencia_label"]),
+        "reference_placeholder": corrigir_mojibake_texto(nicho["referencia_placeholder"]),
+        "attribute_label": corrigir_mojibake_texto(nicho["atributo_label"]),
+        "attribute_placeholder": corrigir_mojibake_texto(nicho["atributo_placeholder"]),
+        "search_placeholder": home_search_placeholder,
+        "empty_state_title": home_empty_state_title,
+    }
 
     return {
         "brand_name": brand_name,
@@ -985,6 +1177,8 @@ def build_brand_context(config_row=None, empresa_row=None):
         "home_search_placeholder": home_search_placeholder,
         "home_search_button_text": home_search_button_text,
         "home_empty_state_title": home_empty_state_title,
+        "business_context": business_context,
+        **business_context,
         "whitelabel_ativo": bool(int(config.get("whitelabel_ativo") or 0)),
         "storage_provider": config.get("storage_provider") or empresa.get("storage_provider") or "database",
         "licenca_plano": config.get("licenca_plano") or empresa.get("plano_codigo") or "starter",

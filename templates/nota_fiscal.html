@@ -31,7 +31,7 @@
 <div class="page-card top-spacing">
     <p class="pill-label">Origem do faturamento</p>
     <h2 class="section-title top-spacing">Orcamento #{{ orcamento_origem.numero_formatado }}</h2>
-    <p><strong>Cliente:</strong> {{ orcamento_origem.cliente_nome }}</p>
+    <p><strong>{{ customer_label }}:</strong> {{ orcamento_origem.cliente_nome }}</p>
     <p class="muted-text">Total: R$ {{ orcamento_origem.total_exibicao }} | Emitido em {{ orcamento_origem.criado_em_fmt }}</p>
     <div class="actions-row actions-row--left top-spacing">
         <a href="/orcamento/{{ orcamento_origem.id }}/pdf" class="button-link">
@@ -376,7 +376,7 @@
 
         <div class="field-grid">
             <div>
-                <label for="cliente_nome">Tomador / cliente</label>
+                <label for="cliente_nome">Tomador / {{ customer_label|lower }}</label>
                 <input id="cliente_nome" name="cliente_nome" value="{{ prefill.cliente_nome if prefill else '' }}" placeholder="Nome ou razao social" required>
             </div>
             <div>
@@ -385,7 +385,7 @@
             </div>
             <div>
                 <label for="cliente_email">E-mail</label>
-                <input id="cliente_email" name="email" value="{{ prefill.email if prefill else '' }}" placeholder="cliente@email.com">
+                <input id="cliente_email" name="email" value="{{ prefill.email if prefill else '' }}" placeholder="contato@email.com">
             </div>
             <div>
                 <label for="cliente_telefone">Telefone</label>
@@ -395,12 +395,12 @@
 
         <div class="field-grid">
             <div>
-                <label for="placa_nota">Placa</label>
-                <input id="placa_nota" name="placa" value="{{ prefill.placa if prefill else '' }}" placeholder="ABC1D23">
+                <label for="placa_nota">{{ identifier_label }}</label>
+                <input id="placa_nota" name="placa" value="{{ prefill.placa if prefill else '' }}" placeholder="{{ identifier_placeholder }}">
             </div>
             <div>
-                <label for="modelo_nota">Modelo</label>
-                <input id="modelo_nota" name="modelo" value="{{ prefill.modelo if prefill else '' }}" placeholder="Modelo do veiculo">
+                <label for="modelo_nota">{{ reference_label }}</label>
+                <input id="modelo_nota" name="modelo" value="{{ prefill.modelo if prefill else '' }}" placeholder="{{ reference_placeholder }}">
             </div>
             <div>
                 <label for="aliquota_iss">Aliquota ISS (%)</label>

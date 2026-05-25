@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}Clientes{% endblock %}
-{% block titulo %}Clientes{% endblock %}
-{% block subtitulo %}Gestao de clientes e sincronizacao{% endblock %}
+{% block title %}{{ customer_plural_label }}{% endblock %}
+{% block titulo %}{{ customer_plural_label }}{% endblock %}
+{% block subtitulo %}Gestao de {{ customer_plural_label|lower }} e sincronizacao{% endblock %}
 
 {% block actions %}
 <a href="/" class="button-link">
@@ -23,7 +23,7 @@
 <div class="page-card">
     <form method="POST" class="inline-form">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-        <input name="busca" placeholder="Buscar placa, modelo ou cliente" value="{{ busca }}">
+        <input name="busca" placeholder="Buscar {{ identifier_label|lower }}, {{ reference_label|lower }} ou {{ customer_label|lower }}" value="{{ busca }}">
         <button>Buscar</button>
     </form>
 </div>
@@ -100,7 +100,7 @@
             {% endfor %}
         </div>
 
-        <p class="muted-text">A data da lavagem e detectada automaticamente para calcular quantos dias fazem desde o ultimo atendimento do carro.</p>
+        <p class="muted-text">A data do atendimento e detectada automaticamente para calcular quantos dias fazem desde o ultimo registro da referencia principal.</p>
 
         <div class="actions-row actions-row--left">
             <button>Salvar sincronizacao</button>
@@ -204,7 +204,7 @@
 </div>
 
 <div class="top-spacing">
-    <h2 class="section-title">Clientes</h2>
+    <h2 class="section-title">{{ customer_plural_label }}</h2>
     {% if clientes_limitados %}
     <div class="page-card page-card--soft">
         <p class="muted-text">Mostrando os {{ limite_inicial_clientes }} clientes mais recentes para abrir a tela mais rapido. Use a busca para localizar registros antigos.</p>
@@ -214,23 +214,23 @@
     <div class="list-grid">
         {% for c in clientes %}
         <div class="page-card">
-            <p><b>{{ c.nome or "Cliente nao informado" }}</b></p>
+            <p><b>{{ c.nome or (customer_label ~ " nao informado") }}</b></p>
             <p>{{ c.telefone or "Telefone nao informado" }}</p>
             {% if c.data_nascimento_exibicao %}
             <p class="muted-text">Nascimento: {{ c.data_nascimento_exibicao }}</p>
             {% endif %}
             <p class="muted-text">
-                Placa: {{ c.placa }}
-                {% if c.modelo %} | Modelo: {{ c.modelo }}{% endif %}
-                {% if c.cor %} | Cor: {{ c.cor }}{% endif %}
+                {{ identifier_label }}: {{ c.placa }}
+                {% if c.modelo %} | {{ reference_label }}: {{ c.modelo }}{% endif %}
+                {% if c.cor %} | {{ attribute_label }}: {{ c.cor }}{% endif %}
             </p>
 
             <div class="actions-row actions-row--left top-spacing">
                 <a href="/clientes?editar={{ c.placa_original or c.placa }}{% if busca %}&busca={{ busca }}{% endif %}" class="button-link">
-                    <button type="button">Editar cliente</button>
+                    <button type="button">Editar {{ customer_label|lower }}</button>
                 </a>
                 <a href="/?placa={{ c.placa }}" class="button-link">
-                    <button type="button">Abrir placa</button>
+                    <button type="button">Abrir {{ identifier_label|lower }}</button>
                 </a>
             </div>
 
@@ -242,12 +242,12 @@
                     <input type="hidden" name="redirect_to" value="/clientes">
 
                     <div class="field-grid">
-                        <input name="placa" value="{{ c.placa }}" placeholder="Placa" required>
+                        <input name="placa" value="{{ c.placa }}" placeholder="{{ identifier_label }}" required>
                         <input name="nome" value="{{ c.nome }}" placeholder="Nome">
                         <input name="telefone" value="{{ c.telefone }}" placeholder="Telefone">
                         <input type="date" name="data_nascimento" value="{{ c.data_nascimento }}" placeholder="Nascimento">
-                        <input name="modelo" value="{{ c.modelo }}" placeholder="Modelo">
-                        <input name="cor" value="{{ c.cor }}" placeholder="Cor">
+                        <input name="modelo" value="{{ c.modelo }}" placeholder="{{ reference_label }}">
+                        <input name="cor" value="{{ c.cor }}" placeholder="{{ attribute_label }}">
                     </div>
 
                     <div class="actions-row actions-row--left">
@@ -259,7 +259,7 @@
         </div>
         {% else %}
         <div class="page-card">
-            <p class="muted-text">Nenhum cliente encontrado com os filtros atuais.</p>
+            <p class="muted-text">Nenhum {{ customer_label|lower }} encontrado com os filtros atuais.</p>
         </div>
         {% endfor %}
     </div>

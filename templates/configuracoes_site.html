@@ -30,7 +30,9 @@
                 <h2 class="section-title">{{ brand_name }}</h2>
                 <p class="muted-text">Aba: {{ site_title }}</p>
                 <p class="muted-text">Login: {{ login_title }}</p>
+                <p class="muted-text">Nicho: {{ business_niche_label }}</p>
                 <p class="muted-text">Home: {{ home_empty_state_title }}</p>
+                <p class="muted-text">Busca: {{ identifier_label }}</p>
             </div>
         </div>
         <p class="muted-text top-spacing">{{ site_footer_text }}</p>
@@ -43,6 +45,18 @@
 
         <form action="/configuracoes/site" method="POST" enctype="multipart/form-data" class="stack-form stack-form--wide top-spacing">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+            <div class="page-card page-card--soft top-spacing">
+                <h3 class="section-title">Nicho da empresa</h3>
+                <select name="nicho_empresa">
+                    {% for nicho in nichos_empresa %}
+                    <option value="{{ nicho.codigo }}" {% if configuracao_empresa.nicho_empresa == nicho.codigo %}selected{% endif %}>
+                        {{ nicho.label }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <p class="muted-text top-spacing">O nicho controla os nomes de cliente, referencia principal, busca e cadastro sem alterar os dados ja salvos.</p>
+            </div>
 
             <div class="field-grid">
                 <input
@@ -177,7 +191,7 @@
                         name="home_busca_placeholder"
                         type="text"
                         value="{{ configuracao_empresa.home_busca_placeholder }}"
-                        placeholder="Placeholder da busca por placa"
+                        placeholder="{{ identifier_placeholder }}"
                         autocomplete="off"
                     >
                     <input

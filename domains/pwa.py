@@ -15,7 +15,7 @@ def montar_manifesto_pwa(produto):
         "id": "/?source=pwa",
         "name": nome_app,
         "short_name": nome_curto,
-        "description": "Aplicativo operacional para gestao de estetica automotiva, atendimentos, fotos, clientes, financeiro e licencas.",
+        "description": f"Aplicativo operacional para gestao de {str(produto.get('business_niche_label') or 'servicos').lower()}, atendimentos, fotos, clientes, financeiro e licencas.",
         "start_url": "/?source=pwa",
         "scope": "/",
         "display": "standalone",
