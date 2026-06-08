@@ -8,7 +8,7 @@ App mobile offline-first para uso operacional com SQLite local. O banco local e 
 2. Entre nesta pasta:
 
 ```powershell
-cd C:\Users\anony\Desktop\projeto\mobile
+cd "D:\PROJETOS SITES (HTML, CSS, JAVASCRIPT E PYTHON)\projeto\mobile"
 npm install
 npm start
 ```
